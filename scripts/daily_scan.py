@@ -44,6 +44,16 @@ def main():
         action="store_true",
         help="Show all candidates, not just top picks",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show stocks passing each stage (for debugging)",
+    )
+    parser.add_argument(
+        "--skip-insider",
+        action="store_true",
+        help="Skip insider filter to see momentum picks (testing only)",
+    )
 
     args = parser.parse_args()
 
@@ -97,7 +107,35 @@ def main():
     console.print(f"Stage 4 (sentiment):  {result.stage_4_passed}")
     console.print()
 
-    if not result.final_candidates:
+    # Debug: show stocks at each stage
+    if args.debug:
+        console.print("\n[bold]Stage 2 Momentum Stocks:[/bold]")
+        momentum_stocks = [
+            (t, r) for t, r in result.all_results.items()
+            if "stage_2" in r.passed_stages
+        ]
+        momentum_stocks.sort(key=lambda x: x[1].momentum_6m or 0, reverse=True)
+
+        for ticker, sr in momentum_stocks[:15]:
+            mom_6m = f"{(sr.momentum_6m or 0) * 100:+.1f}%"
+            mom_1m = f"{(sr.momentum_1m or 0) * 100:+.1f}%"
+            insider_info = f"Insiders: {sr.insider_buyers}" if sr.insider_buyers else "No insider buys"
+            console.print(f"  {ticker:6} | 6M: {mom_6m:>7} | 1M: {mom_1m:>7} | {insider_info}")
+
+        if len(momentum_stocks) > 15:
+            console.print(f"  ... and {len(momentum_stocks) - 15} more")
+        console.print()
+
+    # Skip insider filter for testing
+    candidates = result.final_candidates
+    if args.skip_insider and not candidates:
+        console.print("[yellow]--skip-insider: Using Stage 2 momentum stocks[/yellow]")
+        candidates = [
+            r for r in result.all_results.values()
+            if "stage_2" in r.passed_stages
+        ]
+
+    if not candidates:
         console.print("[yellow]No candidates found matching all criteria.[/yellow]")
         sys.exit(0)
 
@@ -106,9 +144,9 @@ def main():
     n_picks = args.top or settings.daily_picks
 
     if args.all_candidates:
-        ranked = ranker.rank_stocks(result.final_candidates)
+        ranked = ranker.rank_stocks(candidates)
     else:
-        ranked = ranker.get_top_picks(result.final_candidates, n_picks)
+        ranked = ranker.get_top_picks(candidates, n_picks)
 
     # Display results
     table = Table(title=f"Top {len(ranked)} Picks")

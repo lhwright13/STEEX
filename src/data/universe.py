@@ -1,8 +1,10 @@
 """Stock universe management - S&P 500 and filtering."""
 
+from io import StringIO
 from typing import List, Optional, Set
 
 import pandas as pd
+import requests
 import yfinance as yf
 
 from .base import DataProvider
@@ -44,7 +46,12 @@ class Universe(DataProvider):
             return cached
 
         try:
-            tables = pd.read_html(self._SP500_URL)
+            headers = {
+                "User-Agent": "STEEX/1.0 (Stock Trading Analysis Tool)"
+            }
+            response = requests.get(self._SP500_URL, headers=headers, timeout=10)
+            response.raise_for_status()
+            tables = pd.read_html(StringIO(response.text))
             # First table contains S&P 500 constituents
             df = tables[0]
             # Ticker column is usually "Symbol"
