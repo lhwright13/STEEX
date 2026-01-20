@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 
 from config.settings import get_settings
+from src.data.universe import Universe
 from src.data.vix import VixProvider
 from src.strategy.ranking import StockRanker
 from src.strategy.screener import StockScreener
@@ -54,6 +55,16 @@ def main():
         action="store_true",
         help="Skip insider filter to see momentum picks (testing only)",
     )
+    parser.add_argument(
+        "--expanded",
+        action="store_true",
+        help="Use expanded universe (S&P 500 + stocks with insider activity)",
+    )
+    parser.add_argument(
+        "--insider-only",
+        action="store_true",
+        help="Only scan stocks with recent insider activity (small-caps)",
+    )
 
     args = parser.parse_args()
 
@@ -73,6 +84,26 @@ def main():
 
     console.print(f"\n[bold]MIS Daily Scanner[/bold]")
     console.print(f"Date: {reference_date.strftime('%Y-%m-%d')}")
+
+    # Determine universe mode
+    universe_obj = Universe()
+    if args.insider_only:
+        universe_mode = "insider-only"
+        custom_universe = universe_obj.get_insider_activity_tickers(days_back=30)
+        console.print(f"Universe: [cyan]Insider activity only[/cyan] ({len(custom_universe)} stocks)")
+    elif args.expanded:
+        universe_mode = "expanded"
+        custom_universe = universe_obj.get_expanded_universe(
+            include_sp500=True,
+            include_insider_activity=True,
+            insider_days_back=30,
+        )
+        console.print(f"Universe: [cyan]Expanded (S&P 500 + insider activity)[/cyan] ({len(custom_universe)} stocks)")
+    else:
+        universe_mode = "sp500"
+        custom_universe = None
+        console.print("Universe: [cyan]S&P 500[/cyan]")
+
     console.print("-" * 40)
 
     # Check VIX
@@ -96,7 +127,7 @@ def main():
         screener = StockScreener()
 
     with console.status("Running full pipeline..."):
-        result = screener.run_pipeline(reference_date)
+        result = screener.run_pipeline(reference_date, custom_universe=custom_universe)
 
     # Show pipeline results
     console.print(f"\n[bold]Screening Results[/bold]")

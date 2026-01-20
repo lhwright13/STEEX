@@ -169,3 +169,18 @@ Thumbs.db
 # Secrets
 *.pem
 *.key
+
+# STEEX data files
+data/cache/
+data/*.json
+data/backtest_signals.json
+*.sqlite
+*.db
+
+# Log files
+*.log
+fetch_log.txt
+
+# Backtest results
+backtest_results/
+results/

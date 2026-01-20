@@ -1,7 +1,9 @@
 """5-stage stock screening pipeline."""
 
+import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from ..data.calendar import EarningsCalendar
@@ -10,8 +12,12 @@ from ..data.universe import Universe
 from ..indicators.momentum import MomentumCalculator
 from ..indicators.technical import TechnicalIndicators
 from ..sec.scanners.insider import InsiderScanner
+from ..sec.models import InsiderTransaction
 from ..sec.scanners.signals import calculate_cluster_score, find_cluster_buys
 from config.settings import Settings, get_settings
+
+# Cache file for historical insider data
+INSIDER_CACHE_FILE = Path(__file__).parent.parent.parent / "data" / "cache" / "historical_insiders.json"
 
 
 @dataclass
@@ -78,6 +84,62 @@ class StockScreener:
         self.technical = technical or TechnicalIndicators(self.price_provider)
         self.earnings = earnings_cal or EarningsCalendar()
         self.insider_scanner = insider_scanner or InsiderScanner()
+
+    def _load_cached_insider_transactions(
+        self, days_back: int = 30
+    ) -> List[InsiderTransaction]:
+        """Load insider transactions from cache file.
+
+        Args:
+            days_back: Only include transactions from last N days
+
+        Returns:
+            List of InsiderTransaction objects
+        """
+        if not INSIDER_CACHE_FILE.exists():
+            return []
+
+        try:
+            with open(INSIDER_CACHE_FILE) as f:
+                cache = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
+
+        cutoff = datetime.now() - timedelta(days=days_back)
+        cutoff_str = cutoff.strftime("%Y-%m-%d")
+
+        transactions = []
+        for date_str, txs in cache.get("dates", {}).items():
+            if date_str >= cutoff_str:
+                for tx in txs:
+                    ticker = tx.get("ticker")
+                    if not ticker or ticker in ("N/A", "NONE", ""):
+                        continue
+
+                    transactions.append(
+                        InsiderTransaction(
+                            ticker=ticker,
+                            company_name=tx.get("company_name", ""),
+                            company_cik="",
+                            insider_name=tx.get("insider_name", ""),
+                            insider_cik=tx.get("insider_name", ""),  # Use name as ID
+                            is_director=tx.get("is_director", False),
+                            is_officer=tx.get("is_officer", False),
+                            is_ten_percent_owner=tx.get("is_ten_percent_owner", False),
+                            officer_title=tx.get("role", ""),
+                            transaction_date=tx.get("transaction_date", ""),
+                            transaction_code=tx.get("transaction_code", "P"),
+                            acquired_disposed="A",
+                            shares=tx.get("shares", 0),
+                            price_per_share=tx.get("price_per_share", 0),
+                            total_value=tx.get("total_value", 0),
+                            shares_owned_after=0,
+                            filing_date=tx.get("filing_date", ""),
+                            filing_url="",
+                        )
+                    )
+
+        return transactions
 
     def stage_1_universe_filter(
         self,
@@ -281,11 +343,13 @@ class StockScreener:
     def run_pipeline(
         self,
         reference_date: Optional[datetime] = None,
+        custom_universe: Optional[List[str]] = None,
     ) -> ScreeningPipelineResult:
         """Run the full 5-stage screening pipeline.
 
         Args:
             reference_date: Date for the screening
+            custom_universe: Custom list of tickers (defaults to S&P 500)
 
         Returns:
             ScreeningPipelineResult with all stages
@@ -294,7 +358,7 @@ class StockScreener:
         all_results: Dict[str, ScreeningResult] = {}
 
         # Get initial universe
-        universe = self.universe.get_sp500()
+        universe = custom_universe if custom_universe is not None else self.universe.get_sp500()
         universe_size = len(universe)
 
         # Initialize results for all tickers
@@ -326,7 +390,14 @@ class StockScreener:
                 all_results[ticker].failed_stage = "stage_2"
 
         # Stage 3: Insider filter
-        stage_3, insider_data = self.stage_3_insider_filter(stage_2)
+        # Try to use cached insider data first, fall back to live scan
+        cached_transactions = self._load_cached_insider_transactions(
+            days_back=self.settings.insider_lookback_days
+        )
+        stage_3, insider_data = self.stage_3_insider_filter(
+            stage_2,
+            all_transactions=cached_transactions if cached_transactions else None,
+        )
         for ticker in stage_2:
             if ticker in insider_data:
                 data = insider_data[ticker]

@@ -245,12 +245,20 @@ class TechnicalIndicators:
                 continue
 
             try:
-                current_volume = df["Volume"].iloc[-1]
-                avg_volume = df["Volume"].iloc[-(lookback_days + 1) : -1].mean()
+                vol_col = df["Volume"]
+                if hasattr(vol_col.iloc[-1], 'item'):
+                    current_volume = vol_col.iloc[-1].item()
+                else:
+                    current_volume = float(vol_col.iloc[-1])
+                avg_volume = vol_col.iloc[-(lookback_days + 1) : -1].mean()
+                if hasattr(avg_volume, 'item'):
+                    avg_volume = avg_volume.item()
+                else:
+                    avg_volume = float(avg_volume)
 
                 if avg_volume > 0:
                     results[ticker] = current_volume / avg_volume
-            except (IndexError, KeyError):
+            except (IndexError, KeyError, TypeError, AttributeError):
                 continue
 
         return results

@@ -1,6 +1,8 @@
-"""Stock universe management - S&P 500 and filtering."""
+"""Stock universe management - S&P 500, small-caps, and filtering."""
 
+import json
 from io import StringIO
+from pathlib import Path
 from typing import List, Optional, Set
 
 import pandas as pd
@@ -8,6 +10,9 @@ import requests
 import yfinance as yf
 
 from .base import DataProvider
+
+# Cache file for historical insider data
+INSIDER_CACHE_FILE = Path(__file__).parent.parent.parent / "data" / "cache" / "historical_insiders.json"
 
 
 class Universe(DataProvider):
@@ -157,3 +162,106 @@ class Universe(DataProvider):
             tickers = [t for t in tickers if t not in exclude]
 
         return self.filter_by_price_volume(tickers, min_price, min_volume)
+
+    def get_insider_activity_tickers(self, days_back: int = 30) -> List[str]:
+        """Get tickers with recent insider buying activity.
+
+        Args:
+            days_back: Only include activity from last N days
+
+        Returns:
+            List of unique tickers with insider purchases
+        """
+        if not INSIDER_CACHE_FILE.exists():
+            return []
+
+        try:
+            with open(INSIDER_CACHE_FILE) as f:
+                cache = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
+
+        from datetime import datetime, timedelta
+        cutoff = datetime.now() - timedelta(days=days_back)
+        cutoff_str = cutoff.strftime("%Y-%m-%d")
+
+        tickers = set()
+        for date_str, transactions in cache.get("dates", {}).items():
+            if date_str >= cutoff_str:
+                for tx in transactions:
+                    ticker = tx.get("ticker")
+                    if ticker and ticker not in ("N/A", "NONE", ""):
+                        tickers.add(ticker.upper())
+
+        return sorted(list(tickers))
+
+    def get_expanded_universe(
+        self,
+        include_sp500: bool = True,
+        include_insider_activity: bool = True,
+        insider_days_back: int = 30,
+    ) -> List[str]:
+        """Get expanded universe including S&P 500 and insider activity stocks.
+
+        Args:
+            include_sp500: Include S&P 500 stocks
+            include_insider_activity: Include stocks with recent insider buying
+            insider_days_back: Days to look back for insider activity
+
+        Returns:
+            Combined list of unique tickers
+        """
+        tickers = set()
+
+        if include_sp500:
+            tickers.update(self.get_sp500())
+
+        if include_insider_activity:
+            tickers.update(self.get_insider_activity_tickers(insider_days_back))
+
+        return sorted(list(tickers))
+
+    def get_insider_cluster_tickers(
+        self, min_insiders: int = 2, days_back: int = 30
+    ) -> List[str]:
+        """Get tickers with cluster buying (multiple insiders).
+
+        Args:
+            min_insiders: Minimum unique insiders buying
+            days_back: Days to look back
+
+        Returns:
+            List of tickers with cluster buys
+        """
+        if not INSIDER_CACHE_FILE.exists():
+            return []
+
+        try:
+            with open(INSIDER_CACHE_FILE) as f:
+                cache = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
+
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+
+        cutoff = datetime.now() - timedelta(days=days_back)
+        cutoff_str = cutoff.strftime("%Y-%m-%d")
+
+        # Count unique insiders per ticker
+        ticker_insiders = defaultdict(set)
+        for date_str, transactions in cache.get("dates", {}).items():
+            if date_str >= cutoff_str:
+                for tx in transactions:
+                    ticker = tx.get("ticker")
+                    insider = tx.get("insider_name")
+                    if ticker and insider and ticker not in ("N/A", "NONE", ""):
+                        ticker_insiders[ticker.upper()].add(insider)
+
+        # Filter by minimum insiders
+        cluster_tickers = [
+            ticker for ticker, insiders in ticker_insiders.items()
+            if len(insiders) >= min_insiders
+        ]
+
+        return sorted(cluster_tickers)

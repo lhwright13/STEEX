@@ -104,12 +104,20 @@ python scripts/daily_scan.py [OPTIONS]
 | `--all-candidates` | Show all candidates, not just top picks |
 | `--debug` | Show stocks passing each stage |
 | `--skip-insider` | Skip insider filter (testing only) |
+| `--expanded` | Use expanded universe (S&P 500 + insider activity stocks) |
+| `--insider-only` | Only scan stocks with recent insider activity (small-caps) |
 
 **Examples:**
 
 ```bash
-# Standard daily scan
+# Standard daily scan (S&P 500 only)
 python scripts/daily_scan.py
+
+# Expanded universe (S&P 500 + stocks with insider activity)
+python scripts/daily_scan.py --expanded
+
+# Small-caps only (stocks with recent insider buying)
+python scripts/daily_scan.py --insider-only
 
 # See all 121 momentum stocks with debug info
 python scripts/daily_scan.py --debug --all-candidates --skip-insider

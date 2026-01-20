@@ -17,7 +17,10 @@ class EdgarClient:
         self.http = SecClient(user_agent) if user_agent else SecClient()
 
     def get_form4_filings(
-        self, days_back: int = 7, use_daily_index: bool = True
+        self,
+        days_back: int = 7,
+        use_daily_index: bool = True,
+        reference_date: Optional[datetime] = None,
     ) -> list[Filing]:
         """
         Fetch recent Form 4 filings.
@@ -25,21 +28,24 @@ class EdgarClient:
         Args:
             days_back: Number of days to look back
             use_daily_index: Use daily index (more data) or Atom feed (faster)
+            reference_date: Reference date for lookback (default: now)
 
         Returns:
             List of Filing objects
         """
         if use_daily_index:
-            filings = self._get_filings_from_daily_index(days_back)
+            filings = self._get_filings_from_daily_index(days_back, reference_date)
             if filings:
                 return filings
 
         return self._get_filings_from_atom()
 
-    def _get_filings_from_daily_index(self, days_back: int) -> list[Filing]:
+    def _get_filings_from_daily_index(
+        self, days_back: int, reference_date: Optional[datetime] = None
+    ) -> list[Filing]:
         """Fetch filings from daily index files."""
         all_filings = []
-        today = datetime.now()
+        today = reference_date or datetime.now()
 
         for i in range(days_back):
             date = today - timedelta(days=i)

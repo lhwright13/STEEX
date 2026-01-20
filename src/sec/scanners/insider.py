@@ -1,5 +1,6 @@
 """Insider buying scanner."""
 
+from datetime import datetime
 from typing import List, Optional
 
 from ..client import EdgarClient
@@ -19,6 +20,7 @@ class InsiderScanner:
         max_filings: int = 500,
         use_daily_index: bool = True,
         verbose: bool = True,
+        reference_date: Optional[datetime] = None,
     ) -> List[InsiderTransaction]:
         """
         Scan for insider purchases.
@@ -28,6 +30,7 @@ class InsiderScanner:
             max_filings: Maximum filings to process
             use_daily_index: Use daily index (more data) vs Atom feed (faster)
             verbose: Print progress
+            reference_date: Reference date for lookback (default: now)
 
         Returns:
             List of InsiderTransaction objects for purchases
@@ -36,7 +39,9 @@ class InsiderScanner:
             print("Fetching Form 4 filings...")
 
         filings = self.client.get_form4_filings(
-            days_back=days_back, use_daily_index=use_daily_index
+            days_back=days_back,
+            use_daily_index=use_daily_index,
+            reference_date=reference_date,
         )
 
         if len(filings) > max_filings:

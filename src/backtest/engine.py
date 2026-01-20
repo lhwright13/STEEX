@@ -331,6 +331,10 @@ class BacktestEngine:
 
         # Find closest date on or before
         try:
+            # Handle timezone-aware index by converting to naive for comparison
+            if df.index.tz is not None:
+                df = df.copy()
+                df.index = df.index.tz_localize(None)
             mask = df.index <= date
             if not mask.any():
                 return None
@@ -349,6 +353,10 @@ class BacktestEngine:
             return None
 
         try:
+            # Handle timezone-aware index by converting to naive for comparison
+            if vix_data.index.tz is not None:
+                vix_data = vix_data.copy()
+                vix_data.index = vix_data.index.tz_localize(None)
             mask = vix_data.index <= date
             if not mask.any():
                 return None
