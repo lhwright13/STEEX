@@ -18,6 +18,8 @@ class RankedStock:
     insider_score: float
     volume_score: float
     sentiment_score: float
+    fundamental_score: float
+    options_score: float
     rank: int
     screening_result: ScreeningResult
 
@@ -116,7 +118,10 @@ class StockRanker:
         self,
         results: List[ScreeningResult],
     ) -> Dict[str, float]:
-        """Calculate sentiment scores (stub - returns neutral).
+        """Calculate sentiment scores from screening results.
+
+        Uses the combined stock-specific and geopolitical sentiment
+        calculated during stage 4 filtering.
 
         Args:
             results: List of screening results
@@ -124,8 +129,60 @@ class StockRanker:
         Returns:
             Dict mapping ticker to sentiment score (0-100)
         """
-        # Sentiment is optional - return neutral score
-        return {r.ticker: 50 for r in results}
+        scores = {}
+        for r in results:
+            if r.sentiment_score is not None:
+                scores[r.ticker] = r.sentiment_score
+            else:
+                scores[r.ticker] = 50  # Neutral fallback
+
+        return scores
+
+    def calculate_fundamental_score(
+        self,
+        results: List[ScreeningResult],
+    ) -> Dict[str, float]:
+        """Calculate fundamental scores from screening results.
+
+        Uses the fundamental score calculated during stage 5 filtering.
+
+        Args:
+            results: List of screening results
+
+        Returns:
+            Dict mapping ticker to fundamental score (0-100)
+        """
+        scores = {}
+        for r in results:
+            if r.fundamental_score is not None:
+                scores[r.ticker] = r.fundamental_score
+            else:
+                scores[r.ticker] = 50  # Neutral fallback
+
+        return scores
+
+    def calculate_options_score(
+        self,
+        results: List[ScreeningResult],
+    ) -> Dict[str, float]:
+        """Calculate options sentiment scores from screening results.
+
+        Uses the options score (put/call ratio, IV analysis) if available.
+
+        Args:
+            results: List of screening results
+
+        Returns:
+            Dict mapping ticker to options score (0-100)
+        """
+        scores = {}
+        for r in results:
+            if r.options_score is not None:
+                scores[r.ticker] = r.options_score
+            else:
+                scores[r.ticker] = 50  # Neutral fallback
+
+        return scores
 
     def calculate_composite_score(
         self,
@@ -133,6 +190,8 @@ class StockRanker:
         insider_score: float,
         volume_score: float,
         sentiment_score: float,
+        fundamental_score: float = 50.0,
+        options_score: float = 50.0,
     ) -> float:
         """Calculate weighted composite score.
 
@@ -141,6 +200,8 @@ class StockRanker:
             insider_score: Insider component (0-100)
             volume_score: Volume component (0-100)
             sentiment_score: Sentiment component (0-100)
+            fundamental_score: Fundamental component (0-100)
+            options_score: Options sentiment component (0-100)
 
         Returns:
             Composite score (0-100)
@@ -150,6 +211,8 @@ class StockRanker:
             + self.settings.weight_insider * insider_score
             + self.settings.weight_volume * volume_score
             + self.settings.weight_sentiment * sentiment_score
+            + self.settings.weight_fundamental * fundamental_score
+            + self.settings.weight_options * options_score
         )
 
     def rank_stocks(
@@ -172,6 +235,8 @@ class StockRanker:
         insider_scores = self.calculate_insider_score(results)
         volume_scores = self.calculate_volume_score(results)
         sentiment_scores = self.calculate_sentiment_score(results)
+        fundamental_scores = self.calculate_fundamental_score(results)
+        options_scores = self.calculate_options_score(results)
 
         # Calculate composite scores
         ranked = []
@@ -181,9 +246,11 @@ class StockRanker:
             i_score = insider_scores.get(ticker, 0)
             v_score = volume_scores.get(ticker, 50)
             s_score = sentiment_scores.get(ticker, 50)
+            f_score = fundamental_scores.get(ticker, 50)
+            o_score = options_scores.get(ticker, 50)
 
             composite = self.calculate_composite_score(
-                m_score, i_score, v_score, s_score
+                m_score, i_score, v_score, s_score, f_score, o_score
             )
 
             ranked.append(
@@ -194,6 +261,8 @@ class StockRanker:
                     insider_score=i_score,
                     volume_score=v_score,
                     sentiment_score=s_score,
+                    fundamental_score=f_score,
+                    options_score=o_score,
                     rank=0,  # Will be set after sorting
                     screening_result=r,
                 )
@@ -258,6 +327,31 @@ class StockRanker:
         if sr.volume_surge and sr.volume_surge > 1.5:
             reasons.append(f"Volume surge ({sr.volume_surge:.1f}x)")
 
+        # Add sentiment-based reasons
+        if sr.sentiment_score is not None:
+            if sr.sentiment_score >= 65:
+                reasons.append(f"Bullish sentiment ({sr.sentiment_score:.0f})")
+            elif sr.sentiment_score >= 55:
+                reasons.append(f"Positive sentiment ({sr.sentiment_score:.0f})")
+
+        # Add fundamental-based reasons
+        if sr.fundamental_score is not None:
+            if sr.fundamental_score >= 70:
+                reasons.append(f"Strong fundamentals ({sr.fundamental_score:.0f})")
+            elif sr.fundamental_score >= 60:
+                reasons.append(f"Good fundamentals ({sr.fundamental_score:.0f})")
+
+        if sr.peg_ratio is not None and sr.peg_ratio < 1.0:
+            reasons.append(f"Low PEG ({sr.peg_ratio:.2f})")
+
+        if sr.roe is not None and sr.roe > 0.20:
+            reasons.append(f"High ROE ({sr.roe:.1%})")
+
+        # Add options-based reasons
+        if sr.options_score is not None:
+            if sr.options_score >= 70:
+                reasons.append(f"Bullish options flow ({sr.options_score:.0f})")
+
         return {
             "ticker": pick.ticker,
             "rank": pick.rank,
@@ -265,5 +359,10 @@ class StockRanker:
             "momentum_6m": f"{(sr.momentum_6m or 0) * 100:.1f}%",
             "insider_buyers": sr.insider_buyers,
             "insider_value": f"${sr.total_insider_value:,.0f}",
+            "sentiment": sr.sentiment_label or "N/A",
+            "fundamental_score": sr.fundamental_score,
+            "pe_ratio": sr.pe_ratio,
+            "options_score": sr.options_score,
+            "sector": sr.sector or "unknown",
             "reasons": reasons,
         }

@@ -1,0 +1,127 @@
+# MIS Strategy Configuration
+# All parameters can be overridden via environment variables with STEEX_ prefix
+# e.g., STEEX_INITIAL_STOP_PCT=0.10
+
+# -----------------------------------------------------------------------------
+# Momentum Parameters
+# -----------------------------------------------------------------------------
+momentum_lookback_days: 126      # 6 months lookback for momentum calculation
+short_momentum_days: 21          # 1 month lookback for short-term momentum
+momentum_min_return: 0.15        # Minimum 6-month return (15%)
+overextension_percentile: 1.0    # Disabled - backtest showed better returns without filter
+
+# -----------------------------------------------------------------------------
+# Moving Averages
+# -----------------------------------------------------------------------------
+ma_short: 50                     # Short-term moving average period
+ma_long: 200                     # Long-term moving average period
+
+# -----------------------------------------------------------------------------
+# Insider Trading Parameters
+# -----------------------------------------------------------------------------
+insider_lookback_days: 30        # Days to look back for insider activity
+min_insider_buyers: 1            # Minimum number of insider buyers
+min_cluster_buyers: 3            # Minimum insiders for cluster buy signal
+min_purchase_value: 100000       # Minimum purchase value for significant signal
+
+# -----------------------------------------------------------------------------
+# Universe Filter Parameters
+# -----------------------------------------------------------------------------
+min_price: 5.0                   # Minimum stock price
+min_volume: 500000               # Minimum average daily volume
+earnings_blackout_days: 5        # Days before earnings to avoid
+min_history_days: 126            # Minimum trading history required (6 months)
+
+# -----------------------------------------------------------------------------
+# Position Management
+# -----------------------------------------------------------------------------
+max_positions: 20                # Maximum concurrent positions
+daily_picks: 2                   # Number of stocks to pick daily
+position_size_pct: 0.05          # Default position size as fraction of portfolio (5%)
+max_sector_pct: 0.30             # Maximum sector exposure (30%)
+max_single_position_pct: 0.20    # Maximum single position size (10%)
+min_cash_reserve_pct: 0.10       # Minimum cash reserve (10%)
+
+# -----------------------------------------------------------------------------
+# Volatility-Adjusted Position Sizing
+# -----------------------------------------------------------------------------
+vol_sizing_enabled: true         # Enable volatility-adjusted position sizing
+vol_low_threshold: 0.03          # ATR% threshold for low volatility (3%)
+vol_med_threshold: 0.06          # ATR% threshold for medium volatility (6%)
+vol_low_position_pct: 0.06       # Position size for low volatility stocks (6%)
+vol_med_position_pct: 0.05       # Position size for medium volatility stocks (5%)
+vol_high_position_pct: 0.03      # Position size for high volatility stocks (3%)
+
+# -----------------------------------------------------------------------------
+# Exit Parameters
+# -----------------------------------------------------------------------------
+initial_stop_pct: 0.12           # Initial stop loss percentage (12%)
+max_hold_days: 60                # Maximum holding period in trading days
+dead_money_days: 10              # Days below entry before exit as dead money
+cooling_off_days: 14             # Trading days to block re-entry after stop-loss
+
+# -----------------------------------------------------------------------------
+# VIX Thresholds
+# -----------------------------------------------------------------------------
+vix_caution_level: 30            # VIX level to tighten stops
+vix_exit_level: 40               # VIX level to exit 50% of positions
+vix_tight_stop_pct: 0.05         # Tighter stop when VIX is elevated (5%)
+
+# -----------------------------------------------------------------------------
+# Trailing Stop Levels
+# -----------------------------------------------------------------------------
+trail_stop_10: 0.12              # Trail distance after 10% gain
+trail_stop_20: 0.15              # Trail distance after 20% gain
+trail_stop_30: 0.18              # Trail distance after 30% gain
+
+# -----------------------------------------------------------------------------
+# Scoring Weights (must sum to 1.0)
+# -----------------------------------------------------------------------------
+weight_momentum: 0.30            # Momentum weight in score
+weight_insider: 0.25             # Insider weight in score
+weight_volume: 0.15              # Volume surge weight
+weight_sentiment: 0.15           # Sentiment weight
+weight_fundamental: 0.10         # Fundamental analysis weight
+weight_options: 0.05             # Options intelligence weight
+
+# -----------------------------------------------------------------------------
+# Fundamental Analysis
+# -----------------------------------------------------------------------------
+fundamental_enabled: true        # Enable fundamental analysis in screening
+fundamental_max_pe: 50.0         # Maximum P/E ratio (filter out speculation)
+fundamental_min_roe: 0.05        # Minimum ROE for quality filter (5%)
+fundamental_max_debt_equity: 2.0 # Maximum debt/equity ratio
+fundamental_cache_ttl: 86400     # Cache TTL in seconds (24 hours)
+
+# -----------------------------------------------------------------------------
+# Options Intelligence
+# -----------------------------------------------------------------------------
+options_enabled: true            # Enable options analysis in scoring
+options_bullish_pc_threshold: 0.7  # Put/call ratio below this is bullish
+options_bearish_pc_threshold: 1.0  # Put/call ratio above this is bearish
+options_cache_ttl: 3600          # Cache TTL in seconds (1 hour)
+
+# -----------------------------------------------------------------------------
+# Drawdown Rules
+# -----------------------------------------------------------------------------
+drawdown_review: 0.10            # Drawdown level to review strategy (10%)
+drawdown_reduce: 0.15            # Drawdown level to reduce position sizes (15%)
+drawdown_pause: 0.20             # Drawdown level to pause new entries (20%)
+drawdown_exit: 0.25              # Drawdown level to exit all positions (25%)
+
+# -----------------------------------------------------------------------------
+# Transaction Costs (Robinhood)
+# -----------------------------------------------------------------------------
+# For small-cap stocks, real costs include bid-ask spread + PFOF:
+#   - High volume (>1M): ~0.2% per trade
+#   - Medium volume (100k-1M): ~0.5% per trade
+#   - Low volume (<100k): ~1.0%+ per trade
+# Using 0.5% as realistic default for mixed small-cap portfolio
+estimated_cost_per_trade: 0.005  # 0.5% per trade (includes spread + PFOF)
+
+# -----------------------------------------------------------------------------
+# Data Paths
+# -----------------------------------------------------------------------------
+data_dir: "data"                 # Directory for cached data
+positions_file: "positions.json" # File for position tracking
+trades_file: "trades.json"       # File for trade log

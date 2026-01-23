@@ -1,10 +1,41 @@
 """Strategy parameters and configuration settings."""
 
 from functools import lru_cache
-from typing import Dict
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Type
 
+import yaml
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+
+
+CONFIG_FILE = Path(__file__).parent / "config.yaml"
+
+
+class YamlConfigSettingsSource(PydanticBaseSettingsSource):
+    """Load settings from YAML config file."""
+
+    def get_field_value(
+        self, field: Any, field_name: str
+    ) -> Tuple[Any, str, bool]:
+        """Get field value from YAML config."""
+        if not hasattr(self, "_yaml_data"):
+            self._yaml_data = {}
+            if CONFIG_FILE.exists():
+                with open(CONFIG_FILE) as f:
+                    self._yaml_data = yaml.safe_load(f) or {}
+
+        value = self._yaml_data.get(field_name)
+        return value, field_name, value is not None
+
+    def __call__(self) -> Dict[str, Any]:
+        """Return all values from YAML."""
+        if not hasattr(self, "_yaml_data"):
+            self._yaml_data = {}
+            if CONFIG_FILE.exists():
+                with open(CONFIG_FILE) as f:
+                    self._yaml_data = yaml.safe_load(f) or {}
+        return {k: v for k, v in self._yaml_data.items() if v is not None}
 
 
 class Settings(BaseSettings):
@@ -18,7 +49,7 @@ class Settings(BaseSettings):
         default=21, description="1 month lookback for short-term momentum"
     )
     momentum_min_return: float = Field(
-        default=0.10, description="Minimum 6-month return (10%)"
+        default=0.15, description="Minimum 6-month return (15%)"
     )
     overextension_percentile: float = Field(
         default=0.95, description="Top 5% excluded as overextended"
@@ -68,15 +99,38 @@ class Settings(BaseSettings):
         default=0.10, description="Minimum cash reserve (10%)"
     )
 
+    # Volatility-adjusted position sizing
+    vol_sizing_enabled: bool = Field(
+        default=True, description="Enable volatility-adjusted position sizing"
+    )
+    vol_low_threshold: float = Field(
+        default=0.03, description="ATR% threshold for low volatility (3%)"
+    )
+    vol_med_threshold: float = Field(
+        default=0.06, description="ATR% threshold for medium volatility (6%)"
+    )
+    vol_low_position_pct: float = Field(
+        default=0.06, description="Position size for low volatility stocks (6%)"
+    )
+    vol_med_position_pct: float = Field(
+        default=0.05, description="Position size for medium volatility stocks (5%)"
+    )
+    vol_high_position_pct: float = Field(
+        default=0.03, description="Position size for high volatility stocks (3%)"
+    )
+
     # Exit parameters
     initial_stop_pct: float = Field(
-        default=0.07, description="Initial stop loss percentage (7%)"
+        default=0.12, description="Initial stop loss percentage (12%)"
     )
     max_hold_days: int = Field(
         default=60, description="Maximum holding period in trading days"
     )
     dead_money_days: int = Field(
         default=10, description="Days below entry before exit as dead money"
+    )
+    cooling_off_days: int = Field(
+        default=14, description="Trading days to block re-entry after stop-loss"
     )
 
     # VIX thresholds
@@ -92,20 +146,73 @@ class Settings(BaseSettings):
 
     # Trailing stop levels: {gain_threshold: trail_distance}
     trail_stop_10: float = Field(
-        default=0.10, description="Trail distance after 10% gain"
+        default=0.12, description="Trail distance after 10% gain"
     )
     trail_stop_20: float = Field(
-        default=0.12, description="Trail distance after 20% gain"
+        default=0.15, description="Trail distance after 20% gain"
     )
     trail_stop_30: float = Field(
-        default=0.15, description="Trail distance after 30% gain"
+        default=0.18, description="Trail distance after 30% gain"
     )
 
-    # Scoring weights
-    weight_momentum: float = Field(default=0.40, description="Momentum weight in score")
-    weight_insider: float = Field(default=0.30, description="Insider weight in score")
-    weight_volume: float = Field(default=0.20, description="Volume surge weight")
-    weight_sentiment: float = Field(default=0.10, description="Sentiment weight")
+    # Scoring weights (must sum to 1.0)
+    weight_momentum: float = Field(default=0.30, description="Momentum weight in score")
+    weight_insider: float = Field(default=0.25, description="Insider weight in score")
+    weight_volume: float = Field(default=0.15, description="Volume surge weight")
+    weight_sentiment: float = Field(default=0.15, description="Sentiment weight")
+    weight_fundamental: float = Field(default=0.10, description="Fundamental analysis weight")
+    weight_options: float = Field(default=0.05, description="Options intelligence weight")
+
+    # Sentiment analysis parameters
+    sentiment_enabled: bool = Field(
+        default=True, description="Enable sentiment analysis in screening"
+    )
+    sentiment_min_score: float = Field(
+        default=30.0, description="Minimum sentiment score to pass filter (0-100)"
+    )
+    sentiment_cache_ttl: int = Field(
+        default=3600, description="Sentiment cache TTL in seconds (1 hour)"
+    )
+    geopolitical_enabled: bool = Field(
+        default=True, description="Enable geopolitical/macro sentiment"
+    )
+    geopolitical_weight: float = Field(
+        default=0.4, description="Weight of geopolitical vs stock-specific sentiment"
+    )
+    sentiment_stock_weight: float = Field(
+        default=0.6, description="Weight of stock-specific sentiment"
+    )
+
+    # Fundamental analysis parameters
+    fundamental_enabled: bool = Field(
+        default=True, description="Enable fundamental analysis in screening"
+    )
+    fundamental_max_pe: float = Field(
+        default=50.0, description="Maximum P/E ratio (filter out speculative)"
+    )
+    fundamental_min_roe: float = Field(
+        default=0.05, description="Minimum ROE for quality filter (5%)"
+    )
+    fundamental_max_debt_equity: float = Field(
+        default=2.0, description="Maximum debt/equity ratio"
+    )
+    fundamental_cache_ttl: int = Field(
+        default=86400, description="Fundamental data cache TTL in seconds (24 hours)"
+    )
+
+    # Options intelligence parameters
+    options_enabled: bool = Field(
+        default=True, description="Enable options analysis in screening"
+    )
+    options_bullish_pc_threshold: float = Field(
+        default=0.7, description="Put/call ratio below this is bullish"
+    )
+    options_bearish_pc_threshold: float = Field(
+        default=1.0, description="Put/call ratio above this is bearish"
+    )
+    options_cache_ttl: int = Field(
+        default=3600, description="Options data cache TTL in seconds (1 hour)"
+    )
 
     # Drawdown rules
     drawdown_review: float = Field(
@@ -121,9 +228,9 @@ class Settings(BaseSettings):
         default=0.25, description="Drawdown level to exit all positions (25%)"
     )
 
-    # Transaction costs
+    # Transaction costs (includes bid-ask spread for small-caps)
     estimated_cost_per_trade: float = Field(
-        default=0.001, description="Estimated transaction cost per trade (0.1%)"
+        default=0.005, description="Estimated transaction cost per trade (0.5%)"
     )
 
     # Data paths
@@ -146,6 +253,30 @@ class Settings(BaseSettings):
         "env_prefix": "STEEX_",
         "env_file": ".env",
     }
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        """Customize settings sources to include YAML config.
+
+        Priority (highest to lowest):
+        1. Init settings (passed to constructor)
+        2. Environment variables
+        3. YAML config file
+        4. Default values
+        """
+        return (
+            init_settings,
+            env_settings,
+            YamlConfigSettingsSource(settings_cls),
+            dotenv_settings,
+        )
 
 
 @lru_cache

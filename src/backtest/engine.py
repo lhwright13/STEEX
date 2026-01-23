@@ -8,6 +8,7 @@ import pandas as pd
 
 from ..data.price import PriceProvider
 from ..data.vix import VixProvider
+from ..indicators.technical import TechnicalIndicators
 from config.settings import Settings, get_settings
 
 from .metrics import calculate_metrics
@@ -95,6 +96,7 @@ class BacktestEngine:
         self.settings = settings or get_settings()
         self.price_provider = price_provider or PriceProvider()
         self.vix_provider = vix_provider or VixProvider()
+        self.technical = TechnicalIndicators(self.price_provider)
 
     def run(
         self,
@@ -127,6 +129,7 @@ class BacktestEngine:
         positions: Dict[str, BacktestPosition] = {}
         completed_trades: List[BacktestTrade] = []
         equity_history = []
+        blocked_tickers: Dict[str, datetime] = {}  # ticker -> date blocked until
 
         # Get all unique tickers for price data
         all_tickers = list(set(s["ticker"] for s in signals))
@@ -175,6 +178,14 @@ class BacktestEngine:
                 cost = trade_value * transaction_cost
                 cash += trade_value - cost
 
+                # Add to blocked list if stopped out
+                if reason == "stop_loss":
+                    # Block for cooling_off_days trading days
+                    blocked_until = current_date + timedelta(
+                        days=int(self.settings.cooling_off_days * 7 / 5)
+                    )
+                    blocked_tickers[ticker] = blocked_until
+
                 completed_trades.append(
                     BacktestTrade(
                         ticker=ticker,
@@ -197,6 +208,14 @@ class BacktestEngine:
                 if ticker in positions:
                     continue
 
+                # Skip if ticker is in cooling-off period after stop-loss
+                if ticker in blocked_tickers:
+                    if current_date < blocked_tickers[ticker]:
+                        continue
+                    else:
+                        # Cooling-off period expired, remove from blocked list
+                        del blocked_tickers[ticker]
+
                 # Check position limits
                 if len(positions) >= self.settings.max_positions:
                     continue
@@ -206,7 +225,7 @@ class BacktestEngine:
                 if entry_price is None:
                     continue
 
-                # Calculate position size
+                # Calculate position size with volatility adjustment
                 portfolio_value = cash + self._calculate_positions_value(
                     positions, price_data, current_date
                 )
@@ -214,7 +233,24 @@ class BacktestEngine:
                 if portfolio_value * self.settings.min_cash_reserve_pct > cash:
                     continue  # Not enough cash reserve
 
-                position_value = portfolio_value * self.settings.position_size_pct
+                # Volatility-adjusted position sizing
+                if self.settings.vol_sizing_enabled:
+                    df = price_data.get(ticker)
+                    atr_pct = self.technical.get_atr_percent_from_df(df) if df is not None else None
+
+                    if atr_pct is not None:
+                        if atr_pct < self.settings.vol_low_threshold:
+                            pos_size_pct = self.settings.vol_low_position_pct
+                        elif atr_pct < self.settings.vol_med_threshold:
+                            pos_size_pct = self.settings.vol_med_position_pct
+                        else:
+                            pos_size_pct = self.settings.vol_high_position_pct
+                    else:
+                        pos_size_pct = self.settings.position_size_pct
+                else:
+                    pos_size_pct = self.settings.position_size_pct
+
+                position_value = portfolio_value * pos_size_pct
                 shares = int(position_value / entry_price)
 
                 if shares < 1:

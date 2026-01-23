@@ -310,3 +310,91 @@ class TechnicalIndicators:
             return rsi.iloc[-1]
         except (IndexError, KeyError):
             return None
+
+    def calculate_atr(
+        self,
+        df: pd.DataFrame,
+        period: int = 20,
+    ) -> pd.Series:
+        """Calculate Average True Range.
+
+        Args:
+            df: DataFrame with High, Low, Close columns
+            period: ATR period
+
+        Returns:
+            Series with ATR values
+        """
+        high = df["High"]
+        low = df["Low"]
+        close = df["Close"]
+
+        # True Range = max(High - Low, |High - PrevClose|, |Low - PrevClose|)
+        prev_close = close.shift(1)
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = true_range.rolling(window=period).mean()
+
+        return atr
+
+    def get_atr_percent(
+        self,
+        ticker: str,
+        period: int = 20,
+    ) -> Optional[float]:
+        """Get ATR as percentage of current price.
+
+        Args:
+            ticker: Stock ticker symbol
+            period: ATR period
+
+        Returns:
+            ATR as percentage of price (e.g., 0.05 = 5%)
+        """
+        calendar_days = int(period * 1.5) + 20
+        df = self.price_provider.get_ohlcv(ticker, days=calendar_days)
+
+        if df.empty or len(df) < period + 1:
+            return None
+
+        try:
+            atr = self.calculate_atr(df, period)
+            current_price = df["Close"].iloc[-1]
+            atr_value = atr.iloc[-1]
+
+            if current_price > 0:
+                return atr_value / current_price
+            return None
+        except (IndexError, KeyError):
+            return None
+
+    def get_atr_percent_from_df(
+        self,
+        df: pd.DataFrame,
+        period: int = 20,
+    ) -> Optional[float]:
+        """Get ATR percentage from pre-loaded DataFrame.
+
+        Args:
+            df: DataFrame with OHLCV data
+            period: ATR period
+
+        Returns:
+            ATR as percentage of price
+        """
+        if df.empty or len(df) < period + 1:
+            return None
+
+        try:
+            atr = self.calculate_atr(df, period)
+            current_price = df["Close"].iloc[-1]
+            atr_value = atr.iloc[-1]
+
+            if current_price > 0:
+                return atr_value / current_price
+            return None
+        except (IndexError, KeyError):
+            return None

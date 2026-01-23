@@ -9,6 +9,10 @@ from typing import Dict, List, Optional, Set
 from ..data.calendar import EarningsCalendar
 from ..data.price import PriceProvider
 from ..data.universe import Universe
+from ..data.sentiment import SentimentProvider, SentimentResult
+from ..data.geopolitical import GeopoliticalSentimentProvider, get_ticker_sector
+from ..data.fundamentals import FundamentalsProvider, FundamentalData
+from ..data.options import OptionsProvider, OptionsData
 from ..indicators.momentum import MomentumCalculator
 from ..indicators.technical import TechnicalIndicators
 from ..sec.scanners.insider import InsiderScanner
@@ -37,6 +41,20 @@ class ScreeningResult:
     total_insider_value: float = 0
     volume_surge: Optional[float] = None
     has_earnings_soon: bool = False
+    sentiment_score: Optional[float] = None  # 0-100 combined sentiment
+    sentiment_label: Optional[str] = None  # "Bearish", "Neutral", "Bullish"
+    sector: Optional[str] = None  # Sector for geopolitical impact
+    # Fundamental data
+    fundamental_score: Optional[float] = None  # 0-100 fundamental score
+    pe_ratio: Optional[float] = None
+    peg_ratio: Optional[float] = None
+    roe: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    revenue_growth: Optional[float] = None
+    # Options data
+    options_score: Optional[float] = None  # 0-100 options sentiment score
+    put_call_ratio: Optional[float] = None
+    iv_rank: Optional[float] = None
 
 
 @dataclass
@@ -49,7 +67,8 @@ class ScreeningPipelineResult:
     stage_2_passed: int
     stage_3_passed: int
     stage_4_passed: int
-    final_candidates: List[ScreeningResult]
+    stage_5_passed: int = 0  # Fundamental filter (optional stage)
+    final_candidates: List[ScreeningResult] = field(default_factory=list)
     all_results: Dict[str, ScreeningResult] = field(default_factory=dict)
 
 
@@ -65,6 +84,10 @@ class StockScreener:
         technical: Optional[TechnicalIndicators] = None,
         earnings_cal: Optional[EarningsCalendar] = None,
         insider_scanner: Optional[InsiderScanner] = None,
+        sentiment_provider: Optional[SentimentProvider] = None,
+        geopolitical_provider: Optional[GeopoliticalSentimentProvider] = None,
+        fundamentals_provider: Optional[FundamentalsProvider] = None,
+        options_provider: Optional[OptionsProvider] = None,
     ):
         """Initialize screener with dependencies.
 
@@ -76,6 +99,10 @@ class StockScreener:
             technical: Technical indicators calculator
             earnings_cal: Earnings calendar provider
             insider_scanner: Insider trading scanner
+            sentiment_provider: Stock-specific sentiment provider
+            geopolitical_provider: Geopolitical/macro sentiment provider
+            fundamentals_provider: Fundamental analysis provider
+            options_provider: Options intelligence provider
         """
         self.settings = settings or get_settings()
         self.universe = universe or Universe()
@@ -84,6 +111,10 @@ class StockScreener:
         self.technical = technical or TechnicalIndicators(self.price_provider)
         self.earnings = earnings_cal or EarningsCalendar()
         self.insider_scanner = insider_scanner or InsiderScanner()
+        self.sentiment_provider = sentiment_provider or SentimentProvider()
+        self.geopolitical_provider = geopolitical_provider or GeopoliticalSentimentProvider()
+        self.fundamentals_provider = fundamentals_provider or FundamentalsProvider()
+        self.options_provider = options_provider or OptionsProvider()
 
     def _load_cached_insider_transactions(
         self, days_back: int = 30
@@ -208,10 +239,10 @@ class StockScreener:
             momentum_1m = data.get("momentum_1m", 0)
             percentile = data.get("percentile", 0)
 
-            # Check all momentum conditions
+            # Check all momentum conditions (stricter 1-month filter)
             if (
                 momentum_6m >= self.settings.momentum_min_return
-                and momentum_1m > 0  # Not falling knife
+                and momentum_1m >= 0.05  # Require at least 5% recent momentum
                 and percentile <= self.settings.overextension_percentile
             ):
                 # Check MA alignment
@@ -325,20 +356,155 @@ class StockScreener:
     def stage_4_sentiment_filter(
         self,
         tickers: List[str],
-    ) -> List[str]:
-        """Stage 4: Sentiment check (stub - returns all tickers).
+    ) -> tuple[List[str], Dict[str, Dict]]:
+        """Stage 4: Filter by combined sentiment (stock-specific + geopolitical).
 
-        This stage is optional and can be implemented with sentiment data.
+        Combines:
+        1. Stock-specific news sentiment (Alpha Vantage/Finnhub)
+        2. Sector-level geopolitical sentiment (GDELT)
 
         Args:
             tickers: Input tickers
 
         Returns:
-            Filtered tickers (currently passthrough)
+            Tuple of (filtered tickers, sentiment data)
         """
-        # Sentiment filtering is optional enhancement
-        # For now, pass all tickers through
-        return tickers
+        if not self.settings.sentiment_enabled:
+            # Return all tickers with neutral sentiment if disabled
+            return tickers, {t: {"score": 50, "label": "Neutral"} for t in tickers}
+
+        sentiment_data = {}
+        passed = []
+
+        # Get macro sentiment once (affects all tickers via sector)
+        macro_sentiment = None
+        if self.settings.geopolitical_enabled:
+            try:
+                macro_sentiment = self.geopolitical_provider.get_macro_sentiment()
+            except Exception:
+                macro_sentiment = None
+
+        for ticker in tickers:
+            try:
+                # Get stock-specific sentiment
+                stock_sentiment = self.sentiment_provider.get_sentiment(ticker)
+                stock_score = stock_sentiment.normalized_score  # 0-100
+
+                # Get sector-based geopolitical modifier
+                geo_score = 50.0  # Neutral default
+                sector = get_ticker_sector(ticker)
+
+                if macro_sentiment and sector != "unknown":
+                    sector_sent = macro_sentiment.sector_sentiments.get(sector)
+                    if sector_sent:
+                        geo_score = sector_sent.final_score
+
+                # Combine scores with configurable weights
+                # Default: 60% stock-specific, 40% geopolitical
+                combined_score = (
+                    self.settings.sentiment_stock_weight * stock_score
+                    + self.settings.geopolitical_weight * geo_score
+                )
+
+                # Determine label
+                if combined_score < 35:
+                    label = "Bearish"
+                elif combined_score < 45:
+                    label = "Somewhat Bearish"
+                elif combined_score < 55:
+                    label = "Neutral"
+                elif combined_score < 65:
+                    label = "Somewhat Bullish"
+                else:
+                    label = "Bullish"
+
+                sentiment_data[ticker] = {
+                    "score": combined_score,
+                    "stock_score": stock_score,
+                    "geo_score": geo_score,
+                    "sector": sector,
+                    "label": label,
+                    "headlines": stock_sentiment.headlines[:3],
+                }
+
+                # Pass if sentiment meets minimum threshold
+                if combined_score >= self.settings.sentiment_min_score:
+                    passed.append(ticker)
+
+            except Exception:
+                # On error, give neutral score and pass through
+                sentiment_data[ticker] = {
+                    "score": 50,
+                    "stock_score": 50,
+                    "geo_score": 50,
+                    "sector": "unknown",
+                    "label": "Neutral",
+                    "headlines": [],
+                }
+                passed.append(ticker)
+
+        return passed, sentiment_data
+
+    def stage_5_fundamental_filter(
+        self,
+        tickers: List[str],
+    ) -> tuple[List[str], Dict[str, Dict]]:
+        """Stage 5: Filter by fundamental analysis.
+
+        Uses fundamental metrics like P/E, ROE, debt levels to filter
+        out speculative or poor quality stocks.
+
+        Args:
+            tickers: Input tickers
+
+        Returns:
+            Tuple of (filtered tickers, fundamental data)
+        """
+        if not self.settings.fundamental_enabled:
+            # Return all tickers with neutral scores if disabled
+            return tickers, {t: {"score": 50.0, "passed": True} for t in tickers}
+
+        fundamental_data = {}
+        passed = []
+
+        for ticker in tickers:
+            try:
+                data = self.fundamentals_provider.get_fundamentals(ticker)
+
+                fundamental_data[ticker] = {
+                    "score": data.fundamental_score,
+                    "pe_ratio": data.pe_ratio,
+                    "peg_ratio": data.peg_ratio,
+                    "roe": data.return_on_equity,
+                    "debt_to_equity": data.debt_to_equity,
+                    "revenue_growth": data.revenue_growth,
+                    "profit_margin": data.profit_margin,
+                }
+
+                # Check fundamental filters
+                passes, reason = self.fundamentals_provider.passes_fundamental_filter(
+                    data,
+                    max_pe=self.settings.fundamental_max_pe,
+                    min_roe=self.settings.fundamental_min_roe,
+                    max_debt_equity=self.settings.fundamental_max_debt_equity,
+                )
+
+                fundamental_data[ticker]["passed"] = passes
+                fundamental_data[ticker]["reason"] = reason
+
+                if passes:
+                    passed.append(ticker)
+
+            except Exception:
+                # On error, pass through with neutral score
+                fundamental_data[ticker] = {
+                    "score": 50.0,
+                    "passed": True,
+                    "reason": "Data unavailable",
+                }
+                passed.append(ticker)
+
+        return passed, fundamental_data
 
     def run_pipeline(
         self,
@@ -412,18 +578,58 @@ class StockScreener:
                 all_results[ticker].failed_stage = "stage_3"
 
         # Stage 4: Sentiment filter
-        stage_4 = self.stage_4_sentiment_filter(stage_3)
+        stage_4, sentiment_data = self.stage_4_sentiment_filter(stage_3)
+        for ticker in stage_3:
+            if ticker in sentiment_data:
+                data = sentiment_data[ticker]
+                all_results[ticker].sentiment_score = data.get("score")
+                all_results[ticker].sentiment_label = data.get("label")
+                all_results[ticker].sector = data.get("sector")
+
         for ticker in stage_4:
             all_results[ticker].passed_stages.append("stage_4")
+        for ticker in set(stage_3) - set(stage_4):
+            if all_results[ticker].failed_stage is None:
+                all_results[ticker].failed_stage = "stage_4"
+
+        # Stage 5: Fundamental filter
+        stage_5, fundamental_data = self.stage_5_fundamental_filter(stage_4)
+        for ticker in stage_4:
+            if ticker in fundamental_data:
+                data = fundamental_data[ticker]
+                all_results[ticker].fundamental_score = data.get("score")
+                all_results[ticker].pe_ratio = data.get("pe_ratio")
+                all_results[ticker].peg_ratio = data.get("peg_ratio")
+                all_results[ticker].roe = data.get("roe")
+                all_results[ticker].debt_to_equity = data.get("debt_to_equity")
+                all_results[ticker].revenue_growth = data.get("revenue_growth")
+
+        for ticker in stage_5:
+            all_results[ticker].passed_stages.append("stage_5")
+        for ticker in set(stage_4) - set(stage_5):
+            if all_results[ticker].failed_stage is None:
+                all_results[ticker].failed_stage = "stage_5"
 
         # Get volume surge for final candidates
-        if stage_4:
-            volume_data = self.technical.get_volume_surge_batch(stage_4)
-            for ticker in stage_4:
+        if stage_5:
+            volume_data = self.technical.get_volume_surge_batch(stage_5)
+            for ticker in stage_5:
                 all_results[ticker].volume_surge = volume_data.get(ticker)
 
+        # Get options data for final candidates (enrichment, not filtering)
+        if stage_5 and self.settings.options_enabled:
+            for ticker in stage_5:
+                try:
+                    options_data = self.options_provider.get_options_sentiment(ticker)
+                    all_results[ticker].options_score = options_data.options_score
+                    all_results[ticker].put_call_ratio = options_data.put_call_oi_ratio
+                    all_results[ticker].iv_rank = options_data.avg_call_iv
+                except Exception:
+                    # Options data is enrichment, not critical
+                    all_results[ticker].options_score = 50.0
+
         # Final candidates
-        final_candidates = [all_results[t] for t in stage_4]
+        final_candidates = [all_results[t] for t in stage_5]
 
         return ScreeningPipelineResult(
             date=date,
@@ -432,6 +638,7 @@ class StockScreener:
             stage_2_passed=len(stage_2),
             stage_3_passed=len(stage_3),
             stage_4_passed=len(stage_4),
+            stage_5_passed=len(stage_5),
             final_candidates=final_candidates,
             all_results=all_results,
         )
