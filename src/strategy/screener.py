@@ -259,13 +259,17 @@ class StockScreener:
 
         return passed, momentum_data
 
-    def stage_3_insider_filter(
+    def stage_3_insider_enrich(
         self,
         tickers: List[str],
         lookback_days: Optional[int] = None,
         all_transactions: Optional[List] = None,
     ) -> tuple[List[str], Dict[str, Dict]]:
-        """Stage 3: Filter by insider activity.
+        """Stage 3: Enrich with insider activity data (no longer a hard filter).
+
+        All tickers pass through - insider activity boosts ranking score
+        rather than being a gate. Stocks with insider buying will rank
+        higher due to the insider weight in composite scoring.
 
         Args:
             tickers: Input tickers
@@ -273,11 +277,10 @@ class StockScreener:
             all_transactions: Pre-fetched transactions (optional)
 
         Returns:
-            Tuple of (filtered tickers, insider data)
+            Tuple of (all tickers, insider data for scoring)
         """
         lookback = lookback_days or self.settings.insider_lookback_days
         insider_data = {}
-        passed = []
 
         # Get all recent insider transactions if not provided
         if all_transactions is None:
@@ -299,9 +302,6 @@ class StockScreener:
                     transactions_by_ticker[ticker_upper] = []
                 transactions_by_ticker[ticker_upper].append(tx)
 
-        # Filter tickers in our candidate list
-        tickers_set = set(t.upper() for t in tickers)
-
         for ticker in tickers:
             ticker_upper = ticker.upper()
             transactions = transactions_by_ticker.get(ticker_upper, [])
@@ -311,10 +311,11 @@ class StockScreener:
                     "score": 0,
                     "buyers": 0,
                     "total_value": 0,
+                    "has_insider_activity": False,
                 }
                 continue
 
-            # Filter to purchases only (already filtered in scanner, but double-check)
+            # Filter to purchases only
             purchases = [t for t in transactions if t.is_purchase]
 
             if not purchases:
@@ -322,6 +323,7 @@ class StockScreener:
                     "score": 0,
                     "buyers": 0,
                     "total_value": 0,
+                    "has_insider_activity": False,
                 }
                 continue
 
@@ -331,15 +333,7 @@ class StockScreener:
             unique_buyers = len(set(t.insider_cik for t in purchases))
             total_value = sum(t.total_value for t in purchases)
 
-            insider_data[ticker] = {
-                "score": score_data["score"],
-                "buyers": unique_buyers,
-                "total_value": total_value,
-                "factors": score_data.get("factors", {}),
-            }
-
-            # Check if passes insider criteria
-            # Any of: CEO/CFO buy, 3+ buyers, high value purchase
+            # Check for strong insider signals (for display/ranking boost)
             has_ceo_cfo = any(
                 t.officer_title
                 and ("CEO" in t.officer_title.upper() or "CFO" in t.officer_title.upper())
@@ -348,10 +342,17 @@ class StockScreener:
             has_cluster = unique_buyers >= self.settings.min_cluster_buyers
             has_high_value = total_value >= self.settings.min_purchase_value
 
-            if has_ceo_cfo or has_cluster or has_high_value:
-                passed.append(ticker)
+            insider_data[ticker] = {
+                "score": score_data["score"],
+                "buyers": unique_buyers,
+                "total_value": total_value,
+                "factors": score_data.get("factors", {}),
+                "has_insider_activity": True,
+                "has_strong_signal": has_ceo_cfo or has_cluster or has_high_value,
+            }
 
-        return passed, insider_data
+        # All tickers pass through - insider is now a scoring boost, not a gate
+        return tickers, insider_data
 
     def stage_4_sentiment_filter(
         self,
@@ -555,12 +556,12 @@ class StockScreener:
             if all_results[ticker].failed_stage is None:
                 all_results[ticker].failed_stage = "stage_2"
 
-        # Stage 3: Insider filter
-        # Try to use cached insider data first, fall back to live scan
+        # Stage 3: Insider enrichment (no longer a hard filter)
+        # All momentum stocks pass through - insider activity boosts ranking
         cached_transactions = self._load_cached_insider_transactions(
             days_back=self.settings.insider_lookback_days
         )
-        stage_3, insider_data = self.stage_3_insider_filter(
+        stage_3, insider_data = self.stage_3_insider_enrich(
             stage_2,
             all_transactions=cached_transactions if cached_transactions else None,
         )
@@ -573,9 +574,7 @@ class StockScreener:
 
         for ticker in stage_3:
             all_results[ticker].passed_stages.append("stage_3")
-        for ticker in set(stage_2) - set(stage_3):
-            if all_results[ticker].failed_stage is None:
-                all_results[ticker].failed_stage = "stage_3"
+        # No tickers fail stage_3 anymore - it's enrichment, not filtering
 
         # Stage 4: Sentiment filter
         stage_4, sentiment_data = self.stage_4_sentiment_filter(stage_3)
