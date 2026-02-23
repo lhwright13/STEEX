@@ -41,17 +41,17 @@ class DataProvider(ABC):
     @classmethod
     def _init_db_cache(cls) -> None:
         """Lazy-initialize the shared DBCache from settings."""
-        if cls._db_cache is not None or not cls._db_cache_enabled:
+        if DataProvider._db_cache is not None or not DataProvider._db_cache_enabled:
             return
         try:
             from config.settings import get_settings
             settings = get_settings()
             if settings.cache_enabled:
-                cls._db_cache = DBCache(settings.cache_db_path)
+                DataProvider._db_cache = DBCache(settings.cache_db_path)
             else:
-                cls._db_cache_enabled = False
+                DataProvider._db_cache_enabled = False
         except Exception:
-            cls._db_cache_enabled = False
+            DataProvider._db_cache_enabled = False
 
     def _get_cache_key(self, *args, **kwargs) -> str:
         """Generate cache key from arguments."""
