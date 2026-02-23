@@ -107,6 +107,8 @@ class SentimentProvider(DataProvider):
     APIs are only used to fetch news headlines for VADER to analyze.
     """
 
+    default_ttl = 6 * 3600  # 6 hours
+
     # API endpoints
     ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
     FINNHUB_URL = "https://finnhub.io/api/v1"

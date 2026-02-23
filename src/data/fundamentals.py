@@ -55,6 +55,8 @@ class FundamentalsProvider(DataProvider):
     fundamental data for stocks.
     """
 
+    default_ttl = 7 * 24 * 3600  # 7 days
+
     # Cache TTL in seconds (24 hours for fundamental data)
     CACHE_TTL = 86400
 

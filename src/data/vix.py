@@ -12,6 +12,8 @@ from .base import DataProvider
 class VixProvider(DataProvider):
     """Fetches VIX data from Yahoo Finance."""
 
+    default_ttl = 4 * 3600  # 4 hours
+
     VIX_TICKER = "^VIX"
 
     def fetch(

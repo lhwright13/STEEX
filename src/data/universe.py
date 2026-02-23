@@ -18,6 +18,8 @@ INSIDER_CACHE_FILE = Path(__file__).parent.parent.parent / "data" / "cache" / "h
 class Universe(DataProvider):
     """Manages the stock universe for screening."""
 
+    default_ttl = 24 * 3600  # 24 hours
+
     # Static S&P 500 list (updated periodically)
     # This avoids external dependencies for the base list
     _SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"

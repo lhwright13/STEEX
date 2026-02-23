@@ -23,6 +23,10 @@ pytz>=2023.3
 # Sentiment Analysis
 vaderSentiment>=3.3.2
 
+# Symbolic Regression
+pysr>=0.18.0
+sympy>=1.12
+
 # Development
 pytest>=7.0.0
 pytest-mock>=3.10.0

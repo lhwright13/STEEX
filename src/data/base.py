@@ -2,13 +2,31 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 import pandas as pd
 
+from .cache import DBCache
+
 
 class DataProvider(ABC):
-    """Abstract base class for all data providers."""
+    """Abstract base class for all data providers.
+
+    Provides a two-level cache:
+      L1 - in-memory dict (fast, lost between sessions)
+      L2 - SQLite via DBCache (persistent across sessions)
+
+    Subclasses can set ``default_ttl`` (seconds) as a class attribute to
+    control how long their data lives in the persistent cache.
+    """
+
+    # Shared across all provider instances; lazy-initialized on first use.
+    _db_cache: ClassVar[Optional[DBCache]] = None
+    _db_cache_enabled: ClassVar[bool] = True
+
+    # Subclasses override this to set their own default TTL (seconds).
+    # 4 hours is a safe default for intraday-ish data.
+    default_ttl: ClassVar[float] = 4 * 3600
 
     def __init__(self, cache_enabled: bool = True):
         """Initialize provider with optional caching.
@@ -18,24 +36,69 @@ class DataProvider(ABC):
         """
         self.cache_enabled = cache_enabled
         self._cache: dict[str, Any] = {}
+        self._init_db_cache()
+
+    @classmethod
+    def _init_db_cache(cls) -> None:
+        """Lazy-initialize the shared DBCache from settings."""
+        if cls._db_cache is not None or not cls._db_cache_enabled:
+            return
+        try:
+            from config.settings import get_settings
+            settings = get_settings()
+            if settings.cache_enabled:
+                cls._db_cache = DBCache(settings.cache_db_path)
+            else:
+                cls._db_cache_enabled = False
+        except Exception:
+            cls._db_cache_enabled = False
 
     def _get_cache_key(self, *args, **kwargs) -> str:
         """Generate cache key from arguments."""
         return f"{self.__class__.__name__}:{args}:{kwargs}"
 
     def _get_from_cache(self, key: str) -> Optional[Any]:
-        """Get item from cache if available."""
+        """Get item from cache if available.
+
+        Checks the in-memory L1 cache first, then falls through to
+        the persistent L2 SQLite cache.
+        """
         if not self.cache_enabled:
             return None
-        return self._cache.get(key)
 
-    def _set_cache(self, key: str, value: Any) -> None:
-        """Store item in cache."""
-        if self.cache_enabled:
-            self._cache[key] = value
+        # L1: in-memory
+        value = self._cache.get(key)
+        if value is not None:
+            return value
+
+        # L2: persistent SQLite
+        if self._db_cache is not None:
+            value = self._db_cache.get(key)
+            if value is not None:
+                # Promote to L1 so the next lookup is instant
+                self._cache[key] = value
+                return value
+
+        return None
+
+    def _set_cache(self, key: str, value: Any, ttl: Optional[float] = None) -> None:
+        """Store item in both L1 (in-memory) and L2 (SQLite) caches."""
+        if not self.cache_enabled:
+            return
+
+        # L1
+        self._cache[key] = value
+
+        # L2
+        if self._db_cache is not None:
+            ttl = ttl if ttl is not None else self.default_ttl
+            try:
+                self._db_cache.set(key, value, ttl)
+            except Exception:
+                pass  # don't let cache failures break the provider
 
     def clear_cache(self) -> None:
-        """Clear the cache."""
+        """Clear the in-memory cache."""
         self._cache.clear()
 
     @abstractmethod

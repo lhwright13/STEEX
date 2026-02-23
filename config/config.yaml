@@ -35,9 +35,9 @@ min_history_days: 126            # Minimum trading history required (6 months)
 # -----------------------------------------------------------------------------
 # Position Management
 # -----------------------------------------------------------------------------
-max_positions: 20                # Maximum concurrent positions
+max_positions: 10                # Optimized: concentrated portfolio outperforms
 daily_picks: 2                   # Number of stocks to pick daily
-position_size_pct: 0.05          # Default position size as fraction of portfolio (5%)
+position_size_pct: 0.04          # Optimized: 4% position size (was 5%)
 max_sector_pct: 0.30             # Maximum sector exposure (30%)
 max_single_position_pct: 0.20    # Maximum single position size (10%)
 min_cash_reserve_pct: 0.10       # Minimum cash reserve (10%)
@@ -55,9 +55,9 @@ vol_high_position_pct: 0.03      # Position size for high volatility stocks (3%)
 # -----------------------------------------------------------------------------
 # Exit Parameters
 # -----------------------------------------------------------------------------
-initial_stop_pct: 0.12           # Initial stop loss percentage (12%)
-max_hold_days: 60                # Maximum holding period in trading days
-dead_money_days: 10              # Days below entry before exit as dead money
+initial_stop_pct: 0.10           # Optimized: tighter 10% stop (was 12%)
+max_hold_days: 30                # Optimized: shorter hold (was 60) - forces rotation
+dead_money_days: 999             # Optimized: disabled - let stops handle exits
 cooling_off_days: 14             # Trading days to block re-entry after stop-loss
 
 # -----------------------------------------------------------------------------
@@ -72,7 +72,7 @@ vix_tight_stop_pct: 0.05         # Tighter stop when VIX is elevated (5%)
 # -----------------------------------------------------------------------------
 trail_stop_10: 0.12              # Trail distance after 10% gain
 trail_stop_20: 0.15              # Trail distance after 20% gain
-trail_stop_30: 0.18              # Trail distance after 30% gain
+trail_stop_30: 0.15              # Optimized: tighter at 30%+ (was 0.18) - lock in big gains
 
 # -----------------------------------------------------------------------------
 # Scoring Weights (must sum to 1.0)
@@ -102,6 +102,24 @@ options_bearish_pc_threshold: 1.0  # Put/call ratio above this is bearish
 options_cache_ttl: 3600          # Cache TTL in seconds (1 hour)
 
 # -----------------------------------------------------------------------------
+# PySR Symbolic Regression (disabled by default)
+# -----------------------------------------------------------------------------
+pysr_enabled: true               # Enable PySR scoring in pipeline
+pysr_model_dir: "data/ml/models" # Directory for trained models
+pysr_dataset_dir: "data/ml/datasets"  # Directory for training datasets
+pysr_niterations: 40             # PySR search iterations
+pysr_max_complexity: 25          # Max equation complexity in search
+pysr_max_selected_complexity: 20 # Max complexity for selected equation
+pysr_populations: 15             # PySR population count
+pysr_parsimony: 0.0032           # Prefer simpler equations
+pysr_timeout: 3600               # Training timeout in seconds
+pysr_train_months: 12            # Walk-forward training window
+pysr_val_months: 1               # Walk-forward validation window
+pysr_walk_forward_folds: 6       # Number of walk-forward folds
+pysr_sample_frequency_days: 5    # Days between training samples
+weight_pysr: 0.10                # PySR weight in composite scoring
+
+# -----------------------------------------------------------------------------
 # Drawdown Rules
 # -----------------------------------------------------------------------------
 drawdown_review: 0.10            # Drawdown level to review strategy (10%)
@@ -120,8 +138,23 @@ drawdown_exit: 0.25              # Drawdown level to exit all positions (25%)
 estimated_cost_per_trade: 0.005  # 0.5% per trade (includes spread + PFOF)
 
 # -----------------------------------------------------------------------------
+# SQLite Cache
+# -----------------------------------------------------------------------------
+cache_db_path: "data/cache.db"   # SQLite cache database file path
+cache_enabled: true              # Enable persistent SQLite cache for data providers
+
+# -----------------------------------------------------------------------------
 # Data Paths
 # -----------------------------------------------------------------------------
 data_dir: "data"                 # Directory for cached data
 positions_file: "positions.json" # File for position tracking
 trades_file: "trades.json"       # File for trade log
+
+# -----------------------------------------------------------------------------
+# Manager Settings
+# -----------------------------------------------------------------------------
+manager_portfolio_value: 50000   # Total portfolio value for position sizing
+manager_report_dir: "data/reports"  # Directory for daily reports
+manager_max_daily_entries: 2     # Maximum new positions per day
+manager_min_score_entry: 55.0    # Minimum composite score for entry
+manager_require_insider: false   # Require insider activity for entry

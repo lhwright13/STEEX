@@ -61,6 +61,8 @@ class OptionsProvider(DataProvider):
     - Implied volatility
     """
 
+    default_ttl = 4 * 3600  # 4 hours
+
     # Cache TTL in seconds (1 hour for options data)
     CACHE_TTL = 3600
 

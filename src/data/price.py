@@ -12,6 +12,8 @@ from .base import DataProvider
 class PriceProvider(DataProvider):
     """Fetches OHLCV price data from Yahoo Finance."""
 
+    default_ttl = 4 * 3600  # 4 hours
+
     def fetch(
         self,
         ticker: str,

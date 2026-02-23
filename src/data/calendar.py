@@ -12,6 +12,8 @@ from .base import DataProvider
 class EarningsCalendar(DataProvider):
     """Provides earnings calendar information."""
 
+    default_ttl = 24 * 3600  # 24 hours
+
     def __init__(self, cache_enabled: bool = True):
         """Initialize calendar provider."""
         super().__init__(cache_enabled)

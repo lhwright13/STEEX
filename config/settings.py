@@ -214,6 +214,50 @@ class Settings(BaseSettings):
         default=3600, description="Options data cache TTL in seconds (1 hour)"
     )
 
+    # PySR symbolic regression parameters
+    pysr_enabled: bool = Field(
+        default=False, description="Enable PySR symbolic regression scoring"
+    )
+    pysr_model_dir: str = Field(
+        default="data/ml/models", description="Directory for trained PySR models"
+    )
+    pysr_dataset_dir: str = Field(
+        default="data/ml/datasets", description="Directory for training datasets"
+    )
+    pysr_niterations: int = Field(
+        default=40, description="PySR number of iterations"
+    )
+    pysr_max_complexity: int = Field(
+        default=25, description="Maximum equation complexity in PySR search"
+    )
+    pysr_max_selected_complexity: int = Field(
+        default=20, description="Maximum complexity for selected equation"
+    )
+    pysr_populations: int = Field(
+        default=15, description="Number of populations in PySR"
+    )
+    pysr_parsimony: float = Field(
+        default=0.0032, description="Parsimony coefficient (prefer simpler equations)"
+    )
+    pysr_timeout: int = Field(
+        default=3600, description="PySR training timeout in seconds"
+    )
+    pysr_train_months: int = Field(
+        default=12, description="Training window in months for walk-forward"
+    )
+    pysr_val_months: int = Field(
+        default=1, description="Validation window in months for walk-forward"
+    )
+    pysr_walk_forward_folds: int = Field(
+        default=6, description="Number of walk-forward folds"
+    )
+    pysr_sample_frequency_days: int = Field(
+        default=5, description="Days between training samples"
+    )
+    weight_pysr: float = Field(
+        default=0.0, description="PySR score weight in composite (0 = disabled)"
+    )
+
     # Drawdown rules
     drawdown_review: float = Field(
         default=0.10, description="Drawdown level to review strategy (10%)"
@@ -233,12 +277,37 @@ class Settings(BaseSettings):
         default=0.005, description="Estimated transaction cost per trade (0.5%)"
     )
 
+    # SQLite cache
+    cache_db_path: str = Field(
+        default="data/cache.db", description="SQLite cache database file path"
+    )
+    cache_enabled: bool = Field(
+        default=True, description="Enable persistent SQLite cache for data providers"
+    )
+
     # Data paths
     data_dir: str = Field(default="data", description="Directory for cached data")
     positions_file: str = Field(
         default="positions.json", description="File for position tracking"
     )
     trades_file: str = Field(default="trades.json", description="File for trade log")
+
+    # Manager settings
+    manager_portfolio_value: float = Field(
+        default=50000, description="Total portfolio value for position sizing"
+    )
+    manager_report_dir: str = Field(
+        default="data/reports", description="Directory for daily reports"
+    )
+    manager_max_daily_entries: int = Field(
+        default=2, description="Maximum new positions per day"
+    )
+    manager_min_score_entry: float = Field(
+        default=55.0, description="Minimum composite score for entry"
+    )
+    manager_require_insider: bool = Field(
+        default=False, description="Require insider activity for entry"
+    )
 
     @property
     def trailing_stops(self) -> Dict[float, float]:

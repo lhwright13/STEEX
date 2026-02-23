@@ -76,6 +76,7 @@ class DataLoader:
         self._position_manager = None
         self._trade_tracker = None
         self._screener = None
+        self._pysr_predictor = None
 
     @property
     def price_provider(self) -> PriceProvider:
@@ -109,8 +110,54 @@ class DataLoader:
     def screener(self) -> StockScreener:
         """Lazy-load stock screener."""
         if self._screener is None:
-            self._screener = StockScreener(self.settings)
+            self._screener = StockScreener(
+                self.settings,
+                pysr_predictor=self.pysr_predictor if self.settings.pysr_enabled else None,
+            )
         return self._screener
+
+    @property
+    def pysr_predictor(self):
+        """Lazy-load PySR predictor."""
+        if self._pysr_predictor is None:
+            try:
+                from src.ml.predictor import PySRPredictor
+                self._pysr_predictor = PySRPredictor(self.settings)
+            except ImportError:
+                self._pysr_predictor = None
+        return self._pysr_predictor
+
+    def get_pysr_equations(self) -> Optional[dict]:
+        """Get discovered PySR equations for display."""
+        predictor = self.pysr_predictor
+        if predictor is None or not predictor.is_available():
+            return None
+        return predictor.get_active_equations()
+
+    def get_pysr_walk_forward_results(self) -> Optional[dict]:
+        """Get walk-forward results if a results file exists."""
+        from pathlib import Path
+        import json
+
+        model_dir = Path(self.settings.pysr_model_dir)
+        results_file = model_dir / "walk_forward_results.json"
+        if results_file.exists():
+            try:
+                with open(results_file) as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return None
+
+    def get_pysr_predictions(self, tickers: list) -> Optional[dict]:
+        """Get PySR predictions for given tickers."""
+        predictor = self.pysr_predictor
+        if predictor is None or not predictor.is_available():
+            return None
+        try:
+            return predictor.predict_batch(tickers)
+        except Exception:
+            return None
 
     def get_current_vix(self) -> Optional[float]:
         """Get current VIX level."""
