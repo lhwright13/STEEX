@@ -1,6 +1,7 @@
 """5-stage stock screening pipeline."""
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,6 +20,8 @@ from ..sec.scanners.insider import InsiderScanner
 from ..sec.models import InsiderTransaction
 from ..sec.scanners.signals import calculate_cluster_score, find_cluster_buys
 from config.settings import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 # Cache file for historical insider data
 INSIDER_CACHE_FILE = Path(__file__).parent.parent.parent / "data" / "cache" / "historical_insiders.json"
@@ -251,7 +254,7 @@ class StockScreener:
             if (
                 momentum_6m >= self.settings.momentum_min_return
                 and momentum_1m >= 0.05  # Require at least 5% recent momentum
-                and percentile <= self.settings.overextension_percentile
+                and (not self.settings.overextension_filter_enabled or percentile <= self.settings.overextension_percentile)
             ):
                 # Check MA alignment
                 alignment = self.technical.check_trend_alignment(
@@ -299,6 +302,7 @@ class StockScreener:
                     verbose=False,
                 )
             except Exception:
+                logger.debug("Insider scan failed for stage 3, using empty transactions", exc_info=True)
                 all_transactions = []
 
         # Group transactions by ticker
@@ -391,6 +395,7 @@ class StockScreener:
             try:
                 macro_sentiment = self.geopolitical_provider.get_macro_sentiment()
             except Exception:
+                logger.debug("Failed to fetch macro/geopolitical sentiment", exc_info=True)
                 macro_sentiment = None
 
         for ticker in tickers:
@@ -442,6 +447,7 @@ class StockScreener:
 
             except Exception:
                 # On error, give neutral score and pass through
+                logger.debug("Sentiment analysis failed for %s, using neutral score", ticker, exc_info=True)
                 sentiment_data[ticker] = {
                     "score": 50,
                     "stock_score": 50,
@@ -506,6 +512,7 @@ class StockScreener:
 
             except Exception:
                 # On error, pass through with neutral score
+                logger.debug("Fundamental analysis failed for %s, using neutral score", ticker, exc_info=True)
                 fundamental_data[ticker] = {
                     "score": 50.0,
                     "passed": True,
@@ -633,6 +640,7 @@ class StockScreener:
                     all_results[ticker].iv_rank = options_data.avg_call_iv
                 except Exception:
                     # Options data is enrichment, not critical
+                    logger.debug("Options data fetch failed for %s, using neutral score", ticker, exc_info=True)
                     all_results[ticker].options_score = 50.0
 
         # PySR enrichment (if enabled and available)
@@ -648,7 +656,7 @@ class StockScreener:
                             all_results[ticker].pysr_equation = predictions[ticker].equation_used
                             all_results[ticker].pysr_confidence = predictions[ticker].confidence
                 except Exception:
-                    pass
+                    logger.debug("PySR prediction failed for batch, skipping enrichment", exc_info=True)
 
         # Final candidates
         final_candidates = [all_results[t] for t in stage_5]

@@ -16,8 +16,10 @@ from rich import box
 
 from config.settings import Settings, get_settings
 from ..broker.base import Broker
+from ..data.geopolitical import get_ticker_sector
 from ..data.price import PriceProvider
 from ..data.vix import VixProvider
+from ..indicators.technical import TechnicalIndicators
 from ..portfolio.positions import Position, PositionManager
 from ..portfolio.tracker import TradeTracker
 from ..portfolio.risk import RiskManager
@@ -70,6 +72,7 @@ class QuantManager:
             self.price_provider,
             self.vix_provider,
         )
+        self.technical = TechnicalIndicators(self.price_provider)
         self.screener = screener or StockScreener(settings=self.settings)
         self.ranker = ranker or StockRanker(self.settings)
 
@@ -396,6 +399,39 @@ class QuantManager:
     # ExecutionAgent
     # -------------------------------------------------------------------------
 
+    def _get_sector_map(self) -> Dict[str, str]:
+        """Build ticker-to-sector map for current positions."""
+        sector_map = {}
+        for pos in self.position_manager.get_all_positions():
+            sector_map[pos.ticker] = get_ticker_sector(pos.ticker)
+        return sector_map
+
+    def _calculate_position_size_pct(
+        self, ticker: str, regime: Dict
+    ) -> float:
+        """Calculate position size as a fraction of portfolio value.
+
+        Applies regime multiplier, volatility adjustment, and
+        max_single_position_pct cap.
+        """
+        base_pct = self.settings.position_size_pct * regime["sizing_multiplier"]
+
+        # Volatility-adjusted sizing
+        if self.settings.vol_sizing_enabled:
+            atr_pct = self.technical.get_atr_percent(ticker)
+            if atr_pct is not None:
+                if atr_pct < self.settings.vol_low_threshold:
+                    base_pct = self.settings.vol_low_position_pct
+                elif atr_pct < self.settings.vol_med_threshold:
+                    base_pct = self.settings.vol_med_position_pct
+                else:
+                    base_pct = self.settings.vol_high_position_pct
+                # Still apply regime multiplier on top
+                base_pct *= regime["sizing_multiplier"]
+
+        # Cap at max single position size
+        return min(base_pct, self.settings.max_single_position_pct)
+
     def generate_buy_list(
         self, ranked: List[RankedStock], regime: Dict
     ) -> List[Dict]:
@@ -416,6 +452,12 @@ class QuantManager:
                 exit_dt = datetime.fromisoformat(trade.exit_date)
                 if exit_dt > cutoff:
                     recent_stops.add(trade.ticker)
+
+        # Build sector map for concentration checks
+        sector_map = self._get_sector_map()
+        sectors_over_limit = set(
+            self.risk_manager.check_sector_limits(sector_map)
+        )
 
         for pick in ranked:
             if entries_today >= self.settings.manager_max_daily_entries:
@@ -448,13 +490,19 @@ class QuantManager:
                 self._log("execution", f"Skip {ticker}: cooling-off period after stop-loss")
                 continue
 
+            # Sector concentration check
+            ticker_sector = get_ticker_sector(ticker)
+            if ticker_sector in sectors_over_limit:
+                self._log("execution", f"Skip {ticker}: sector {ticker_sector} over limit")
+                continue
+
             # Get price and calculate sizing
             price = self.price_provider.get_latest_price(ticker)
             if price is None:
                 continue
 
-            base_size_pct = self.settings.position_size_pct * regime["sizing_multiplier"]
-            target_value = portfolio_value * base_size_pct
+            size_pct = self._calculate_position_size_pct(ticker, regime)
+            target_value = portfolio_value * size_pct
             shares = int(target_value / price)
             if shares < 1:
                 continue
@@ -472,10 +520,13 @@ class QuantManager:
                 "cost": round(price * shares, 2),
                 "stop": round(stop_price, 2),
                 "score": round(pick.composite_score, 1),
-                "size_pct": round(base_size_pct * 100, 1),
+                "size_pct": round(size_pct * 100, 1),
                 "reasons": reasons,
             })
             entries_today += 1
+
+            # Track the new sector for subsequent iterations
+            sector_map[ticker] = ticker_sector
 
         self.report["entries"] = buy_list
         self._log("execution", f"Generated {len(buy_list)} buy candidates")

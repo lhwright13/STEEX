@@ -305,6 +305,9 @@ class SignalGenerator:
         Returns:
             ExitSignal if dead money, None otherwise
         """
+        if not self.settings.dead_money_enabled:
+            return None
+
         current_date = current_date or datetime.now()
         days_held = (current_date - entry_date).days
         trading_days = int(days_held * 5 / 7)

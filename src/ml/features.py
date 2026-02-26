@@ -145,8 +145,22 @@ class FeatureBuilder:
         except Exception:
             features["momentum_1m"] = np.nan
 
-        # Momentum percentile requires cross-sectional data, set NaN for single ticker
-        features["momentum_percentile"] = np.nan
+        # Compute momentum percentile against the full universe
+        try:
+            from ..data.universe import Universe
+            universe = Universe()
+            universe_tickers = universe.get_sp500()
+            if ticker not in universe_tickers:
+                universe_tickers = universe_tickers + [ticker]
+            percentiles = self.momentum_calc.get_momentum_percentiles(
+                universe_tickers, lookback_days=126
+            )
+            if ticker in percentiles:
+                features["momentum_percentile"] = percentiles[ticker]["percentile"]
+            else:
+                features["momentum_percentile"] = np.nan
+        except Exception:
+            features["momentum_percentile"] = np.nan
 
         # Technical features
         try:

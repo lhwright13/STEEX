@@ -7,6 +7,7 @@ Usage:
     python scripts/run_manager.py monitor            # Midday check
     python scripts/run_manager.py post_market        # End of day
     python scripts/run_manager.py full               # All three
+    python scripts/run_manager.py train              # Run PySR walk-forward training
     python scripts/run_manager.py --portfolio 50000  # Set portfolio value
     python scripts/run_manager.py --dry-run          # Show plan without executing
     python scripts/run_manager.py --yes              # Auto-confirm entries
@@ -33,7 +34,7 @@ def main():
         "mode",
         nargs="?",
         default="pre_market",
-        choices=["pre_market", "monitor", "post_market", "full"],
+        choices=["pre_market", "monitor", "post_market", "full", "train"],
         help="Operating mode (default: pre_market)",
     )
     parser.add_argument(
@@ -109,6 +110,24 @@ def main():
             dry_run=args.dry_run,
             verbose=args.verbose,
         )
+    elif args.mode == "train":
+        from src.ml.trainer import PySRTrainer
+        from src.ml.dataset import DatasetBuilder
+
+        print("Building training dataset...")
+        builder = DatasetBuilder(settings=settings)
+        dataset = builder.build_dataset()
+        if dataset is None or dataset.X.empty:
+            print("No training data available. Run the pipeline first to populate data.")
+            sys.exit(1)
+
+        print(f"Dataset: {len(dataset.X)} samples, {len(dataset.feature_names)} features")
+        trainer = PySRTrainer(settings=settings)
+        print("Starting PySR walk-forward training...")
+        result = trainer.walk_forward_train(dataset)
+        print(f"Training complete: {len(result.folds)} folds")
+        for fold in result.folds:
+            print(f"  Fold {fold.fold_number}: {len(fold.equations)} equations discovered")
     elif args.mode == "full":
         manager.run_full_cycle(
             dry_run=args.dry_run,

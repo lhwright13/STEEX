@@ -1,5 +1,6 @@
 """Options intelligence provider using Yahoo Finance data."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -8,6 +9,8 @@ import numpy as np
 import yfinance as yf
 
 from .base import DataProvider
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -73,19 +76,6 @@ class OptionsProvider(DataProvider):
             cache_enabled: Whether to cache results
         """
         super().__init__(cache_enabled)
-        self._cache_timestamps: Dict[str, datetime] = {}
-
-    def _is_cache_valid(self, key: str) -> bool:
-        """Check if cache entry is still valid."""
-        if key not in self._cache_timestamps:
-            return False
-        age = (datetime.now() - self._cache_timestamps[key]).total_seconds()
-        return age < self.CACHE_TTL
-
-    def _set_cache_with_timestamp(self, key: str, value: Any) -> None:
-        """Set cache with timestamp tracking."""
-        self._set_cache(key, value)
-        self._cache_timestamps[key] = datetime.now()
 
     def fetch(self, ticker: str) -> OptionsData:
         """Fetch options data for a ticker.
@@ -246,6 +236,7 @@ class OptionsProvider(DataProvider):
 
         except Exception:
             # Return neutral data on error
+            logger.debug("Failed to fetch options data for %s, returning neutral data", ticker, exc_info=True)
             return OptionsData(ticker=ticker, options_score=50.0)
 
     def get_options_batch(
@@ -311,6 +302,7 @@ class OptionsProvider(DataProvider):
             return max_pain_strike
 
         except Exception:
+            logger.debug("Max pain calculation failed for options chain", exc_info=True)
             return None
 
     def _calculate_score(self, data: OptionsData) -> float:

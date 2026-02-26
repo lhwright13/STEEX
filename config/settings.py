@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     overextension_percentile: float = Field(
         default=0.95, description="Top 5% excluded as overextended"
     )
+    overextension_filter_enabled: bool = Field(
+        default=False, description="Enable overextension percentile filter"
+    )
 
     # Moving averages
     ma_short: int = Field(default=50, description="Short-term moving average period")
@@ -84,10 +87,10 @@ class Settings(BaseSettings):
     )
 
     # Position management
-    max_positions: int = Field(default=20, description="Maximum concurrent positions")
+    max_positions: int = Field(default=10, description="Maximum concurrent positions")
     daily_picks: int = Field(default=2, description="Number of stocks to pick daily")
     position_size_pct: float = Field(
-        default=0.05, description="Position size as fraction of portfolio (5%)"
+        default=0.04, description="Position size as fraction of portfolio (4%)"
     )
     max_sector_pct: float = Field(
         default=0.30, description="Maximum sector exposure (30%)"
@@ -124,10 +127,13 @@ class Settings(BaseSettings):
         default=0.12, description="Initial stop loss percentage (12%)"
     )
     max_hold_days: int = Field(
-        default=60, description="Maximum holding period in trading days"
+        default=30, description="Maximum holding period in trading days"
     )
     dead_money_days: int = Field(
         default=10, description="Days below entry before exit as dead money"
+    )
+    dead_money_enabled: bool = Field(
+        default=False, description="Enable dead money exit signal"
     )
     cooling_off_days: int = Field(
         default=14, description="Trading days to block re-entry after stop-loss"
@@ -152,7 +158,7 @@ class Settings(BaseSettings):
         default=0.15, description="Trail distance after 20% gain"
     )
     trail_stop_30: float = Field(
-        default=0.18, description="Trail distance after 30% gain"
+        default=0.15, description="Trail distance after 30% gain"
     )
 
     # Scoring weights (must sum to 1.0)
@@ -216,7 +222,7 @@ class Settings(BaseSettings):
 
     # PySR symbolic regression parameters
     pysr_enabled: bool = Field(
-        default=False, description="Enable PySR symbolic regression scoring"
+        default=True, description="Enable PySR symbolic regression scoring"
     )
     pysr_model_dir: str = Field(
         default="data/ml/models", description="Directory for trained PySR models"
@@ -255,7 +261,7 @@ class Settings(BaseSettings):
         default=5, description="Days between training samples"
     )
     weight_pysr: float = Field(
-        default=0.0, description="PySR score weight in composite (0 = disabled)"
+        default=0.10, description="PySR score weight in composite scoring"
     )
 
     # Drawdown rules

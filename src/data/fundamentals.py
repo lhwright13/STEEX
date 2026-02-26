@@ -1,5 +1,6 @@
 """Fundamental analysis provider using Yahoo Finance data."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -7,6 +8,8 @@ from typing import Any, Dict, List, Optional
 import yfinance as yf
 
 from .base import DataProvider
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -67,19 +70,6 @@ class FundamentalsProvider(DataProvider):
             cache_enabled: Whether to cache results
         """
         super().__init__(cache_enabled)
-        self._cache_timestamps: Dict[str, datetime] = {}
-
-    def _is_cache_valid(self, key: str) -> bool:
-        """Check if cache entry is still valid."""
-        if key not in self._cache_timestamps:
-            return False
-        age = (datetime.now() - self._cache_timestamps[key]).total_seconds()
-        return age < self.CACHE_TTL
-
-    def _set_cache_with_timestamp(self, key: str, value: Any) -> None:
-        """Set cache with timestamp tracking."""
-        self._set_cache(key, value)
-        self._cache_timestamps[key] = datetime.now()
 
     def fetch(self, ticker: str) -> FundamentalData:
         """Fetch fundamental data for a ticker.
@@ -146,6 +136,7 @@ class FundamentalsProvider(DataProvider):
 
         except Exception:
             # Return neutral data on error
+            logger.debug("Failed to fetch fundamentals for %s, returning neutral data", ticker, exc_info=True)
             return FundamentalData(ticker=ticker, fundamental_score=50.0)
 
     def get_fundamentals_batch(

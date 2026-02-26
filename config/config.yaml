@@ -8,7 +8,8 @@
 momentum_lookback_days: 126      # 6 months lookback for momentum calculation
 short_momentum_days: 21          # 1 month lookback for short-term momentum
 momentum_min_return: 0.15        # Minimum 6-month return (15%)
-overextension_percentile: 1.0    # Disabled - backtest showed better returns without filter
+overextension_percentile: 0.95   # Top 5% excluded as overextended
+overextension_filter_enabled: false  # Disabled - backtest showed better returns
 
 # -----------------------------------------------------------------------------
 # Moving Averages
@@ -57,7 +58,8 @@ vol_high_position_pct: 0.03      # Position size for high volatility stocks (3%)
 # -----------------------------------------------------------------------------
 initial_stop_pct: 0.10           # Optimized: tighter 10% stop (was 12%)
 max_hold_days: 30                # Optimized: shorter hold (was 60) - forces rotation
-dead_money_days: 999             # Optimized: disabled - let stops handle exits
+dead_money_days: 10              # Days below entry before exit as dead money
+dead_money_enabled: false        # Disabled - let stops handle exits
 cooling_off_days: 14             # Trading days to block re-entry after stop-loss
 
 # -----------------------------------------------------------------------------

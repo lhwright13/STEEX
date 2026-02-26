@@ -1,5 +1,6 @@
 """Stock-specific sentiment provider using free APIs and VADER NLP."""
 
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -7,6 +8,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 try:
     from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -132,26 +135,12 @@ class SentimentProvider(DataProvider):
         super().__init__(cache_enabled)
         self.alpha_vantage_key = alpha_vantage_key or os.environ.get("ALPHA_VANTAGE_API_KEY", "")
         self.finnhub_key = finnhub_key or os.environ.get("FINNHUB_API_KEY", "")
-        self._cache_timestamps: Dict[str, datetime] = {}
-
         # Initialize VADER with financial lexicon updates
         self.vader = None
         if VADER_AVAILABLE:
             self.vader = SentimentIntensityAnalyzer()
             # Add financial-specific terms to VADER lexicon
             self.vader.lexicon.update(FINANCIAL_LEXICON_UPDATES)
-
-    def _is_cache_valid(self, key: str) -> bool:
-        """Check if cache entry is still valid."""
-        if key not in self._cache_timestamps:
-            return False
-        age = (datetime.now() - self._cache_timestamps[key]).total_seconds()
-        return age < self.CACHE_TTL
-
-    def _set_cache_with_timestamp(self, key: str, value: Any) -> None:
-        """Set cache with timestamp tracking."""
-        self._set_cache(key, value)
-        self._cache_timestamps[key] = datetime.now()
 
     def fetch(self, ticker: str) -> SentimentResult:
         """Fetch sentiment for a single ticker.
@@ -279,6 +268,7 @@ class SentimentProvider(DataProvider):
             )
 
         except Exception:
+            logger.debug("Finnhub sentiment fetch failed for %s", ticker, exc_info=True)
             return None
 
     def _fetch_alpha_vantage_sentiment(self, ticker: str) -> Optional[SentimentResult]:
@@ -351,6 +341,7 @@ class SentimentProvider(DataProvider):
             )
 
         except Exception:
+            logger.debug("Alpha Vantage sentiment fetch failed for %s", ticker, exc_info=True)
             return None
 
     def _analyze_with_vader(self, headlines: List[str]) -> float:

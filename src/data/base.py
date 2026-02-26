@@ -1,5 +1,6 @@
 """Abstract base class for data providers."""
 
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, ClassVar, Optional
@@ -7,6 +8,8 @@ from typing import Any, ClassVar, Optional
 import pandas as pd
 
 from .cache import DBCache
+
+logger = logging.getLogger(__name__)
 
 
 class DataProvider(ABC):
@@ -36,6 +39,7 @@ class DataProvider(ABC):
         """
         self.cache_enabled = cache_enabled
         self._cache: dict[str, Any] = {}
+        self._cache_timestamps: dict[str, datetime] = {}
         self._init_db_cache()
 
     @classmethod
@@ -51,6 +55,7 @@ class DataProvider(ABC):
             else:
                 DataProvider._db_cache_enabled = False
         except Exception:
+            logger.debug("Failed to initialize DBCache, persistent caching disabled", exc_info=True)
             DataProvider._db_cache_enabled = False
 
     def _get_cache_key(self, *args, **kwargs) -> str:
@@ -95,7 +100,20 @@ class DataProvider(ABC):
             try:
                 self._db_cache.set(key, value, ttl)
             except Exception:
-                pass  # don't let cache failures break the provider
+                logger.debug("Failed to write to persistent cache for key %s", key, exc_info=True)
+
+    def _is_cache_valid(self, key: str) -> bool:
+        """Check if in-memory cache entry is still valid based on TTL."""
+        if key not in self._cache_timestamps:
+            return False
+        ttl = getattr(self, 'CACHE_TTL', self.default_ttl)
+        age = (datetime.now() - self._cache_timestamps[key]).total_seconds()
+        return age < ttl
+
+    def _set_cache_with_timestamp(self, key: str, value: Any) -> None:
+        """Set cache with timestamp tracking for TTL validation."""
+        self._set_cache(key, value)
+        self._cache_timestamps[key] = datetime.now()
 
     def clear_cache(self) -> None:
         """Clear the in-memory cache."""
