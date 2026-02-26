@@ -1,0 +1,40 @@
+# STEEX Scheduler Configuration
+# Controls how and when claude -p invocations run the trading pipeline.
+
+# ---------------------------------------------------------------------------
+# Defaults - applied to all modes unless overridden
+# ---------------------------------------------------------------------------
+defaults:
+  model: "sonnet"
+  max_budget_usd: 1.00
+  allowed_tools: "Bash,Read,Glob,Grep"
+  paper: true
+  dry_run: true
+  auto_confirm: true
+  output_format: "text"
+  no_session_persistence: true
+
+# ---------------------------------------------------------------------------
+# Modes - each corresponds to a run_manager.py operating mode
+# ---------------------------------------------------------------------------
+modes:
+  pre_market:
+    enabled: true
+    schedule: "30 8 * * 1-5"    # 8:30 AM ET, weekdays
+    prompt_file: "scheduler/prompts/pre_market.md"
+    max_budget_usd: 2.00
+
+  monitor:
+    enabled: true
+    schedule: "0 12 * * 1-5"    # 12:00 PM ET, weekdays
+    prompt_file: "scheduler/prompts/monitor.md"
+
+  post_market:
+    enabled: true
+    schedule: "30 16 * * 1-5"   # 4:30 PM ET, weekdays
+    prompt_file: "scheduler/prompts/post_market.md"
+
+# ---------------------------------------------------------------------------
+# Log retention
+# ---------------------------------------------------------------------------
+max_log_days: 30
