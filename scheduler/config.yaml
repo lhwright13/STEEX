@@ -9,7 +9,7 @@ defaults:
   max_budget_usd: 1.00
   allowed_tools: "Bash,Read,Glob,Grep"
   paper: true
-  dry_run: true
+  dry_run: false
   auto_confirm: true
   output_format: "text"
   no_session_persistence: true

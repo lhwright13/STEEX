@@ -15,7 +15,7 @@ from rich.table import Table
 from rich import box
 
 from config.settings import Settings, get_settings
-from ..broker.base import Broker
+from ..broker.base import AccountInfo, Broker
 from ..data.geopolitical import get_ticker_sector
 from ..data.price import PriceProvider
 from ..data.vix import VixProvider
@@ -91,8 +91,41 @@ class QuantManager:
                     f"Broker is required but failed to initialize: {e}"
                 ) from e
 
+        # Cache for broker account info (refreshed each pipeline run)
+        self._account: Optional[AccountInfo] = None
+
         self.log: List[Dict] = []
         self.report: Dict = {}
+
+    def _sync_broker(self) -> None:
+        """Sync positions and account data from broker."""
+        if not self.broker:
+            return
+
+        # Sync positions: broker is source of truth
+        result = self.position_manager.sync_from_broker(self.broker)
+        if result["added"] or result["removed"]:
+            console.print(f"  Broker sync: +{len(result['added'])} -{len(result['removed'])} positions")
+            for t in result["added"]:
+                console.print(f"    [green]+{t}[/green] (from broker)")
+            for t in result["removed"]:
+                console.print(f"    [red]-{t}[/red] (stale local)")
+
+        # Cache account info
+        self._account = self.broker.get_account()
+
+    def _get_portfolio_value(self) -> float:
+        """Get current portfolio value from broker, falling back to config."""
+        if self._account is not None:
+            return self._account.equity
+        return self.settings.manager_portfolio_value
+
+    def _get_cash(self) -> float:
+        """Get available cash from broker, falling back to estimate."""
+        if self._account is not None:
+            return self._account.cash
+        total_invested = self.position_manager.get_total_cost_basis()
+        return self._get_portfolio_value() - total_invested
 
     def _log(self, action: str, detail: str, data: Optional[Dict] = None):
         entry = {
@@ -253,7 +286,11 @@ class QuantManager:
     # -------------------------------------------------------------------------
 
     def assess_portfolio_risk(self) -> Dict:
-        """Full portfolio risk assessment."""
+        """Full portfolio risk assessment.
+
+        Uses broker account data for portfolio value and cash.
+        Positions are already synced from broker at pipeline start.
+        """
         self._log("risk", "Assessing portfolio risk")
 
         positions = self.position_manager.get_all_positions()
@@ -263,6 +300,8 @@ class QuantManager:
                 "total_value": 0,
                 "daily_pnl": 0,
                 "exits_needed": 0,
+                "portfolio_equity": self._get_portfolio_value(),
+                "cash": self._get_cash(),
                 "vix": self.risk_manager.check_vix_risk(),
             }
             self.report["portfolio"] = summary
@@ -287,9 +326,9 @@ class QuantManager:
         # VIX risk
         vix_risk = self.risk_manager.check_vix_risk()
 
-        # Portfolio drawdown
-        portfolio_value = self.settings.manager_portfolio_value
-        cash = portfolio_value - port_summary["total_cost"]
+        # Portfolio drawdown - use broker account data
+        portfolio_value = self._get_portfolio_value()
+        cash = self._get_cash()
         drawdown = self.risk_manager.calculate_portfolio_drawdown(
             portfolio_value, current_prices, max(0, cash)
         )
@@ -300,43 +339,23 @@ class QuantManager:
             1 for _, signals in all_exits if any(s.urgency == "immediate" for s in signals)
         )
 
-        # Broker position sync (detect drift)
-        broker_drift = []
-        if self.broker:
-            try:
-                broker_positions = {
-                    p.ticker: p for p in self.broker.get_positions()
-                }
-                local_tickers = {pos.ticker for pos in positions}
-                broker_tickers = set(broker_positions.keys())
-
-                for t in local_tickers - broker_tickers:
-                    broker_drift.append(f"{t}: local only (not in broker)")
-                for t in broker_tickers - local_tickers:
-                    broker_drift.append(f"{t}: broker only (not tracked locally)")
-
-                if broker_drift:
-                    self._log("risk", "Position drift detected", {"drift": broker_drift})
-                    for msg in broker_drift:
-                        console.print(f"  [yellow]DRIFT: {msg}[/yellow]")
-            except Exception as e:
-                self._log("risk", f"Broker position sync failed: {e}")
-
         summary = {
             "position_count": port_summary["position_count"],
             "total_cost": port_summary["total_cost"],
             "total_value": port_summary["total_value"],
             "total_pnl_dollars": port_summary["total_pnl_dollars"],
             "total_pnl_pct": port_summary["total_pnl_pct"],
+            "portfolio_equity": portfolio_value,
+            "cash": cash,
             "drawdown": drawdown,
             "vix": vix_risk,
             "immediate_exits": immediate_count,
             "positions": port_summary["positions"],
-            "broker_drift": broker_drift,
         }
 
         self.report["portfolio"] = summary
         self._log("risk", f"Portfolio: {port_summary['position_count']} positions, "
+                  f"Equity: ${portfolio_value:,.0f}, Cash: ${cash:,.0f}, "
                   f"P&L: ${port_summary['total_pnl_dollars']:+,.0f}")
         return summary
 
@@ -435,12 +454,16 @@ class QuantManager:
     def generate_buy_list(
         self, ranked: List[RankedStock], regime: Dict
     ) -> List[Dict]:
-        """Generate list of potential buys from ranked candidates."""
+        """Generate list of potential buys from ranked candidates.
+
+        Uses broker account data for portfolio value and cash.
+        """
         if not regime["entries_allowed"]:
             self._log("execution", "Entries blocked by regime")
             return []
 
-        portfolio_value = self.settings.manager_portfolio_value
+        portfolio_value = self._get_portfolio_value()
+        cash = self._get_cash()
         buy_list = []
         entries_today = 0
 
@@ -470,9 +493,9 @@ class QuantManager:
                 self._log("execution", f"Skip {ticker}: already in portfolio")
                 continue
 
-            # Position capacity
-            if not self.position_manager.can_add_position(portfolio_value):
-                self._log("execution", f"Skip {ticker}: no position capacity")
+            # Position capacity (use real cash from broker)
+            if not self.position_manager.can_add_position(portfolio_value, cash):
+                self._log("execution", f"Skip {ticker}: no position capacity (cash: ${cash:,.0f})")
                 break
 
             # Minimum score
@@ -513,17 +536,19 @@ class QuantManager:
             summary = self.ranker.format_pick_summary(pick)
             reasons = summary.get("reasons", [])
 
+            cost = round(price * shares, 2)
             buy_list.append({
                 "ticker": ticker,
                 "price": price,
                 "shares": shares,
-                "cost": round(price * shares, 2),
+                "cost": cost,
                 "stop": round(stop_price, 2),
                 "score": round(pick.composite_score, 1),
                 "size_pct": round(size_pct * 100, 1),
                 "reasons": reasons,
             })
             entries_today += 1
+            cash -= cost  # Deduct from available cash for subsequent checks
 
             # Track the new sector for subsequent iterations
             sector_map[ticker] = ticker_sector
@@ -838,9 +863,13 @@ class QuantManager:
         # Portfolio
         portfolio = report.get("portfolio", {})
         pos_count = portfolio.get("position_count", 0)
+        equity = portfolio.get("portfolio_equity")
+        cash = portfolio.get("cash")
+        if equity is not None:
+            console.print(f"\nAccount: Equity ${equity:,.0f} | Cash ${cash:,.0f}")
         if pos_count > 0:
             console.print(
-                f"\nPortfolio: {pos_count} positions | "
+                f"Portfolio: {pos_count} positions | "
                 f"Value: ${portfolio.get('total_value', 0):,.0f} | "
                 f"P&L: ${portfolio.get('total_pnl_dollars', 0):+,.0f} "
                 f"({portfolio.get('total_pnl_pct', 0) * 100:+.1f}%)"
@@ -952,6 +981,14 @@ class QuantManager:
             border_style="blue",
         ))
 
+        # 0. Sync positions from broker (source of truth)
+        console.print("\n[bold]0. Broker Sync[/bold]")
+        self._sync_broker()
+        pv = self._get_portfolio_value()
+        cash = self._get_cash()
+        console.print(f"   Equity: ${pv:,.0f} | Cash: ${cash:,.0f} | "
+                      f"Positions: {self.position_manager.get_position_count()}")
+
         # 1. Data refresh
         console.print("\n[bold]1. Data Refresh[/bold]")
         data_status = self.refresh_data()
@@ -1026,6 +1063,11 @@ class QuantManager:
             border_style="yellow",
         ))
 
+        # 0. Sync positions from broker
+        console.print("\n[bold]0. Broker Sync[/bold]")
+        self._sync_broker()
+        console.print(f"   Positions: {self.position_manager.get_position_count()}")
+
         # 1. Health check
         console.print("\n[bold]1. Data Health[/bold]")
         health = self.check_data_health()
@@ -1072,6 +1114,11 @@ class QuantManager:
             "[bold]Post-Market Wrap-up[/bold]",
             border_style="green",
         ))
+
+        # 0. Sync positions from broker
+        console.print("\n[bold]0. Broker Sync[/bold]")
+        self._sync_broker()
+        console.print(f"   Positions: {self.position_manager.get_position_count()}")
 
         # 1. Portfolio risk (final prices)
         console.print("\n[bold]1. Portfolio Assessment[/bold]")

@@ -1,12 +1,15 @@
 """Position tracking and management."""
 
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from config.settings import Settings, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -63,7 +66,12 @@ class Position:
 
 
 class PositionManager:
-    """Manages portfolio positions with persistence."""
+    """Manages portfolio positions with persistence.
+
+    Alpaca broker is the source of truth for what we own. Local JSON
+    stores supplementary metadata (stops, high_since_entry, score,
+    reasons) that the broker cannot track.
+    """
 
     def __init__(
         self,
@@ -82,6 +90,73 @@ class PositionManager:
         ) / self.settings.positions_file
         self.positions: Dict[str, Position] = {}
         self._load()
+
+    def sync_from_broker(self, broker) -> Dict:
+        """Sync local positions with the broker (source of truth).
+
+        Any position the broker has that we don't track locally gets
+        created with default metadata. Any local position the broker
+        does not have gets removed.
+
+        Args:
+            broker: Broker instance with get_positions() method
+
+        Returns:
+            Dict with sync results (added, removed, synced counts)
+        """
+        broker_positions = {p.ticker: p for p in broker.get_positions()}
+        local_tickers = set(self.positions.keys())
+        broker_tickers = set(broker_positions.keys())
+
+        added = []
+        removed = []
+
+        # Add positions that exist in broker but not locally
+        for ticker in broker_tickers - local_tickers:
+            bp = broker_positions[ticker]
+            self.positions[ticker] = Position(
+                ticker=ticker,
+                entry_date=datetime.now().isoformat(),
+                entry_price=bp.avg_price,
+                shares=bp.qty,
+                cost_basis=bp.avg_price * bp.qty,
+                high_since_entry=bp.avg_price,
+                current_stop=bp.avg_price * (1 - self.settings.initial_stop_pct),
+                score=0,
+                reasons=["synced from broker"],
+            )
+            added.append(ticker)
+            logger.info("Synced from broker: %s (%d shares @ $%.2f)", ticker, int(bp.qty), bp.avg_price)
+
+        # Remove positions that exist locally but not in broker
+        for ticker in local_tickers - broker_tickers:
+            removed.append(ticker)
+            del self.positions[ticker]
+            logger.info("Removed stale local position: %s (not in broker)", ticker)
+
+        # Update share counts from broker (broker is truth for qty)
+        for ticker in broker_tickers & local_tickers:
+            bp = broker_positions[ticker]
+            pos = self.positions[ticker]
+            if pos.shares != bp.qty:
+                logger.info(
+                    "Updated %s shares: %d -> %d (broker sync)",
+                    ticker, int(pos.shares), int(bp.qty),
+                )
+                pos.shares = bp.qty
+                pos.cost_basis = pos.entry_price * pos.shares
+
+        if added or removed:
+            self._save()
+
+        result = {
+            "added": added,
+            "removed": removed,
+            "synced": len(broker_tickers & local_tickers),
+            "total": len(self.positions),
+        }
+        logger.info("Broker sync complete: %s", result)
+        return result
 
     def _load(self) -> None:
         """Load positions from file."""
@@ -240,11 +315,15 @@ class PositionManager:
         """
         return sum(p.cost_basis for p in self.positions.values())
 
-    def can_add_position(self, portfolio_value: float) -> bool:
+    def can_add_position(
+        self, portfolio_value: float, cash: Optional[float] = None
+    ) -> bool:
         """Check if we can add another position.
 
         Args:
-            portfolio_value: Current portfolio value
+            portfolio_value: Current portfolio value (equity from broker)
+            cash: Actual cash from broker. If None, estimated from
+                portfolio_value minus cost basis.
 
         Returns:
             True if we can add a position
@@ -252,11 +331,11 @@ class PositionManager:
         if len(self.positions) >= self.settings.max_positions:
             return False
 
-        # Check cash reserve
-        total_invested = self.get_total_cost_basis()
-        cash = portfolio_value - total_invested
-        min_cash = portfolio_value * self.settings.min_cash_reserve_pct
+        if cash is None:
+            total_invested = self.get_total_cost_basis()
+            cash = portfolio_value - total_invested
 
+        min_cash = portfolio_value * self.settings.min_cash_reserve_pct
         return cash > min_cash
 
     def get_position_size(
