@@ -13,6 +13,11 @@ CONFIG="$SCRIPT_DIR/config.yaml"
 LOG_DIR="$SCRIPT_DIR/logs"
 VENV_PYTHON="$PROJECT_DIR/venv/bin/python"
 
+# Source profile for API keys (Alpaca, Finnhub, etc.)
+# shellcheck disable=SC1090
+[ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile" 2>/dev/null
+[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null
+
 mkdir -p "$LOG_DIR"
 
 # ---------------------------------------------------------------------------
@@ -169,14 +174,27 @@ fi
 # Execute
 # ---------------------------------------------------------------------------
 
+RUN_ID="${MODE}_$(date '+%Y%m%d_%H%M%S')"
+
 echo "[$TIMESTAMP] Starting $MODE run (dry_run=$DRY_RUN, paper=$PAPER)"
 echo "[$TIMESTAMP] Log: $LOGFILE"
+echo "[$TIMESTAMP] Run ID: $RUN_ID"
 
 cd "$PROJECT_DIR"
+
+# Record run start in dashboard DB
+INGEST_FLAGS=""
+if [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --dry-run"; fi
+if [ "$PAPER" = "True" ] || [ "$PAPER" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --paper"; fi
+"$VENV_PYTHON" scripts/ingest_run.py --start --run-id "$RUN_ID" --mode "$MODE" --log-path "$LOGFILE" $INGEST_FLAGS || true
+
 "${CMD[@]}" 2>&1 | tee "$LOGFILE"
 
 EXIT_CODE=${PIPESTATUS[0]}
 echo "[$TIMESTAMP] $MODE completed with exit code $EXIT_CODE"
+
+# Record run finish in dashboard DB
+"$VENV_PYTHON" scripts/ingest_run.py --finish --run-id "$RUN_ID" --exit-code "$EXIT_CODE" || true
 
 # ---------------------------------------------------------------------------
 # Prune old logs

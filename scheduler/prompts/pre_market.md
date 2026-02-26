@@ -9,10 +9,11 @@ You are running the STEEX pre-market pipeline. This is the full daily routine: d
    agents/claude_manager.md
    ```
 
-2. Run the pipeline:
+2. Run the pipeline (source profile first for Alpaca API keys):
    ```bash
-   python scripts/run_manager.py pre_market {{FLAGS}}
+   source ~/.bash_profile 2>/dev/null && venv/bin/python scripts/run_manager.py pre_market {{FLAGS}}
    ```
+   If broker init fails with missing credentials, do NOT fall back to simulation. Stop and report the error.
 
 3. After the pipeline completes, read the latest report:
    ```bash
