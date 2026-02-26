@@ -2,13 +2,15 @@
 """CLI entry point for the QuantManager trading orchestrator.
 
 Usage:
-    python scripts/run_manager.py                    # Default: pre_market
-    python scripts/run_manager.py pre_market         # Morning routine
-    python scripts/run_manager.py monitor            # Midday check
-    python scripts/run_manager.py post_market        # End of day
-    python scripts/run_manager.py full               # All three
-    python scripts/run_manager.py train              # Run PySR walk-forward training
-    python scripts/run_manager.py --portfolio 50000  # Set portfolio value
+    python scripts/run_manager.py screen             # Pre-open screening (no entries)
+    python scripts/run_manager.py enter              # Post-open entry execution
+    python scripts/run_manager.py monitor            # Midday risk check
+    python scripts/run_manager.py stop_sync          # Pre-close stop sync
+    python scripts/run_manager.py post_market        # End of day wrap-up
+    python scripts/run_manager.py learning           # Self-learning loop
+    python scripts/run_manager.py pre_market         # Legacy combined (screen + enter)
+    python scripts/run_manager.py full               # All three legacy modes
+    python scripts/run_manager.py train              # PySR walk-forward training
     python scripts/run_manager.py --dry-run          # Show plan without executing
     python scripts/run_manager.py --yes              # Auto-confirm entries
     python scripts/run_manager.py --paper            # Enable broker (paper trading)
@@ -34,7 +36,10 @@ def main():
         "mode",
         nargs="?",
         default="pre_market",
-        choices=["pre_market", "monitor", "post_market", "full", "train"],
+        choices=[
+            "pre_market", "screen", "enter", "monitor",
+            "stop_sync", "post_market", "learning", "full", "train",
+        ],
         help="Operating mode (default: pre_market)",
     )
     parser.add_argument(
@@ -100,13 +105,34 @@ def main():
             auto_confirm=args.yes,
             verbose=args.verbose,
         )
+    elif args.mode == "screen":
+        manager.run_screen(
+            dry_run=args.dry_run,
+            verbose=args.verbose,
+        )
+    elif args.mode == "enter":
+        manager.run_enter(
+            dry_run=args.dry_run,
+            auto_confirm=args.yes,
+            verbose=args.verbose,
+        )
     elif args.mode == "monitor":
         manager.run_monitor(
             dry_run=args.dry_run,
             verbose=args.verbose,
         )
+    elif args.mode == "stop_sync":
+        manager.run_stop_sync(
+            dry_run=args.dry_run,
+            verbose=args.verbose,
+        )
     elif args.mode == "post_market":
         manager.run_post_market(
+            dry_run=args.dry_run,
+            verbose=args.verbose,
+        )
+    elif args.mode == "learning":
+        manager.run_learning(
             dry_run=args.dry_run,
             verbose=args.verbose,
         )

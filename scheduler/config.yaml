@@ -18,21 +18,60 @@ defaults:
 # Modes - each corresponds to a run_manager.py operating mode
 # ---------------------------------------------------------------------------
 modes:
-  pre_market:
+  heartbeat_morning:
     enabled: true
-    schedule: "30 8 * * 1-5"    # 8:30 AM ET, weekdays
-    prompt_file: "scheduler/prompts/pre_market.md"
+    schedule: "0 7 * * 1-5"      # 7:00 AM ET, weekdays
+    prompt_file: "scheduler/prompts/heartbeat.md"
+    max_budget_usd: 0.25
+    mode_name: "heartbeat"
+
+  screen:
+    enabled: true
+    schedule: "15 8 * * 1-5"     # 8:15 AM ET, weekdays
+    prompt_file: "scheduler/prompts/screen.md"
     max_budget_usd: 2.00
 
-  monitor:
+  enter:
     enabled: true
-    schedule: "0 12 * * 1-5"    # 12:00 PM ET, weekdays
+    schedule: "45 9 * * 1-5"     # 9:45 AM ET, weekdays
+    prompt_file: "scheduler/prompts/enter.md"
+    max_budget_usd: 1.50
+
+  monitor_midday:
+    enabled: true
+    schedule: "0 11 * * 1-5"     # 11:00 AM ET, weekdays
     prompt_file: "scheduler/prompts/monitor.md"
+    mode_name: "monitor"
+
+  monitor_afternoon:
+    enabled: true
+    schedule: "30 13 * * 1-5"    # 1:30 PM ET, weekdays
+    prompt_file: "scheduler/prompts/monitor.md"
+    mode_name: "monitor"
+
+  stop_sync:
+    enabled: true
+    schedule: "45 15 * * 1-5"    # 3:45 PM ET, weekdays
+    prompt_file: "scheduler/prompts/stop_sync.md"
+    max_budget_usd: 0.50
 
   post_market:
     enabled: true
-    schedule: "30 16 * * 1-5"   # 4:30 PM ET, weekdays
+    schedule: "30 16 * * 1-5"    # 4:30 PM ET, weekdays
     prompt_file: "scheduler/prompts/post_market.md"
+
+  learning:
+    enabled: true
+    schedule: "0 18 * * 5"       # 6:00 PM ET, Fridays
+    prompt_file: "scheduler/prompts/learning.md"
+    max_budget_usd: 5.00
+
+  heartbeat_weekend:
+    enabled: true
+    schedule: "0 10 * * 0"       # 10:00 AM ET, Sundays
+    prompt_file: "scheduler/prompts/heartbeat.md"
+    max_budget_usd: 0.25
+    mode_name: "heartbeat"
 
 # ---------------------------------------------------------------------------
 # Log retention

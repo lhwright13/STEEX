@@ -175,6 +175,16 @@ execution_quality_enabled: true     # Enable execution quality tracking
 execution_max_acceptable_slippage: 0.01  # Max acceptable slippage (1%)
 
 # -----------------------------------------------------------------------------
+# Data Prefetch
+# -----------------------------------------------------------------------------
+prefetch_enabled: true               # Prefetch data into cache before pipeline runs
+prefetch_max_workers: 10             # Max concurrent workers
+prefetch_price_days: 320             # Calendar days of price data (covers 200-day MA)
+prefetch_sentiment_workers: 5        # Sentiment workers (respects Finnhub 60 req/min)
+prefetch_fundamentals_workers: 10    # Fundamentals workers
+prefetch_earnings_workers: 20        # Earnings calendar workers
+
+# -----------------------------------------------------------------------------
 # Drawdown Rules
 # -----------------------------------------------------------------------------
 drawdown_review: 0.10            # Drawdown level to review strategy (10%)
@@ -205,12 +215,29 @@ broker_enabled: true             # Broker always on - Alpaca is source of truth
 broker_paper: true               # Use paper trading (default on, safety net)
 # API keys come from environment variables only: ALPACA_API_KEY, ALPACA_SECRET_KEY
 
+# Server-side stops (Alpaca GTC stop orders as crash-proof safety net)
+server_stops_enabled: true       # Place GTC stops on Alpaca for each position
+server_stop_offset_pct: 0.005    # Place server stop 0.5% below local stop (noise buffer)
+
 # -----------------------------------------------------------------------------
 # Data Paths
 # -----------------------------------------------------------------------------
 data_dir: "data"                 # Directory for cached data
 positions_file: "positions.json" # File for position tracking
 trades_file: "trades.json"       # File for trade log
+
+# -----------------------------------------------------------------------------
+# Learning Loop (Self-Optimizing Parameter Tuning)
+# -----------------------------------------------------------------------------
+learning_enabled: true               # Enable the self-learning loop
+learning_dry_run: false              # Run learning without applying changes
+learning_weight_change_cap: 0.10     # Max weight change per cycle (10%)
+learning_min_trades_for_analysis: 15 # Min trades for reliable analysis
+learning_oos_min_sharpe: 0.0         # Minimum OOS Sharpe for validation
+learning_oos_min_win_rate: 0.50      # Minimum OOS win rate for validation
+learning_feature_lookback_months: 6  # Months of feature data for research
+learning_validation_train_months: 3  # OOS validation training window
+learning_validation_test_months: 1   # OOS validation test window
 
 # -----------------------------------------------------------------------------
 # Manager Settings

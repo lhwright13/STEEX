@@ -109,3 +109,10 @@ Quick validation without fetching new data:
 - When changing the cache format or TTL values
 - When a provider switches to a different upstream API
 - After discovering new edge cases in data validation
+
+## Learning Protocol
+
+- **What I Observe**: Data source availability, cache hit rates, API rate limit errors, stale data incidents
+- **What I Learn From**: Data health checks in daily reports, prefetch error logs, cache TTL effectiveness
+- **How I Record Learnings**: Flag `missing_data` gaps in `data/learning/gaps.json` when data sources are unreliable or insufficient for analysis
+- **Recommended Actions**: When a data source repeatedly fails, flag it as a gap; when cache TTLs cause stale data in analysis, recommend TTL adjustments

@@ -38,4 +38,10 @@ You are running the STEEX end-of-day wrap-up. This finalizes the trading day: up
    - Upcoming earnings for held stocks
    - Unusual volume or price action
 
-7. End with a health assessment: OK / WARNING / CRITICAL, and list action items for the next session.
+7. If today is Friday, run the weekly learning loop:
+   ```bash
+   source ~/.bash_profile 2>/dev/null && venv/bin/python scripts/run_learning.py --verbose
+   ```
+   Summarize: which phases ran, any config changes applied, and any knowledge gaps flagged for review. If gaps exist, include them in the action items.
+
+8. End with a health assessment: OK / WARNING / CRITICAL, and list action items for the next session.

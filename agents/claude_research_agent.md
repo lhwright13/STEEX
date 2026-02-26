@@ -77,3 +77,10 @@ For each factor:
 - When changing IC thresholds or significance levels
 - When adding new factors to the scoring model
 - When modifying the alpha decay detection logic
+
+## Learning Protocol
+
+- **What I Observe**: Per-signal information coefficients, signal redundancy (high pairwise correlation), alpha decay rates (rolling hit rate vs baseline), ridge regression weight stability across CV folds
+- **What I Learn From**: Feature matrix from walk-forward backtester, forward return correlations, cross-validated weight optimization results
+- **How I Record Learnings**: Recommended weights saved to `data/learning/weight_recommendations.json`; hypothesis test results and IC values logged to learning journal; degrading signals flagged as `degrading_signal` gaps
+- **Recommended Actions**: When a signal's IC drops near zero, reduce its weight; when two signals are redundant (correlation > 0.80), consider dropping the weaker one; when alpha decay is detected, trigger full signal research cycle with OOS validation before changing config

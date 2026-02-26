@@ -190,6 +190,7 @@ class WalkForwardBacktester:
         interval_days: Optional[int] = None,
         price_cache: Optional[Dict[str, pd.DataFrame]] = None,
         universe: Optional[List[str]] = None,
+        settings: Optional[Settings] = None,
     ) -> Tuple[List[Dict], List[Dict]]:
         """Generate signals by running the pipeline at regular intervals.
 
@@ -209,7 +210,7 @@ class WalkForwardBacktester:
             # Fetch universe if not provided
             if universe is None:
                 from ..data.universe import Universe
-                universe = Universe().get_tickers()
+                universe = Universe().get_sp500()
             price_cache = self.prefetch_data(universe, start, end)
 
         all_signals = []
@@ -220,7 +221,7 @@ class WalkForwardBacktester:
             # Skip weekends
             if current.weekday() < 5:
                 sigs, feats = self.run_pipeline_for_date(
-                    current, price_cache, universe=universe,
+                    current, price_cache, settings=settings, universe=universe,
                 )
                 all_signals.extend(sigs)
                 all_features.extend(feats)
@@ -259,7 +260,7 @@ class WalkForwardBacktester:
         # Get universe
         if universe is None:
             from ..data.universe import Universe
-            universe = Universe().get_tickers()
+            universe = Universe().get_sp500()
 
         # Prefetch data for entire period
         earliest = min(f.train_start for f in folds)
@@ -351,7 +352,7 @@ class WalkForwardBacktester:
         """
         if universe is None:
             from ..data.universe import Universe
-            universe = Universe().get_tickers()
+            universe = Universe().get_sp500()
 
         price_cache = self.prefetch_data(universe, test_start, test_end)
 
@@ -371,6 +372,7 @@ class WalkForwardBacktester:
                 end=test_end,
                 price_cache=price_cache,
                 universe=universe,
+                settings=override_settings,
             )
 
             result = engine.run(

@@ -101,3 +101,10 @@ Returns: position_count, total_cost, total_value, total_pnl, portfolio_equity, c
 - When adding new exit conditions
 - When VIX regime thresholds are recalibrated
 - After optimization reveals better stop/hold parameters
+
+## Learning Protocol
+
+- **What I Observe**: Stop-loss hit rates, trailing stop effectiveness, VIX regime accuracy, drawdown frequency, premature exit rates
+- **What I Learn From**: PostMortem loss categories (bad_timing = stops too tight, premature_exit = stops too loose), regime-segmented backtest results
+- **How I Record Learnings**: Risk-related findings feed into PostMortem analysis; stop/hold parameter changes require OOS validation (tier="rare" in config_writer)
+- **Recommended Actions**: When `bad_timing` losses exceed 30%, recommend wider trailing stops; when `premature_exit` pattern is frequent, recommend tighter stops; changes to stop parameters require full walk-forward validation

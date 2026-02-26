@@ -83,3 +83,10 @@ The `self.log` list on QuantManager accumulates entries throughout the run:
 - When the dashboard expects new fields in latest.json
 - When changing console output formatting
 - When adding notification support (email, Slack, etc.)
+
+## Learning Protocol
+
+- **What I Observe**: Report completeness, missing data fields, audit log coverage, user interaction patterns with reports
+- **What I Learn From**: Daily report structure, learning loop summaries, gap reports
+- **How I Record Learnings**: Report quality issues logged as learning journal entries; report format gaps flagged for review
+- **Recommended Actions**: When learning loop results are available, include a learning summary section in post-market reports; surface knowledge gaps prominently in action items

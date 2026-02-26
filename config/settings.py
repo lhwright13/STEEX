@@ -353,6 +353,26 @@ class Settings(BaseSettings):
         default=0.01, description="Max acceptable slippage before alert (1%)"
     )
 
+    # Data Prefetch
+    prefetch_enabled: bool = Field(
+        default=True, description="Enable async data prefetching before pipeline"
+    )
+    prefetch_max_workers: int = Field(
+        default=10, description="Max concurrent workers for prefetching"
+    )
+    prefetch_price_days: int = Field(
+        default=320, description="Calendar days of price data to prefetch (covers 200-day MA)"
+    )
+    prefetch_sentiment_workers: int = Field(
+        default=5, description="Concurrent workers for sentiment prefetch (respects Finnhub rate limit)"
+    )
+    prefetch_fundamentals_workers: int = Field(
+        default=10, description="Concurrent workers for fundamentals prefetch"
+    )
+    prefetch_earnings_workers: int = Field(
+        default=20, description="Concurrent workers for earnings calendar prefetch"
+    )
+
     # Drawdown rules
     drawdown_review: float = Field(
         default=0.10, description="Drawdown level to review strategy (10%)"
@@ -388,12 +408,49 @@ class Settings(BaseSettings):
         default=True, description="Use paper trading (default on, safety net)"
     )
 
+    # Server-side stops (Alpaca GTC stop orders as crash-proof safety net)
+    server_stops_enabled: bool = Field(
+        default=True, description="Place GTC stops on Alpaca for each position"
+    )
+    server_stop_offset_pct: float = Field(
+        default=0.005, description="Place server stop 0.5% below local stop (noise buffer)"
+    )
+
     # Data paths
     data_dir: str = Field(default="data", description="Directory for cached data")
     positions_file: str = Field(
         default="positions.json", description="File for position tracking"
     )
     trades_file: str = Field(default="trades.json", description="File for trade log")
+
+    # Learning loop
+    learning_enabled: bool = Field(
+        default=True, description="Enable the self-learning loop"
+    )
+    learning_dry_run: bool = Field(
+        default=False, description="Run learning loop without applying changes"
+    )
+    learning_weight_change_cap: float = Field(
+        default=0.10, description="Max weight change per learning cycle"
+    )
+    learning_min_trades_for_analysis: int = Field(
+        default=15, description="Minimum trades required for reliable analysis"
+    )
+    learning_oos_min_sharpe: float = Field(
+        default=0.0, description="Minimum OOS Sharpe ratio for validation"
+    )
+    learning_oos_min_win_rate: float = Field(
+        default=0.50, description="Minimum OOS win rate for validation"
+    )
+    learning_feature_lookback_months: int = Field(
+        default=6, description="Months of feature data for signal research"
+    )
+    learning_validation_train_months: int = Field(
+        default=3, description="Training window for OOS validation folds"
+    )
+    learning_validation_test_months: int = Field(
+        default=1, description="Test window for OOS validation folds"
+    )
 
     # Manager settings
     manager_portfolio_value: float = Field(

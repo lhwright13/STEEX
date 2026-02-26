@@ -4,13 +4,16 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # STEEX Scheduler - run.sh
 # Usage: scheduler/run.sh <mode>
-#   mode: pre_market | monitor | post_market
+#   mode: heartbeat_morning | screen | enter | monitor_midday |
+#         monitor_afternoon | stop_sync | post_market | learning |
+#         heartbeat_weekend | pre_market | monitor
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG="$SCRIPT_DIR/config.yaml"
 LOG_DIR="$SCRIPT_DIR/logs"
+LOCK_DIR="$SCRIPT_DIR/locks"
 VENV_PYTHON="$PROJECT_DIR/venv/bin/python"
 
 # Source profile for API keys (Alpaca, Finnhub, etc.)
@@ -18,7 +21,7 @@ VENV_PYTHON="$PROJECT_DIR/venv/bin/python"
 [ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile" 2>/dev/null
 [ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" 2>/dev/null
 
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" "$LOCK_DIR"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,42 +69,113 @@ mode_get() {
 MODE="${1:-}"
 if [ -z "$MODE" ]; then
     echo "Usage: scheduler/run.sh <mode>"
-    echo "  mode: pre_market | monitor | post_market"
     exit 1
 fi
 
-case "$MODE" in
-    pre_market|monitor|post_market) ;;
-    *)
-        echo "Error: unknown mode '$MODE'"
-        echo "  Valid modes: pre_market | monitor | post_market"
-        exit 1
-        ;;
-esac
+# Verify mode exists in config (or is a known alias)
+MODE_EXISTS=$("$VENV_PYTHON" -c "
+import yaml
+with open('$CONFIG') as f:
+    cfg = yaml.safe_load(f)
+modes = list(cfg.get('modes', {}).keys())
+# Also accept legacy aliases
+aliases = {'pre_market': True, 'monitor': True, 'heartbeat': True}
+print('$MODE' in modes or '$MODE' in aliases)
+")
+
+if [ "$MODE_EXISTS" != "True" ]; then
+    echo "Error: unknown mode '$MODE'"
+    echo "  Check scheduler/config.yaml for available modes"
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Resolve mode_name override (e.g. heartbeat_morning -> heartbeat for manager)
+# ---------------------------------------------------------------------------
+
+# The config mode key (for reading config values)
+CONFIG_MODE="$MODE"
+
+# The run_manager.py mode (may differ via mode_name override)
+MANAGER_MODE="$(yaml_get "modes.${MODE}.mode_name")"
+if [ -z "$MANAGER_MODE" ]; then
+    MANAGER_MODE="$MODE"
+fi
 
 # ---------------------------------------------------------------------------
 # Check if mode is enabled
 # ---------------------------------------------------------------------------
 
-ENABLED="$(yaml_get "modes.${MODE}.enabled")"
+ENABLED="$(yaml_get "modes.${CONFIG_MODE}.enabled")"
 if [ "$ENABLED" != "True" ] && [ "$ENABLED" != "true" ]; then
     echo "Mode '$MODE' is disabled in config. Skipping."
     exit 0
 fi
 
 # ---------------------------------------------------------------------------
+# Market gate - check if we should run based on market calendar
+# ---------------------------------------------------------------------------
+
+GATE_SCRIPT="$PROJECT_DIR/scripts/market_gate.py"
+if [ -f "$GATE_SCRIPT" ]; then
+    GATE_OUTPUT=$("$VENV_PYTHON" "$GATE_SCRIPT" "$MANAGER_MODE" 2>/dev/null) || true
+    if [ -n "$GATE_OUTPUT" ]; then
+        SHOULD_RUN=$(echo "$GATE_OUTPUT" | "$VENV_PYTHON" -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get('should_run', True))
+except Exception:
+    print(True)
+")
+        if [ "$SHOULD_RUN" = "False" ]; then
+            GATE_REASON=$(echo "$GATE_OUTPUT" | "$VENV_PYTHON" -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get('reason', 'gate blocked'))
+except Exception:
+    print('gate blocked')
+")
+            echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Skipping $MODE: $GATE_REASON"
+            exit 0
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Lockfile - prevent overlapping runs of the same manager mode
+# ---------------------------------------------------------------------------
+
+LOCKFILE="$LOCK_DIR/${MANAGER_MODE}.lock"
+
+if [ -f "$LOCKFILE" ]; then
+    LOCK_PID=$(cat "$LOCKFILE" 2>/dev/null || true)
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Skipping $MODE: previous run (PID $LOCK_PID) still active"
+        exit 0
+    else
+        # Stale lock, remove it
+        rm -f "$LOCKFILE"
+    fi
+fi
+
+echo $$ > "$LOCKFILE"
+trap 'rm -f "$LOCKFILE"' EXIT
+
+# ---------------------------------------------------------------------------
 # Read settings (mode-specific with fallback to defaults)
 # ---------------------------------------------------------------------------
 
-MODEL="$(mode_get "$MODE" "model")"
-MAX_BUDGET="$(mode_get "$MODE" "max_budget_usd")"
-ALLOWED_TOOLS="$(mode_get "$MODE" "allowed_tools")"
-PAPER="$(mode_get "$MODE" "paper")"
-DRY_RUN="$(mode_get "$MODE" "dry_run")"
-AUTO_CONFIRM="$(mode_get "$MODE" "auto_confirm")"
-OUTPUT_FORMAT="$(mode_get "$MODE" "output_format")"
-NO_SESSION="$(mode_get "$MODE" "no_session_persistence")"
-PROMPT_FILE="$(yaml_get "modes.${MODE}.prompt_file")"
+MODEL="$(mode_get "$CONFIG_MODE" "model")"
+MAX_BUDGET="$(mode_get "$CONFIG_MODE" "max_budget_usd")"
+ALLOWED_TOOLS="$(mode_get "$CONFIG_MODE" "allowed_tools")"
+PAPER="$(mode_get "$CONFIG_MODE" "paper")"
+DRY_RUN="$(mode_get "$CONFIG_MODE" "dry_run")"
+AUTO_CONFIRM="$(mode_get "$CONFIG_MODE" "auto_confirm")"
+OUTPUT_FORMAT="$(mode_get "$CONFIG_MODE" "output_format")"
+NO_SESSION="$(mode_get "$CONFIG_MODE" "no_session_persistence")"
+PROMPT_FILE="$(yaml_get "modes.${CONFIG_MODE}.prompt_file")"
 MAX_LOG_DAYS="$(yaml_get "max_log_days")"
 
 if [ -z "$PROMPT_FILE" ] || [ ! -f "$PROJECT_DIR/$PROMPT_FILE" ]; then
@@ -141,7 +215,8 @@ PROMPT="$PROMPT
 
 ---
 Runtime metadata (injected by scheduler):
-- Mode: $MODE
+- Mode: $MANAGER_MODE
+- Config mode: $CONFIG_MODE
 - Timestamp: $TIMESTAMP
 - Dry run: $DRY_RUN
 - Paper trading: $PAPER
@@ -154,7 +229,7 @@ SYSTEM_APPEND="You are running in automated scheduler mode. Do NOT modify any so
 # Build claude command
 # ---------------------------------------------------------------------------
 
-LOGFILE="$LOG_DIR/${MODE}_$(date '+%Y%m%d_%H%M%S').log"
+LOGFILE="$LOG_DIR/${CONFIG_MODE}_$(date '+%Y%m%d_%H%M%S').log"
 
 CMD=(
     claude
@@ -174,7 +249,7 @@ fi
 # Execute
 # ---------------------------------------------------------------------------
 
-RUN_ID="${MODE}_$(date '+%Y%m%d_%H%M%S')"
+RUN_ID="${CONFIG_MODE}_$(date '+%Y%m%d_%H%M%S')"
 
 echo "[$TIMESTAMP] Starting $MODE run (dry_run=$DRY_RUN, paper=$PAPER)"
 echo "[$TIMESTAMP] Log: $LOGFILE"
@@ -186,7 +261,7 @@ cd "$PROJECT_DIR"
 INGEST_FLAGS=""
 if [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --dry-run"; fi
 if [ "$PAPER" = "True" ] || [ "$PAPER" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --paper"; fi
-"$VENV_PYTHON" scripts/ingest_run.py --start --run-id "$RUN_ID" --mode "$MODE" --log-path "$LOGFILE" $INGEST_FLAGS || true
+"$VENV_PYTHON" scripts/ingest_run.py --start --run-id "$RUN_ID" --mode "$MANAGER_MODE" --log-path "$LOGFILE" $INGEST_FLAGS || true
 
 "${CMD[@]}" 2>&1 | tee "$LOGFILE"
 

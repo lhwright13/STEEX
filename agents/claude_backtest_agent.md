@@ -63,3 +63,10 @@ Key methods:
 - When adding new metrics to the backtest output
 - When the screening pipeline changes (new stages affect historical replay)
 - When adding new parameter comparison methods
+
+## Learning Protocol
+
+- **What I Observe**: In-sample vs out-of-sample performance gap, overfitting indicators, regime-specific performance breakdown, parameter stability across folds
+- **What I Learn From**: Walk-forward fold results, OOS validation metrics (Sharpe, win rate), parameter comparison outputs
+- **How I Record Learnings**: OOS validation results logged to `data/learning/learning_journal.json`; validation pass/fail determines whether proposed config changes are applied
+- **Recommended Actions**: When OOS degrades significantly vs in-sample, flag overfitting concern; when proposed weights fail OOS validation, reject them and flag as a gap for manual investigation

@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -62,4 +62,43 @@ class Broker(ABC):
     @abstractmethod
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an order by ID. Returns True if cancelled."""
+        ...
+
+    @abstractmethod
+    def place_stop_order(
+        self, ticker: str, qty: int, stop_price: float
+    ) -> OrderResult:
+        """Place a GTC stop sell order as a server-side safety net."""
+        ...
+
+    @abstractmethod
+    def cancel_stop_for_ticker(self, ticker: str) -> bool:
+        """Cancel active stop order for a ticker before a managed exit."""
+        ...
+
+    @abstractmethod
+    def update_stop_order(
+        self, ticker: str, qty: int, new_stop_price: float
+    ) -> OrderResult:
+        """Cancel existing stop and place new one at a higher price."""
+        ...
+
+    @abstractmethod
+    def get_stop_order(self, ticker: str) -> Optional[Dict]:
+        """Find the open GTC stop order for a symbol, if any."""
+        ...
+
+    @abstractmethod
+    def get_all_stop_orders(self) -> List[Dict]:
+        """List all open GTC stop orders for reconciliation."""
+        ...
+
+    @abstractmethod
+    def get_clock(self) -> Dict:
+        """Return market clock: {is_open, next_open, next_close}."""
+        ...
+
+    @abstractmethod
+    def get_calendar(self, start: str, end: str) -> List[Dict]:
+        """Return market calendar entries for a date range."""
         ...

@@ -63,9 +63,13 @@ python scripts/run_manager.py pre_market --paper --yes
 
 | Mode | Command | What It Does |
 |------|---------|-------------|
-| pre_market | `python scripts/run_manager.py pre_market` | Full pipeline: sync, screen, rank, enter, exit, report |
+| screen | `python scripts/run_manager.py screen` | Pre-open: data refresh, screening, ranking (saves results, NO entries) |
+| enter | `python scripts/run_manager.py enter` | Post-open: load screen results, execute entries, place server-side stops |
 | monitor | `python scripts/run_manager.py monitor` | Midday risk check: stops, VIX, exits only |
-| post_market | `python scripts/run_manager.py post_market` | EOD wrap-up: final exits, update stops, daily report |
+| stop_sync | `python scripts/run_manager.py stop_sync` | Pre-close: update trailing stops, sync server-side stops on Alpaca |
+| post_market | `python scripts/run_manager.py post_market` | EOD wrap-up: final exits, post-mortem, daily report |
+| learning | `python scripts/run_manager.py learning` | Self-learning loop: signal research, parameter optimization |
+| pre_market | `python scripts/run_manager.py pre_market` | Legacy combined mode (screen + enter in one pass) |
 | train | `python scripts/run_manager.py train` | PySR symbolic regression walk-forward training |
 
 ## Screening Pipeline
@@ -131,22 +135,31 @@ Alpaca Markets is the **source of truth** for all holdings and account data. On 
 2. Portfolio value and cash come from `broker.get_account()`, not config
 3. Orders execute through Alpaca as DAY limit orders
 4. If broker init fails, the pipeline halts (no silent simulation fallback)
+5. Every entry gets a GTC stop sell order on Alpaca as a crash-proof safety net
+6. If a server-side stop fills while the system is offline, the next broker sync detects it and records the trade
+7. Market calendar gating via `get_clock()`/`get_calendar()` prevents runs on holidays
 
 ## Automated Scheduling
 
-The `scheduler/` directory provides cron-based automation that invokes `claude -p` (non-interactive mode). Claude reads the agent docs, reasons about market conditions, runs the pipeline, and reports results.
+The `scheduler/` directory provides cron-based automation that invokes `claude -p` (non-interactive mode). Claude reads the agent docs, reasons about market conditions, runs the pipeline, and reports results. A market calendar gate (`scripts/market_gate.py`) skips runs on holidays and ensures modes that need the market open only run during trading hours.
 
 | Mode | Schedule (ET) | Description |
 |------|--------------|-------------|
-| pre_market | 8:30 AM weekdays | Full pipeline |
-| monitor | 12:00 PM weekdays | Risk check |
-| post_market | 4:30 PM weekdays | EOD wrap-up |
+| heartbeat | 7:00 AM weekdays | API health, account check, stop reconciliation |
+| screen | 8:15 AM weekdays | Data refresh, screening, ranking (no entries) |
+| enter | 9:45 AM weekdays | Load screen results, execute entries, place stops |
+| monitor | 11:00 AM weekdays | Risk check, stops, exits |
+| monitor | 1:30 PM weekdays | Risk check, stops, exits |
+| stop_sync | 3:45 PM weekdays | Update trailing stops, sync server-side stops |
+| post_market | 4:30 PM weekdays | EOD wrap-up, post-mortem, report |
+| learning | 6:00 PM Fridays | Weekly parameter optimization |
+| heartbeat | 10:00 AM Sundays | Weekend health check |
 
 ```bash
 scheduler/install.sh          # Install cron schedule
 scheduler/install.sh --show   # Preview cron entries
 scheduler/uninstall.sh        # Remove cron schedule
-scheduler/run.sh pre_market   # Manual run
+scheduler/run.sh screen       # Manual run
 ```
 
 See `scheduler/README.md` for details.
@@ -203,10 +216,13 @@ STEEX/
     backtest/                  # Historical backtesting engine
   scripts/
     run_manager.py             # CLI entry point for QuantManager
+    market_gate.py             # Market calendar gate (skips holidays/closed)
+    health_check.py            # Heartbeat / health check
+    run_learning.py            # Learning loop CLI
   scheduler/
     config.yaml                # Scheduler settings (model, budget, tools)
-    run.sh                     # Main entry - parses config, runs claude -p
-    install.sh                 # Install cron schedule
+    run.sh                     # Main entry - parses config, market gate, runs claude -p
+    install.sh                 # Install cron schedule (dynamic mode discovery)
     uninstall.sh               # Remove cron schedule
     prompts/                   # Prompt templates for each mode
   dashboard/                   # Web dashboard

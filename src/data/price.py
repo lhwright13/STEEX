@@ -57,6 +57,12 @@ class PriceProvider(DataProvider):
         if cached is not None:
             return cached
 
+        # Check if a longer-period cache entry exists that covers this request
+        if days and not start:
+            superset = self._find_cached_superset(ticker, days)
+            if superset is not None:
+                return superset
+
         if days:
             end = end or datetime.now()
             start = end - timedelta(days=days)
@@ -79,6 +85,22 @@ class PriceProvider(DataProvider):
             return df
         except Exception:
             return pd.DataFrame()
+
+    def _find_cached_superset(self, ticker: str, needed_days: int) -> Optional[pd.DataFrame]:
+        """Check if a longer cached period exists that covers this request.
+
+        When the prefetcher stores 320 days of data, downstream calls for
+        shorter periods (5d, 21d, 126d, 200d) can be served by truncating
+        the longer cached entry instead of making a new API call.
+        """
+        for candidate_days in [320, 200, 126, 21]:
+            if candidate_days <= needed_days:
+                continue
+            key = self._get_cache_key(ticker, None, None, candidate_days)
+            cached = self._get_from_cache(key)
+            if cached is not None and not cached.empty:
+                return cached.iloc[-needed_days:] if len(cached) >= needed_days else cached
+        return None
 
     def get_ohlcv_batch(
         self,
@@ -129,13 +151,20 @@ class PriceProvider(DataProvider):
 
             # Handle single vs multiple tickers
             if len(tickers) == 1:
-                results[tickers[0]] = data
+                ticker_data = data
+                ticker_data.columns = [c.replace(" ", "_") for c in ticker_data.columns]
+                results[tickers[0]] = ticker_data
+                cache_key = self._get_cache_key(tickers[0], start, end, days)
+                self._set_cache(cache_key, ticker_data)
             else:
                 for ticker in tickers:
                     try:
                         ticker_data = data.xs(ticker, axis=1, level=1)
                         if not ticker_data.empty:
+                            ticker_data.columns = [c.replace(" ", "_") for c in ticker_data.columns]
                             results[ticker] = ticker_data
+                            cache_key = self._get_cache_key(ticker, start, end, days)
+                            self._set_cache(cache_key, ticker_data)
                     except (KeyError, ValueError):
                         continue
 

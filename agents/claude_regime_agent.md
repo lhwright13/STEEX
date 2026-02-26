@@ -67,3 +67,10 @@ Each factor produces a score mapped to one of four regimes:
 - When adding new macro factors to the composite
 - When regime thresholds are recalibrated
 - When sector rotation mappings change
+
+## Learning Protocol
+
+- **What I Observe**: Regime classification accuracy, frequency of regime transitions, sizing multiplier effectiveness, sector rotation prediction accuracy
+- **What I Learn From**: Regime-segmented backtest results (`walkforward.segment_by_regime()`), PostMortem `bad_regime` loss category rates
+- **How I Record Learnings**: Regime-related findings flagged as `new_regime` gaps when unusual market conditions are detected
+- **Recommended Actions**: When `bad_regime` losses are dominant, review regime thresholds; when a new market condition appears that doesn't fit existing categories, flag as a `new_regime` gap for human review

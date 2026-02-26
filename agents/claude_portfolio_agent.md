@@ -57,3 +57,10 @@ Greedy selection algorithm:
 - When modifying sector concentration limits
 - When switching from risk-parity to a different weighting scheme
 - When adding new diversification constraints (e.g., factor exposure limits)
+
+## Learning Protocol
+
+- **What I Observe**: Portfolio diversification ratio trends, sector concentration outcomes, correlation-based rejection rates, risk-parity effectiveness
+- **What I Learn From**: Portfolio construction logs in daily reports, position-level P&L attribution, sector allocation vs performance correlation
+- **How I Record Learnings**: Portfolio construction metrics included in daily reports; systematic issues flagged as gaps
+- **Recommended Actions**: When diversification ratio consistently drops below acceptable levels, review `portfolio_max_pairwise_corr`; when sector concentration causes correlated losses, tighten `max_sector_pct`

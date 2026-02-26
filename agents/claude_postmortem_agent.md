@@ -64,3 +64,10 @@ Classifies losing trades into one of four categories:
 - When changing the knowledge base schema
 - When adding new metrics to trade analysis (e.g., sector-relative performance)
 - When modifying the feedback loop into signal scoring
+
+## Learning Protocol
+
+- **What I Observe**: Loss category distribution over time, score-return correlation trends, premature exit frequency, missed upside patterns
+- **What I Learn From**: Trade history (`data/trades.json`), price data after exits, VIX at entry for regime correlation
+- **How I Record Learnings**: PostMortem reports saved to `data/postmortem/`; findings feed directly into the learning loop as Phase 1
+- **Recommended Actions**: When `bad_signal` rate exceeds 30%, recommend raising `manager_min_score_entry`; when score correlation drops below 0.10, trigger signal research for weight recalibration; when premature exits exceed 20% of trades, recommend reviewing trailing stop levels

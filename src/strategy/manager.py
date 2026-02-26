@@ -17,6 +17,7 @@ from rich import box
 from config.settings import Settings, get_settings
 from ..broker.base import AccountInfo, Broker
 from ..data.geopolitical import get_ticker_sector
+from ..data.prefetch import DataPrefetcher
 from ..data.price import PriceProvider
 from ..data.vix import VixProvider
 from ..indicators.technical import TechnicalIndicators
@@ -39,10 +40,14 @@ class QuantManager:
     """Automated trading orchestrator.
 
     Modes:
-        pre_market  - Full pipeline: data refresh, screening, recommendations
+        screen      - Pre-open: data refresh, screening, ranking (saves results, no entries)
+        enter       - Post-open: load screen results, execute entries, place server-side stops
         monitor     - Position monitoring: stop checks, VIX, exit signals
-        post_market - End of day: update stops, record P&L, daily report
-        full_cycle  - Run all three in sequence
+        stop_sync   - Pre-close: update trailing stops, sync server-side stops on Alpaca
+        post_market - End of day: final exits, post-mortem, daily report
+        learning    - Self-learning loop: signal research, parameter optimization
+        pre_market  - Legacy combined: screen + enter in one pass
+        full_cycle  - Run pre_market -> monitor -> post_market in sequence
     """
 
     def __init__(
@@ -150,9 +155,19 @@ class QuantManager:
         self.report: Dict = {}
 
     def _sync_broker(self) -> None:
-        """Sync positions and account data from broker."""
+        """Sync positions and account data from broker.
+
+        Detects positions that disappeared from broker (e.g. server-side
+        stop filled while the system was offline) and records them as trades.
+        """
         if not self.broker:
             return
+
+        # Snapshot local positions before sync to detect removals
+        local_before = {
+            pos.ticker: pos
+            for pos in self.position_manager.get_all_positions()
+        }
 
         # Sync positions: broker is source of truth
         result = self.position_manager.sync_from_broker(self.broker)
@@ -162,6 +177,30 @@ class QuantManager:
                 console.print(f"    [green]+{t}[/green] (from broker)")
             for t in result["removed"]:
                 console.print(f"    [red]-{t}[/red] (stale local)")
+
+        # Record trades for positions removed by sync (server-side stop fills)
+        for ticker in result.get("removed", []):
+            pos = local_before.get(ticker)
+            if pos is None:
+                continue
+            # Use the stop price as approximate exit price
+            exit_price = pos.stop_price if pos.stop_price else pos.entry_price
+            self.trade_tracker.record_trade(
+                ticker=ticker,
+                entry_date=pos.entry_datetime,
+                exit_date=datetime.now(),
+                entry_price=pos.entry_price,
+                exit_price=exit_price,
+                shares=pos.shares,
+                exit_reason="server_stop",
+                score=pos.score,
+                reasons=pos.reasons,
+            )
+            console.print(
+                f"    [yellow]Recorded server-stop exit for {ticker} "
+                f"@ ~${exit_price:.2f}[/yellow]"
+            )
+            self._log("sync", f"Server-stop exit detected for {ticker}")
 
         # Cache account info
         self._account = self.broker.get_account()
@@ -371,6 +410,18 @@ class QuantManager:
         stop_updates = self.risk_manager.update_stops()
         if stop_updates:
             self._log("risk", f"Updated stops for {len(stop_updates)} positions", stop_updates)
+
+        # Sync server-side stops with updated trailing levels
+        if self.broker and self.settings.server_stops_enabled and stop_updates:
+            for ticker, update in stop_updates.items():
+                pos = self.position_manager.get_position(ticker)
+                if pos is None:
+                    continue
+                new_server_stop = round(
+                    pos.stop_price * (1 - self.settings.server_stop_offset_pct), 2
+                )
+                self.broker.update_stop_order(ticker, pos.shares, new_server_stop)
+                self._log("risk", f"Server stop updated for {ticker} @ ${new_server_stop:.2f}")
 
         # Portfolio summary
         port_summary = self.position_manager.get_portfolio_summary(current_prices)
@@ -744,6 +795,38 @@ class QuantManager:
                         f"  [green]Broker filled: {entry_shares} shares "
                         f"@ ${entry_price:.2f}[/green]"
                     )
+
+                    # Place server-side GTC stop as crash-proof safety net
+                    if self.settings.server_stops_enabled:
+                        server_stop = round(
+                            entry["stop"] * (1 - self.settings.server_stop_offset_pct), 2
+                        )
+                        stop_result = self.broker.place_stop_order(
+                            entry["ticker"], entry_shares, server_stop
+                        )
+                        if stop_result.status == "failed":
+                            # Retry once
+                            import time as _time
+                            _time.sleep(1)
+                            stop_result = self.broker.place_stop_order(
+                                entry["ticker"], entry_shares, server_stop
+                            )
+                        if stop_result.status != "failed":
+                            console.print(
+                                f"  Server stop placed: ${server_stop:.2f}"
+                            )
+                            self._log("execution", f"Server stop for {entry['ticker']} @ ${server_stop:.2f}")
+                        else:
+                            console.print(
+                                f"  [bold red]CRITICAL: Server stop FAILED for "
+                                f"{entry['ticker']} - position is UNPROTECTED. "
+                                f"Error: {stop_result.error}[/bold red]"
+                            )
+                            self._log(
+                                "execution",
+                                f"CRITICAL: Server stop failed for {entry['ticker']}: "
+                                f"{stop_result.error}. Position has no server-side safety net.",
+                            )
                 else:
                     console.print(
                         f"  [red]Broker order failed: {result.error}[/red]"
@@ -796,6 +879,10 @@ class QuantManager:
                     continue
 
                 exit_price = item["price"]
+
+                # Cancel server-side stop before managed sell
+                if self.broker and self.settings.server_stops_enabled:
+                    self.broker.cancel_stop_for_ticker(item["ticker"])
 
                 if self.broker:
                     result = self.broker.sell(
@@ -1107,6 +1194,42 @@ class QuantManager:
         console.print(f"   Equity: ${pv:,.0f} | Cash: ${cash:,.0f} | "
                       f"Positions: {self.position_manager.get_position_count()}")
 
+        # 0.5 Prefetch data into cache (runs concurrently, warms cache)
+        if self.settings.prefetch_enabled:
+            console.print("\n[bold]0.5 Data Prefetch[/bold]")
+            try:
+                from ..data.universe import Universe
+                universe = Universe()
+                tickers = universe.get_sp500()
+                prefetcher = DataPrefetcher(
+                    settings=self.settings,
+                    price_provider=self.price_provider,
+                    universe=universe,
+                )
+                with console.status(f"Prefetching data for {len(tickers)} tickers..."):
+                    prefetch_report = prefetcher.prefetch_all(tickers)
+                console.print(
+                    f"   Prefetched in {prefetch_report.duration_seconds}s: "
+                    f"prices={prefetch_report.prices_fetched}, "
+                    f"earnings={prefetch_report.earnings_fetched}, "
+                    f"sentiment={prefetch_report.sentiment_fetched}, "
+                    f"fundamentals={prefetch_report.fundamentals_fetched}"
+                )
+                if prefetch_report.errors:
+                    for err in prefetch_report.errors:
+                        console.print(f"   [yellow]{err}[/yellow]")
+                self._log("data", "Prefetch complete", {
+                    "prices": prefetch_report.prices_fetched,
+                    "earnings": prefetch_report.earnings_fetched,
+                    "sentiment": prefetch_report.sentiment_fetched,
+                    "fundamentals": prefetch_report.fundamentals_fetched,
+                    "duration": prefetch_report.duration_seconds,
+                    "errors": prefetch_report.errors,
+                })
+            except Exception as e:
+                console.print(f"   [yellow]Prefetch skipped: {e}[/yellow]")
+                self._log("data", f"Prefetch error: {e}")
+
         # 1. Data refresh
         console.print("\n[bold]1. Data Refresh[/bold]")
         data_status = self.refresh_data()
@@ -1326,6 +1449,352 @@ class QuantManager:
 
         self.print_summary(report)
         return report
+
+    def run_screen(
+        self, dry_run: bool = False, verbose: bool = False
+    ) -> Dict:
+        """Pre-open screening: data refresh, regime, risk, exits, screening.
+
+        Saves screen results to data/screen_results/latest.json for the
+        entry phase to pick up later. Does NOT execute entries.
+        """
+        self.log = []
+        self.report = {}
+
+        console.print(Panel.fit(
+            "[bold]Pre-Open Screening[/bold]",
+            border_style="cyan",
+        ))
+
+        # 0. Broker sync
+        console.print("\n[bold]0. Broker Sync[/bold]")
+        self._sync_broker()
+        pv = self._get_portfolio_value()
+        cash = self._get_cash()
+        console.print(f"   Equity: ${pv:,.0f} | Cash: ${cash:,.0f} | "
+                      f"Positions: {self.position_manager.get_position_count()}")
+
+        # 0.5 Prefetch
+        if self.settings.prefetch_enabled:
+            console.print("\n[bold]0.5 Data Prefetch[/bold]")
+            try:
+                from ..data.universe import Universe
+                universe = Universe()
+                tickers = universe.get_sp500()
+                prefetcher = DataPrefetcher(
+                    settings=self.settings,
+                    price_provider=self.price_provider,
+                    universe=universe,
+                )
+                with console.status(f"Prefetching data for {len(tickers)} tickers..."):
+                    prefetch_report = prefetcher.prefetch_all(tickers)
+                console.print(
+                    f"   Prefetched in {prefetch_report.duration_seconds}s: "
+                    f"prices={prefetch_report.prices_fetched}, "
+                    f"earnings={prefetch_report.earnings_fetched}"
+                )
+                self._log("data", "Prefetch complete", {
+                    "prices": prefetch_report.prices_fetched,
+                    "duration": prefetch_report.duration_seconds,
+                })
+            except Exception as e:
+                console.print(f"   [yellow]Prefetch skipped: {e}[/yellow]")
+                self._log("data", f"Prefetch error: {e}")
+
+        # 1. Data refresh
+        console.print("\n[bold]1. Data Refresh[/bold]")
+        data_status = self.refresh_data()
+        healthy_count = sum(1 for v in data_status.values() if isinstance(v, dict) and v.get("healthy"))
+        console.print(f"   Sources: {healthy_count}/{len(data_status)} healthy")
+
+        # 2. Health check
+        console.print("\n[bold]2. Data Health[/bold]")
+        health = self.check_data_health()
+        if not health["healthy"]:
+            for issue in health["issues"]:
+                console.print(f"   [yellow]Warning: {issue}[/yellow]")
+        else:
+            console.print("   [green]All data sources healthy[/green]")
+
+        # 3. Regime
+        console.print("\n[bold]3. Market Regime[/bold]")
+        regime = self.get_regime()
+        console.print(f"   {regime['name'].upper()} (VIX: {regime.get('vix', 'N/A')})")
+
+        # 4. Portfolio risk + exits
+        console.print("\n[bold]4. Portfolio Risk[/bold]")
+        risk = self.assess_portfolio_risk()
+        console.print(f"   Positions: {risk.get('position_count', 0)}/{self.settings.max_positions}")
+
+        console.print("\n[bold]5. Exit Signals[/bold]")
+        exit_signals = self.get_exit_signals()
+        sell_list = self.generate_sell_list(exit_signals)
+        if sell_list:
+            console.print(f"   {len(sell_list)} exit signals")
+            self.execute_exits(sell_list, dry_run=dry_run)
+        else:
+            console.print("   No exit signals")
+
+        # 6. Screening
+        console.print("\n[bold]6. Screening Pipeline[/bold]")
+        pipeline = self.run_screening()
+        console.print(f"   {pipeline.universe_size} -> {len(pipeline.final_candidates)} candidates")
+
+        # 7. Ranking + portfolio construction
+        console.print("\n[bold]7. Ranking[/bold]")
+        ranked = self.rank_candidates(pipeline)
+
+        if ranked and self.portfolio_constructor is not None:
+            console.print("\n[bold]7b. Portfolio Construction[/bold]")
+            try:
+                proposal = self.portfolio_constructor.select_portfolio(
+                    ranked,
+                    max_picks=self.settings.daily_picks,
+                    max_correlation=self.settings.portfolio_max_pairwise_corr,
+                )
+                console.print(
+                    f"   Selected {len(proposal.selected)}/{len(ranked)} candidates "
+                    f"(diversification: {proposal.diversification_ratio:.2f})"
+                )
+                ranked = [c.ranked_stock for c in proposal.selected]
+                self.report["portfolio_construction"] = {
+                    "selected": len(proposal.selected),
+                    "rejected": len(proposal.rejected),
+                    "sector_exposure": proposal.sector_exposure,
+                    "diversification_ratio": proposal.diversification_ratio,
+                }
+            except Exception as e:
+                console.print(f"   [yellow]Portfolio construction skipped: {e}[/yellow]")
+
+        buy_list = self.generate_buy_list(ranked, regime)
+
+        # Save screen results for the enter phase (do NOT execute entries)
+        screen_dir = Path(self.settings.data_dir) / "screen_results"
+        screen_dir.mkdir(parents=True, exist_ok=True)
+        screen_data = {
+            "timestamp": datetime.now().isoformat(),
+            "regime": regime,
+            "buy_list": buy_list,
+            "ranked_count": len(ranked),
+        }
+        screen_path = screen_dir / "latest.json"
+        with open(screen_path, "w") as f:
+            json.dump(screen_data, f, indent=2, default=str)
+        console.print(f"\n   Screen results saved: {screen_path}")
+        console.print(f"   {len(buy_list)} buy candidates queued for entry phase")
+
+        # Report
+        report = self.generate_daily_report("screen")
+        filepath = self.save_report(report)
+        console.print(f"\nReport saved: {filepath}")
+        self.print_summary(report)
+        return report
+
+    def run_enter(
+        self, dry_run: bool = False, auto_confirm: bool = False, verbose: bool = False
+    ) -> Dict:
+        """Post-open entry execution.
+
+        Loads screen results from data/screen_results/latest.json,
+        validates freshness, executes entries, and places server-side stops.
+        """
+        self.log = []
+        self.report = {}
+
+        console.print(Panel.fit(
+            "[bold]Entry Execution[/bold]",
+            border_style="green",
+        ))
+
+        # 0. Broker sync
+        console.print("\n[bold]0. Broker Sync[/bold]")
+        self._sync_broker()
+        pv = self._get_portfolio_value()
+        cash = self._get_cash()
+        console.print(f"   Equity: ${pv:,.0f} | Cash: ${cash:,.0f} | "
+                      f"Positions: {self.position_manager.get_position_count()}")
+
+        # 1. Quick risk check + exits
+        console.print("\n[bold]1. Quick Risk Check[/bold]")
+        risk = self.assess_portfolio_risk()
+        exit_signals = self.get_exit_signals()
+        sell_list = self.generate_sell_list(exit_signals)
+        if sell_list:
+            console.print(f"   {len(sell_list)} exit signals")
+            self.execute_exits(sell_list, dry_run=dry_run)
+        else:
+            console.print("   No exit signals")
+
+        # 2. Load screen results
+        console.print("\n[bold]2. Load Screen Results[/bold]")
+        screen_path = Path(self.settings.data_dir) / "screen_results" / "latest.json"
+        if not screen_path.exists():
+            console.print("   [red]No screen results found. Run 'screen' mode first.[/red]")
+            self._log("execution", "No screen results file found")
+            report = self.generate_daily_report("enter")
+            self.save_report(report)
+            return report
+
+        with open(screen_path) as f:
+            screen_data = json.load(f)
+
+        # Validate freshness (< 2 hours old)
+        screen_ts = datetime.fromisoformat(screen_data["timestamp"])
+        age = datetime.now() - screen_ts
+        age_hours = age.total_seconds() / 3600
+        if age_hours > 2:
+            console.print(
+                f"   [yellow]Screen results are {age_hours:.1f}h old (stale). "
+                f"Skipping entries.[/yellow]"
+            )
+            self._log("execution", f"Screen results stale ({age_hours:.1f}h)")
+            report = self.generate_daily_report("enter")
+            self.save_report(report)
+            return report
+
+        buy_list = screen_data.get("buy_list", [])
+        console.print(f"   Loaded {len(buy_list)} candidates from {screen_ts.strftime('%H:%M')}")
+
+        # 3. Execute entries
+        console.print("\n[bold]3. Execute Entries[/bold]")
+        if buy_list:
+            self.report["entries"] = buy_list
+            self.execute_entries(buy_list, dry_run=dry_run, auto_confirm=auto_confirm)
+        else:
+            console.print("   No buy candidates")
+
+        # 4. Report
+        report = self.generate_daily_report("enter")
+        filepath = self.save_report(report)
+        console.print(f"\nReport saved: {filepath}")
+        self.print_summary(report)
+        return report
+
+    def run_stop_sync(self, dry_run: bool = False, verbose: bool = False) -> Dict:
+        """Pre-close stop sync.
+
+        Updates trailing stops with latest prices and syncs each position's
+        server-side GTC stop on Alpaca.
+        """
+        self.log = []
+        self.report = {}
+
+        console.print(Panel.fit(
+            "[bold]Pre-Close Stop Sync[/bold]",
+            border_style="yellow",
+        ))
+
+        # 0. Broker sync
+        console.print("\n[bold]0. Broker Sync[/bold]")
+        self._sync_broker()
+        console.print(f"   Positions: {self.position_manager.get_position_count()}")
+
+        # 1. Update trailing stops with latest prices
+        console.print("\n[bold]1. Update Trailing Stops[/bold]")
+        positions = self.position_manager.get_all_positions()
+        for pos in positions:
+            price = self.price_provider.get_latest_price(pos.ticker)
+            if price is not None:
+                self.position_manager.update_high(pos.ticker, price)
+
+        stop_updates = self.risk_manager.update_stops()
+        if stop_updates:
+            self._log("risk", f"Updated stops for {len(stop_updates)} positions", stop_updates)
+            for ticker, update in stop_updates.items():
+                console.print(f"   {ticker}: stop updated")
+        else:
+            console.print("   No stop updates needed")
+
+        # 2. Sync server-side stops
+        synced = 0
+        if self.broker and self.settings.server_stops_enabled:
+            console.print("\n[bold]2. Sync Server-Side Stops[/bold]")
+            positions = self.position_manager.get_all_positions()
+            for pos in positions:
+                server_stop = round(
+                    pos.stop_price * (1 - self.settings.server_stop_offset_pct), 2
+                )
+
+                if dry_run:
+                    console.print(
+                        f"   [DRY RUN] {pos.ticker}: server stop -> ${server_stop:.2f}"
+                    )
+                    synced += 1
+                    continue
+
+                result = self.broker.update_stop_order(
+                    pos.ticker, pos.shares, server_stop
+                )
+                if result.status != "failed":
+                    console.print(
+                        f"   {pos.ticker}: server stop synced @ ${server_stop:.2f}"
+                    )
+                    synced += 1
+                else:
+                    console.print(
+                        f"   [yellow]{pos.ticker}: stop sync failed - {result.error}[/yellow]"
+                    )
+            console.print(f"   Synced {synced}/{len(positions)} stops")
+        else:
+            console.print("\n   Server-side stops disabled or no broker")
+
+        self.report["stop_sync"] = {
+            "local_updates": len(stop_updates) if stop_updates else 0,
+            "server_synced": synced,
+        }
+
+        # 3. Report
+        report = self.generate_daily_report("stop_sync")
+        filepath = self.save_report(report)
+        console.print(f"\nReport saved: {filepath}")
+        return report
+
+    def run_learning(self, dry_run: bool = False, verbose: bool = False) -> Optional[Dict]:
+        """Run the self-learning loop for parameter optimization.
+
+        Chains PostMortem -> AlphaDecay -> SignalResearch -> OOS Validation
+        -> ConfigWriter to continuously optimize strategy parameters.
+        """
+        if not self.settings.learning_enabled:
+            console.print("[dim]Learning loop disabled in config[/dim]")
+            return None
+
+        console.print("\n[bold]Learning Loop[/bold]")
+        try:
+            from ..learning.loop import LearningLoop
+
+            loop = LearningLoop(settings=self.settings)
+            effective_dry_run = dry_run or self.settings.learning_dry_run
+
+            result = loop.run(dry_run=effective_dry_run)
+
+            if result.get("error"):
+                console.print(f"   [yellow]Learning: {result['error']}[/yellow]")
+            else:
+                phases = result.get("phases_run", [])
+                console.print(f"   Phases: {', '.join(phases)}")
+
+                apply_result = result.get("apply")
+                if apply_result and apply_result.get("applied"):
+                    console.print(
+                        f"   [green]Applied {apply_result.get('count', 0)} "
+                        f"config changes[/green]"
+                    )
+                elif apply_result and apply_result.get("dry_run"):
+                    console.print("   [yellow]Dry run - no changes applied[/yellow]")
+
+                gaps = result.get("gaps", [])
+                if gaps:
+                    console.print(f"   [yellow]{len(gaps)} knowledge gaps flagged[/yellow]")
+
+            self.report["learning"] = result
+            self._log("learning", f"Learning loop complete: {result.get('phases_run', [])}")
+            return result
+
+        except Exception as e:
+            console.print(f"   [yellow]Learning loop error: {e}[/yellow]")
+            self._log("learning", f"Learning loop error: {e}")
+            return None
 
     def run_full_cycle(
         self, dry_run: bool = False, auto_confirm: bool = False, verbose: bool = False

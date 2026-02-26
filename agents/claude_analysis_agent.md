@@ -102,3 +102,10 @@ ticker, composite_score, momentum_score, insider_score, volume_score, sentiment_
 - When adding/removing a screening stage
 - When the pipeline runtime changes significantly
 - After running optimization that reveals better weight configurations
+
+## Learning Protocol
+
+- **What I Observe**: Score-return correlation, per-signal information coefficients, screening funnel conversion rates, candidate quality trends
+- **What I Learn From**: Signal research hypothesis tests (`src/research/signal_tester.py`), feature matrix analysis, PostMortem score accuracy classification
+- **How I Record Learnings**: Recommended weights saved to `data/learning/weight_recommendations.json`; weight changes applied to config after OOS validation
+- **Recommended Actions**: When score-return correlation drops below 0.10, trigger signal research; when a signal's IC is consistently near zero, consider reducing its weight; all weight changes are auto-normalized to sum to 1.0

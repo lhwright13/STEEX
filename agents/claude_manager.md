@@ -27,18 +27,25 @@ Local `positions.json` stores only supplementary metadata (stops, high_since_ent
 
 ## Operating Modes
 
-### pre_market (default)
-Full pipeline. Sequence:
-1. Broker sync: `_sync_broker()` - reconcile positions, fetch account
-2. DataAgent: `refresh_data()`, `check_data_health()`
+### screen (pre-open, 8:15 AM)
+Screening only - no entries. Saves results for the `enter` phase. Sequence:
+1. Broker sync: `_sync_broker()` - reconcile positions, detect server-stop fills
+2. DataAgent: prefetch, `refresh_data()`, `check_data_health()`
 3. RiskAgent: `get_regime()`
-4. RiskAgent: `assess_portfolio_risk()`
-5. RiskAgent: `get_exit_signals()` -> ExecutionAgent: `execute_exits()`
-6. AnalysisAgent: `run_screening()` -> `rank_candidates()`
-7. ExecutionAgent: `generate_buy_list()` -> `execute_entries()`
-8. ReportAgent: `generate_daily_report()` -> `save_report()` -> `print_summary()`
+4. RiskAgent: `assess_portfolio_risk()`, `get_exit_signals()` -> `execute_exits()`
+5. AnalysisAgent: `run_screening()` -> `rank_candidates()` -> portfolio construction
+6. ExecutionAgent: `generate_buy_list()` - saved to `data/screen_results/latest.json`
+7. ReportAgent: `generate_daily_report()`
 
-### monitor
+### enter (post-open, 9:45 AM)
+Entry execution from pre-computed screen results. Sequence:
+1. Broker sync: `_sync_broker()`
+2. Quick risk check + exits
+3. Load `data/screen_results/latest.json` (must be < 2 hours old)
+4. ExecutionAgent: `execute_entries()` with server-side GTC stops on Alpaca
+5. ReportAgent: `generate_daily_report()`
+
+### monitor (11:00 AM, 1:30 PM)
 Midday check. No screening. Sequence:
 1. Broker sync: `_sync_broker()`
 2. DataAgent: `check_data_health()`
@@ -46,13 +53,32 @@ Midday check. No screening. Sequence:
 4. ExecutionAgent: `execute_exits()` (immediate only)
 5. ReportAgent: `generate_daily_report()`
 
-### post_market
+### stop_sync (pre-close, 3:45 PM)
+Update trailing stops and sync server-side GTC stops on Alpaca. Sequence:
+1. Broker sync: `_sync_broker()`
+2. Fetch latest prices, update trailing stops
+3. Sync each position's server-side stop order on Alpaca
+4. ReportAgent: `generate_daily_report()`
+
+### post_market (4:30 PM)
 End of day. Sequence:
 1. Broker sync: `_sync_broker()`
 2. RiskAgent: `assess_portfolio_risk()` (final prices)
 3. RiskAgent: `get_exit_signals()`
 4. ExecutionAgent: `execute_exits()` (immediate + end_of_day)
-5. ReportAgent: `generate_daily_report()`
+5. PostMortemAgent: trade analysis (if enabled)
+6. ReportAgent: `generate_daily_report()`
+
+### learning (6:00 PM Fridays)
+Self-learning loop: PostMortem -> AlphaDecay -> SignalResearch -> OOS Validation -> ConfigWriter.
+
+### pre_market (legacy combined)
+Full pipeline in one pass (screen + enter). Still works for manual runs. Sequence:
+1. Broker sync, prefetch, data refresh, health check
+2. Regime, risk, exits
+3. Screening, ranking, portfolio construction
+4. Buy list generation AND execution (with server-side stops)
+5. Report
 
 ### full_cycle
 Runs pre_market -> monitor -> post_market in sequence.
@@ -82,17 +108,24 @@ All parameters live in `config/config.yaml` and `config/settings.py`. Key manage
 - `manager_require_insider`: Whether insider activity is required (default false)
 - `broker_enabled`: Enable live broker execution (default true)
 - `broker_paper`: Use paper trading when broker is enabled (default true)
+- `server_stops_enabled`: Place GTC stops on Alpaca for each position (default true)
+- `server_stop_offset_pct`: Server stop placed 0.5% below local stop (noise buffer)
 
 API keys are environment variables only (`ALPACA_API_KEY`, `ALPACA_SECRET_KEY`) - never in config files.
 
 ### CLI Flags
 
 ```bash
-python scripts/run_manager.py pre_market --paper      # Broker on, paper trading
+python scripts/run_manager.py screen --paper           # Pre-open screening (no entries)
+python scripts/run_manager.py enter --paper --yes      # Post-open entries with auto-confirm
+python scripts/run_manager.py monitor --paper          # Midday risk check
+python scripts/run_manager.py stop_sync --paper        # Pre-close stop sync
+python scripts/run_manager.py post_market --paper      # EOD wrap-up
+python scripts/run_manager.py learning --paper         # Self-learning loop
+python scripts/run_manager.py pre_market --paper       # Legacy combined (screen + enter)
+python scripts/run_manager.py pre_market --dry-run     # No execution at all
 python scripts/run_manager.py pre_market --live        # Broker on, LIVE trading
 python scripts/run_manager.py pre_market --no-broker   # Force simulation (backtesting only)
-python scripts/run_manager.py pre_market --dry-run     # No execution at all
-python scripts/run_manager.py pre_market --yes         # Auto-confirm entries
 python scripts/run_manager.py train                    # PySR walk-forward training
 ```
 
@@ -113,3 +146,10 @@ Current tuned values (from backtest sweep):
 - When adding a new agent or changing the orchestration sequence
 - When discovering new failure modes that need error handling
 - After significant changes to any agent's interface
+
+## Learning Protocol
+
+- **What I Observe**: Overall pipeline success rates, agent failure patterns, orchestration timing, mode-specific issues
+- **What I Learn From**: Daily reports (`data/reports/`), learning loop results (`data/learning/`), config change history
+- **How I Record Learnings**: Learning loop runs weekly via `src/learning/loop.py`; results written to `data/learning/learning_journal.json`
+- **Recommended Actions**: When the learning loop flags knowledge gaps, review `data/learning/gaps.json` and decide whether to accept proposed parameter changes or investigate further
