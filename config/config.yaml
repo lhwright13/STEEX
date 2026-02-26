@@ -122,6 +122,59 @@ pysr_sample_frequency_days: 5    # Days between training samples
 weight_pysr: 0.10                # PySR weight in composite scoring
 
 # -----------------------------------------------------------------------------
+# Walk-Forward Backtest
+# -----------------------------------------------------------------------------
+walkforward_train_months: 6        # Training window in months
+walkforward_test_months: 2         # Test window in months
+walkforward_folds: 4               # Number of walk-forward folds
+walkforward_signal_interval: 7     # Days between signal generations
+
+# -----------------------------------------------------------------------------
+# Portfolio Construction
+# -----------------------------------------------------------------------------
+portfolio_max_pairwise_corr: 0.70  # Max pairwise correlation for selection
+portfolio_risk_parity_enabled: true # Enable risk-parity weighting
+portfolio_correlation_lookback: 60  # Lookback days for correlation matrix
+
+# -----------------------------------------------------------------------------
+# Multi-Factor Regime Detection
+# -----------------------------------------------------------------------------
+regime_multi_factor_enabled: true   # Enable multi-factor regime (vs VIX-only)
+regime_vix_weight: 0.40            # VIX weight in composite score
+regime_yield_weight: 0.20          # Yield curve weight
+regime_breadth_weight: 0.20        # Market breadth weight
+regime_other_weight: 0.20          # Dollar/other weight
+regime_risk_off_threshold: 70      # Composite threshold for risk_off
+regime_crisis_threshold: 85        # Composite threshold for crisis
+
+# -----------------------------------------------------------------------------
+# Post-Mortem Analysis
+# -----------------------------------------------------------------------------
+postmortem_enabled: true            # Enable post-mortem trade analysis
+postmortem_lookback_days: 90        # Days of trade history to analyze
+
+# -----------------------------------------------------------------------------
+# Signal Research
+# -----------------------------------------------------------------------------
+research_significance_level: 0.05   # P-value threshold for significance
+research_min_sample_size: 30        # Minimum samples for statistical testing
+research_redundancy_threshold: 0.80 # Correlation threshold for redundancy
+research_forward_return_days: 21    # Forward return horizon (trading days)
+
+# -----------------------------------------------------------------------------
+# Alpha Decay Monitoring
+# -----------------------------------------------------------------------------
+alpha_monitor_enabled: true         # Enable alpha decay checks
+alpha_monitor_window: 30            # Rolling window for hit rate
+alpha_degradation_threshold: 0.15   # Hit rate drop that triggers alert
+
+# -----------------------------------------------------------------------------
+# Execution Quality
+# -----------------------------------------------------------------------------
+execution_quality_enabled: true     # Enable execution quality tracking
+execution_max_acceptable_slippage: 0.01  # Max acceptable slippage (1%)
+
+# -----------------------------------------------------------------------------
 # Drawdown Rules
 # -----------------------------------------------------------------------------
 drawdown_review: 0.10            # Drawdown level to review strategy (10%)

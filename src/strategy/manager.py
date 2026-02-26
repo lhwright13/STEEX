@@ -30,6 +30,7 @@ from ..strategy.screener import (
     StockScreener,
 )
 from ..strategy.ranking import RankedStock, StockRanker
+from ..regime.detector import RegimeDetector, MacroRegime
 
 console = Console()
 
@@ -56,6 +57,10 @@ class QuantManager:
         price_provider: Optional[PriceProvider] = None,
         vix_provider: Optional[VixProvider] = None,
         broker: Optional[Broker] = None,
+        regime_detector: Optional[RegimeDetector] = None,
+        portfolio_constructor=None,
+        postmortem_analyzer=None,
+        execution_quality_tracker=None,
     ):
         self.settings = settings or get_settings()
         self.price_provider = price_provider or PriceProvider()
@@ -75,6 +80,53 @@ class QuantManager:
         self.technical = TechnicalIndicators(self.price_provider)
         self.screener = screener or StockScreener(settings=self.settings)
         self.ranker = ranker or StockRanker(self.settings)
+
+        # Multi-factor regime detector
+        self.regime_detector = regime_detector
+        if self.regime_detector is None and self.settings.regime_multi_factor_enabled:
+            self.regime_detector = RegimeDetector(
+                settings=self.settings,
+                vix_provider=self.vix_provider,
+            )
+
+        # Portfolio construction (lazy - imported only when used)
+        self.portfolio_constructor = portfolio_constructor
+        if self.portfolio_constructor is None:
+            try:
+                from ..portfolio.construction import PortfolioConstructor
+                self.portfolio_constructor = PortfolioConstructor(
+                    settings=self.settings,
+                    price_provider=self.price_provider,
+                    position_manager=self.position_manager,
+                )
+            except ImportError:
+                pass
+
+        # Post-mortem analyzer (lazy)
+        self.postmortem_analyzer = postmortem_analyzer
+        if self.postmortem_analyzer is None and self.settings.postmortem_enabled:
+            try:
+                from ..portfolio.postmortem import PostMortemAnalyzer
+                self.postmortem_analyzer = PostMortemAnalyzer(
+                    settings=self.settings,
+                    trade_tracker=self.trade_tracker,
+                    price_provider=self.price_provider,
+                    vix_provider=self.vix_provider,
+                )
+            except ImportError:
+                pass
+
+        # Execution quality tracker (lazy)
+        self.execution_quality_tracker = execution_quality_tracker
+        if self.execution_quality_tracker is None and self.settings.execution_quality_enabled:
+            try:
+                from ..broker.quality import ExecutionQualityTracker
+                self.execution_quality_tracker = ExecutionQualityTracker(
+                    settings=self.settings,
+                    price_provider=self.price_provider,
+                )
+            except ImportError:
+                pass
 
         # Broker setup
         self.broker = broker
@@ -371,7 +423,44 @@ class QuantManager:
         return all_exits
 
     def get_regime(self) -> Dict:
-        """Determine market regime from VIX level."""
+        """Determine market regime.
+
+        Uses multi-factor detection when regime_multi_factor_enabled is True,
+        otherwise falls back to VIX-only classification.
+        """
+        if self.regime_detector is not None and self.settings.regime_multi_factor_enabled:
+            return self._get_multi_factor_regime()
+        return self._get_vix_only_regime()
+
+    def _get_multi_factor_regime(self) -> Dict:
+        """Multi-factor regime detection via RegimeDetector."""
+        macro = self.regime_detector.detect_regime()
+
+        regime = {
+            "name": macro.name,
+            "vix": macro.vix_level,
+            "sizing_multiplier": macro.sizing_multiplier,
+            "entries_allowed": macro.entries_allowed,
+            "confidence": macro.confidence,
+            "yield_spread": macro.yield_spread,
+            "yield_curve": macro.yield_curve_status,
+            "breadth_score": macro.breadth_score,
+            "dollar_trend": macro.dollar_trend,
+            "sector_rotation": macro.sector_rotation,
+            "factors": macro.factors,
+        }
+
+        self.report["regime"] = regime
+        self._log(
+            "risk",
+            f"Regime: {macro.name} (VIX: {macro.vix_level:.1f}, "
+            f"composite: {macro.factors.get('composite_risk', 0):.0f}, "
+            f"confidence: {macro.confidence:.0%})"
+        )
+        return regime
+
+    def _get_vix_only_regime(self) -> Dict:
+        """Legacy VIX-only regime classification."""
         vix_level = self.vix_provider.get_current()
 
         if vix_level is None:
@@ -640,6 +729,15 @@ class QuantManager:
             if self.broker:
                 result = self.broker.buy(entry["ticker"], entry_shares, entry_price)
                 if result.status == "filled":
+                    # Track execution quality
+                    if self.execution_quality_tracker is not None:
+                        self.execution_quality_tracker.record_execution(
+                            ticker=entry["ticker"],
+                            side="buy",
+                            intended_price=entry_price,
+                            filled_price=result.filled_price,
+                            order_id=result.order_id,
+                        )
                     entry_price = result.filled_price
                     entry_shares = int(result.filled_qty)
                     console.print(
@@ -704,6 +802,15 @@ class QuantManager:
                         item["ticker"], position.shares, exit_price
                     )
                     if result.status == "filled":
+                        # Track execution quality
+                        if self.execution_quality_tracker is not None:
+                            self.execution_quality_tracker.record_execution(
+                                ticker=item["ticker"],
+                                side="sell",
+                                intended_price=exit_price,
+                                filled_price=result.filled_price,
+                                order_id=result.order_id,
+                            )
                         exit_price = result.filled_price
                         console.print(
                             f"  [green]Broker sell filled @ ${exit_price:.2f}[/green]"
@@ -843,12 +950,23 @@ class QuantManager:
             "low_vol": "green",
             "normal": "white",
             "elevated": "yellow",
+            "risk_on": "green",
+            "cautious": "yellow",
+            "risk_off": "bold yellow",
             "crisis": "bold red",
             "unknown": "dim",
         }
         color = regime_colors.get(regime_name, "white")
         vix_str = f"{vix_level:.1f}" if vix_level else "N/A"
-        console.print(f"\nRegime: [{color}]{regime_name.upper()}[/{color}] (VIX: {vix_str})")
+        regime_line = f"\nRegime: [{color}]{regime_name.upper()}[/{color}] (VIX: {vix_str})"
+        # Add multi-factor details if available
+        if regime.get("yield_curve"):
+            regime_line += f" | Yield: {regime['yield_curve']}"
+        if regime.get("sector_rotation"):
+            regime_line += f" | Rotation: {regime['sector_rotation']}"
+        if regime.get("confidence"):
+            regime_line += f" | Conf: {regime['confidence']:.0%}"
+        console.print(regime_line)
 
         # Data health
         health = report.get("data_health", {})
@@ -1038,6 +1156,37 @@ class QuantManager:
         # 7. Ranking and buy list
         console.print("\n[bold]7. Buy Candidates[/bold]")
         ranked = self.rank_candidates(pipeline)
+
+        # 7b. Portfolio construction (if available)
+        if ranked and self.portfolio_constructor is not None:
+            console.print("\n[bold]7b. Portfolio Construction[/bold]")
+            try:
+                proposal = self.portfolio_constructor.select_portfolio(
+                    ranked,
+                    max_picks=self.settings.daily_picks,
+                    max_correlation=self.settings.portfolio_max_pairwise_corr,
+                )
+                console.print(
+                    f"   Selected {len(proposal.selected)}/{len(ranked)} candidates "
+                    f"(diversification: {proposal.diversification_ratio:.2f})"
+                )
+                for _, reason in proposal.rejected:
+                    console.print(f"   [dim]Skipped: {reason}[/dim]")
+
+                # Replace ranked with selected candidates' RankedStocks
+                ranked = [c.ranked_stock for c in proposal.selected]
+
+                self.report["portfolio_construction"] = {
+                    "selected": len(proposal.selected),
+                    "rejected": len(proposal.rejected),
+                    "sector_exposure": proposal.sector_exposure,
+                    "diversification_ratio": proposal.diversification_ratio,
+                }
+                self._log("analysis", f"Portfolio construction selected {len(ranked)} stocks")
+            except Exception as e:
+                console.print(f"   [yellow]Portfolio construction skipped: {e}[/yellow]")
+                self._log("analysis", f"Portfolio construction error: {e}")
+
         buy_list = self.generate_buy_list(ranked, regime)
 
         if buy_list:
@@ -1144,7 +1293,33 @@ class QuantManager:
         else:
             console.print("   No exit signals")
 
-        # 4. Report
+        # 4. Post-Mortem analysis (if enabled)
+        if self.postmortem_analyzer is not None and self.settings.postmortem_enabled:
+            console.print("\n[bold]4. Post-Mortem Analysis[/bold]")
+            try:
+                from datetime import timedelta as td
+                start = datetime.now() - td(days=self.settings.postmortem_lookback_days)
+                pm_report = self.postmortem_analyzer.generate_report(start, datetime.now())
+                console.print(f"   Analyzed {pm_report.trades_analyzed} trades")
+                if pm_report.loss_breakdown:
+                    for cat, count in pm_report.loss_breakdown.items():
+                        console.print(f"   Loss category: {cat} ({count})")
+                if pm_report.recommendations:
+                    for rec in pm_report.recommendations[:3]:
+                        console.print(f"   [yellow]Rec: {rec}[/yellow]")
+                self.report["postmortem"] = {
+                    "trades_analyzed": pm_report.trades_analyzed,
+                    "loss_breakdown": pm_report.loss_breakdown,
+                    "score_correlation": pm_report.score_correlation,
+                    "avg_missed_upside": pm_report.avg_missed_upside,
+                    "recommendations": pm_report.recommendations,
+                }
+                self._log("postmortem", f"Analyzed {pm_report.trades_analyzed} trades")
+            except Exception as e:
+                console.print(f"   [yellow]Post-mortem skipped: {e}[/yellow]")
+                self._log("postmortem", f"Error: {e}")
+
+        # 5. Report
         report = self.generate_daily_report("post_market")
         filepath = self.save_report(report)
         console.print(f"\nReport saved: {filepath}")

@@ -264,6 +264,95 @@ class Settings(BaseSettings):
         default=0.10, description="PySR score weight in composite scoring"
     )
 
+    # Walk-Forward Backtest
+    walkforward_train_months: int = Field(
+        default=6, description="Walk-forward training window in months"
+    )
+    walkforward_test_months: int = Field(
+        default=2, description="Walk-forward test window in months"
+    )
+    walkforward_folds: int = Field(
+        default=4, description="Number of walk-forward folds"
+    )
+    walkforward_signal_interval: int = Field(
+        default=7, description="Days between signal generations in walk-forward"
+    )
+
+    # Portfolio Construction
+    portfolio_max_pairwise_corr: float = Field(
+        default=0.70, description="Max pairwise correlation for portfolio selection"
+    )
+    portfolio_risk_parity_enabled: bool = Field(
+        default=True, description="Enable inverse-variance risk parity weighting"
+    )
+    portfolio_correlation_lookback: int = Field(
+        default=60, description="Lookback days for correlation matrix"
+    )
+
+    # Multi-Factor Regime
+    regime_multi_factor_enabled: bool = Field(
+        default=True, description="Enable multi-factor regime detection"
+    )
+    regime_vix_weight: float = Field(
+        default=0.40, description="VIX weight in composite regime score"
+    )
+    regime_yield_weight: float = Field(
+        default=0.20, description="Yield curve weight in composite regime score"
+    )
+    regime_breadth_weight: float = Field(
+        default=0.20, description="Market breadth weight in composite regime score"
+    )
+    regime_other_weight: float = Field(
+        default=0.20, description="Dollar/other weight in composite regime score"
+    )
+    regime_risk_off_threshold: float = Field(
+        default=70, description="Composite score threshold for risk_off regime"
+    )
+    regime_crisis_threshold: float = Field(
+        default=85, description="Composite score threshold for crisis regime"
+    )
+
+    # Post-Mortem
+    postmortem_enabled: bool = Field(
+        default=True, description="Enable post-mortem trade analysis"
+    )
+    postmortem_lookback_days: int = Field(
+        default=90, description="Days of trade history to analyze"
+    )
+
+    # Signal Research
+    research_significance_level: float = Field(
+        default=0.05, description="P-value threshold for signal significance"
+    )
+    research_min_sample_size: int = Field(
+        default=30, description="Minimum samples for statistical testing"
+    )
+    research_redundancy_threshold: float = Field(
+        default=0.80, description="Correlation threshold to flag redundant signals"
+    )
+    research_forward_return_days: int = Field(
+        default=21, description="Forward return horizon for signal testing"
+    )
+
+    # Alpha Decay
+    alpha_monitor_enabled: bool = Field(
+        default=True, description="Enable alpha decay monitoring"
+    )
+    alpha_monitor_window: int = Field(
+        default=30, description="Rolling window for alpha decay checks"
+    )
+    alpha_degradation_threshold: float = Field(
+        default=0.15, description="Drop in hit rate that triggers degradation alert"
+    )
+
+    # Execution Quality
+    execution_quality_enabled: bool = Field(
+        default=True, description="Enable execution quality tracking"
+    )
+    execution_max_acceptable_slippage: float = Field(
+        default=0.01, description="Max acceptable slippage before alert (1%)"
+    )
+
     # Drawdown rules
     drawdown_review: float = Field(
         default=0.10, description="Drawdown level to review strategy (10%)"
