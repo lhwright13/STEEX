@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run_id }} - STEEX{% endblock %}
+
+{% block content %}
+{% if not run %}
+<div class="page-header">
+    <h1>Run Not Found</h1>
+    <p>No run with ID "{{ run_id }}" exists.</p>
+</div>
+<a href="/runs" class="link-arrow">Back to runs</a>
+{% else %}
+
+<div class="page-header">
+    <h1>{{ mode_icon(run.mode) }} {{ run.mode }} Run</h1>
+    <p>
+        {{ run.started_at | ts }}
+        <span class="badge badge-{{ status_class(run.status) }}" style="margin-left:0.5rem">{{ run.status }}</span>
+        {% if run.duration_seconds %} &middot; {{ run.duration_seconds | duration }}{% endif %}
+    </p>
+</div>
+
+{% if run.error_message %}
+<div class="status-banner error">
+    <p><strong>Error:</strong> {{ run.error_message }}</p>
+</div>
+{% endif %}
+
+<div class="stats-row">
+    <div class="stat-card accent-cyan">
+        <div class="stat-label">Run ID</div>
+        <div class="stat-sub"><code>{{ run.run_id }}</code></div>
+    </div>
+    <div class="stat-card accent-blue">
+        <div class="stat-label">Duration</div>
+        <div class="stat-value">{{ run.duration_seconds | duration }}</div>
+        <div class="stat-sub">Exit code: {{ run.exit_code if run.exit_code is not none else '-' }}</div>
+    </div>
+    <div class="stat-card accent-purple">
+        <div class="stat-label">Trading Mode</div>
+        <div class="stat-value" style="font-size:1rem">{{ "Paper" if run.paper else "Live" }}{% if run.dry_run %} (Dry Run){% endif %}</div>
+    </div>
+    {% if regime %}
+    <div class="stat-card accent-{% if regime.regime_name == 'normal' %}green{% elif regime.regime_name == 'bearish' %}red{% else %}amber{% endif %}">
+        <div class="stat-label">Regime</div>
+        <div class="stat-value {% if regime.regime_name == 'normal' %}green{% elif regime.regime_name == 'bearish' %}red{% else %}amber{% endif %}">{{ regime.regime_name | upper }}</div>
+        <div class="stat-sub">VIX {{ "%.1f"|format(regime.vix_level) if regime.vix_level else 'N/A' }} &middot; {{ "%.1fx"|format(regime.sizing_multiplier) if regime.sizing_multiplier else 'N/A' }} sizing</div>
+    </div>
+    {% endif %}
+</div>
+
+{% if screening %}
+<h2 class="section-title">Screening Funnel</h2>
+<article>
+    <div class="card-body">
+        <div class="funnel-steps">
+            {% set max_val = screening.universe or 1 %}
+            {% for label, val in [('Universe', screening.universe), ('Stage 1', screening.stage_1), ('Stage 2', screening.stage_2), ('Stage 3', screening.stage_3), ('Stage 4', screening.stage_4), ('Stage 5', screening.stage_5), ('Final', screening.final)] %}
+            {% if val is not none %}
+            <div class="funnel-step">
+                <span class="step-label">{{ label }}</span>
+                <div class="step-bar" style="width: {{ (val / max_val * 100)|round(1) }}%">{{ val }}</div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</article>
+{% endif %}
+
+{% if decisions %}
+<h2 class="section-title">Decisions</h2>
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Ticker</th>
+            <th>Action</th>
+            <th>Price</th>
+            <th>Shares</th>
+            <th>Score</th>
+            <th>Reasons</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for d in decisions %}
+        <tr>
+            <td><span class="ticker">{{ d.ticker }}</span></td>
+            <td>
+                {% if d.action == 'enter' %}
+                    <span class="badge badge-ok">ENTER</span>
+                {% else %}
+                    <span class="badge badge-neutral">EXIT</span>
+                {% endif %}
+            </td>
+            <td>{{ "$%.2f"|format(d.price) if d.price else '-' }}</td>
+            <td>{{ d.shares if d.shares else '-' }}</td>
+            <td>{{ "%.1f"|format(d.score) if d.score else '-' }}</td>
+            <td>
+                {% if d.reasons_list %}
+                <ul class="compact-list">
+                    {% for r in d.reasons_list %}
+                    <li>{{ r }}</li>
+                    {% endfor %}
+                </ul>
+                {% elif d.exit_reason %}
+                {{ d.exit_reason }}
+                {% else %}-{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% endif %}
+
+<h2 class="section-title">Event Timeline</h2>
+{% if events %}
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Action</th>
+            <th>Detail</th>
+            <th>Data</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in events %}
+        <tr class="timeline-row">
+            <td>{{ e.timestamp | ts_time }}</td>
+            <td><span class="badge-action badge-{{ e.action }}">{{ e.action }}</span></td>
+            <td>{{ e.detail }}</td>
+            <td>
+                {% if e.data_parsed %}
+                <details>
+                    <summary>View</summary>
+                    <pre>{{ e.data_parsed | tojson(indent=2) }}</pre>
+                </details>
+                {% else %}-{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<div class="empty-state"><p>No events recorded.</p></div>
+{% endif %}
+
+<div class="mt-2">
+    <a href="/runs" class="link-arrow">Back to runs</a>
+</div>
+{% endif %}
+{% endblock %}

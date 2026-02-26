@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Risk - STEEX{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Risk & Regime</h1>
+    <p>VIX-based market regime and risk management status</p>
+</div>
+
+{% if latest %}
+<div class="grid-2">
+    <article>
+        <header>Current Regime</header>
+        <div class="card-body regime-display">
+            <div class="regime-name {{ latest.regime_name }}">{{ latest.regime_name | upper }}</div>
+            <div class="regime-meta">
+                <div><dt>VIX</dt><dd>{{ "%.1f"|format(latest.vix_level) if latest.vix_level else 'N/A' }}</dd></div>
+                <div><dt>Sizing</dt><dd>{{ "%.1fx"|format(latest.sizing_multiplier) if latest.sizing_multiplier else 'N/A' }}</dd></div>
+                <div><dt>Entries</dt><dd>{{ "Yes" if latest.entries_allowed else "No" }}</dd></div>
+            </div>
+        </div>
+    </article>
+
+    <article>
+        <header>VIX History</header>
+        <div class="card-body chart-wrap">
+            <canvas id="vixChart"></canvas>
+        </div>
+    </article>
+</div>
+{% endif %}
+
+{% if history|length > 1 %}
+<h2 class="section-title">Regime Timeline</h2>
+<article>
+    <div class="card-body chart-wrap">
+        <canvas id="regimeChart" style="max-height:160px"></canvas>
+    </div>
+</article>
+{% endif %}
+
+<h2 class="section-title">Risk Alert History</h2>
+{% if history %}
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Regime</th>
+            <th>VIX</th>
+            <th>Sizing</th>
+            <th>Entries</th>
+            <th>Alerts</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in history %}
+        <tr>
+            <td class="text-muted">{{ r.timestamp | ts }}</td>
+            <td>
+                {% if r.regime_name == 'normal' %}
+                    <span class="badge badge-ok">{{ r.regime_name }}</span>
+                {% elif r.regime_name == 'bearish' %}
+                    <span class="badge badge-warn">{{ r.regime_name }}</span>
+                {% else %}
+                    <span class="badge badge-neutral">{{ r.regime_name }}</span>
+                {% endif %}
+            </td>
+            <td>{{ "%.1f"|format(r.vix_level) if r.vix_level else '-' }}</td>
+            <td>{{ "%.1fx"|format(r.sizing_multiplier) if r.sizing_multiplier else '-' }}</td>
+            <td>{{ "Yes" if r.entries_allowed else "No" }}</td>
+            <td>
+                {% if r.alerts_list %}
+                <ul class="compact-list">
+                    {% for a in r.alerts_list %}
+                    <li>{{ a if a is string else a }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}<span class="text-dim">-</span>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<div class="empty-state"><p>No regime data recorded yet.</p></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if history|length > 1 %}
+<script>
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(30,41,59,0.5)';
+
+const labels = [{% for r in history|reverse %}'{{ r.timestamp | ts }}',{% endfor %}];
+const vixData = [{% for r in history|reverse %}{{ r.vix_level or 'null' }},{% endfor %}];
+
+new Chart(document.getElementById('vixChart'), {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'VIX',
+            data: vixData,
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239,68,68,0.08)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 4,
+            pointBackgroundColor: '#ef4444',
+            borderWidth: 2,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { beginAtZero: false },
+            x: { ticks: { maxRotation: 45 } }
+        }
+    }
+});
+
+const regimeMap = { 'normal': 1, 'bullish': 2, 'bearish': 0 };
+const regimeColors = [{% for r in history|reverse %}
+    '{{ r.regime_name }}' === 'normal' ? 'rgba(34,197,94,0.6)' :
+    '{{ r.regime_name }}' === 'bullish' ? 'rgba(59,130,246,0.6)' :
+    'rgba(239,68,68,0.6)',
+{% endfor %}];
+
+new Chart(document.getElementById('regimeChart'), {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'Regime',
+            data: [{% for r in history|reverse %}regimeMap['{{ r.regime_name }}'] ?? 1,{% endfor %}],
+            backgroundColor: regimeColors,
+            borderWidth: 0,
+            borderRadius: 3,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: {
+                min: -0.5, max: 2.5,
+                ticks: {
+                    callback: v => ({0: 'Bearish', 1: 'Normal', 2: 'Bullish'}[v] || '')
+                }
+            },
+            x: { ticks: { maxRotation: 45 } }
+        }
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

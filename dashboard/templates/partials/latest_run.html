@@ -1,0 +1,18 @@
+{% if latest_run %}
+<div class="stat-card accent-cyan">
+    <div class="stat-label">Latest: {{ latest_run.mode }}</div>
+    <div class="stat-value" style="font-size:1rem">
+        <span class="badge badge-{{ status_class(latest_run.status) }}">{{ latest_run.status }}</span>
+    </div>
+    {% if regime %}
+    <div class="stat-sub">{{ regime.regime_name | upper }} / VIX {{ "%.1f"|format(regime.vix_level) if regime.vix_level else 'N/A' }}</div>
+    {% endif %}
+    {% if recent_decisions %}
+    <div class="stat-sub mt-2">
+        {% for d in recent_decisions[:3] %}
+        {{ d.action | upper }} <span class="ticker">{{ d.ticker }}</span>{{ " @ $%.2f"|format(d.price) if d.price else '' }}{% if not loop.last %}<br>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}

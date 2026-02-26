@@ -15,10 +15,7 @@ vectorbt>=0.26.0
 rich>=13.0.0
 
 # Dashboard
-streamlit>=1.29.0
-plotly>=5.18.0
-streamlit-autorefresh>=1.0.1
-pytz>=2023.3
+flask>=3.0.0
 
 # Sentiment Analysis
 vaderSentiment>=3.3.2

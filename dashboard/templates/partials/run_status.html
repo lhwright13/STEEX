@@ -1,0 +1,17 @@
+{% if running %}
+<div class="status-banner running">
+    <div class="pulse-dot"></div>
+    <p>
+        <strong>Agent running</strong> &mdash;
+        {{ mode_icon(running.mode) }} {{ running.mode }} started at {{ running.started_at | ts }}
+    </p>
+</div>
+{% elif latest and latest.status == 'failed' %}
+<div class="status-banner error">
+    <p>
+        Last run <strong>failed</strong> &mdash;
+        {{ mode_icon(latest.mode) }} {{ latest.mode }} at {{ latest.started_at | ts }}
+        {% if latest.error_message %} &mdash; {{ latest.error_message }}{% endif %}
+    </p>
+</div>
+{% endif %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Decisions - STEEX{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Decision Log</h1>
+    <p>Every entry and exit decision the agent has made, with reasoning</p>
+</div>
+
+<form method="get" action="/decisions" class="filter-row">
+    <select name="ticker" aria-label="Filter by ticker">
+        <option value="">All tickers</option>
+        {% for t in tickers %}
+        <option value="{{ t }}" {{ 'selected' if selected_ticker == t }}>{{ t }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit">Filter</button>
+</form>
+
+{% if decisions %}
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Ticker</th>
+            <th>Action</th>
+            <th>Price</th>
+            <th>Shares</th>
+            <th>Score</th>
+            <th>Reasons</th>
+            <th>Run</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for d in decisions %}
+        <tr>
+            <td class="text-muted">{{ d.timestamp | ts }}</td>
+            <td><span class="ticker">{{ d.ticker }}</span></td>
+            <td>
+                {% if d.action == 'enter' %}
+                    <span class="badge badge-ok">ENTER</span>
+                {% else %}
+                    <span class="badge badge-neutral">EXIT</span>
+                {% endif %}
+            </td>
+            <td>{{ "$%.2f"|format(d.price) if d.price else '-' }}</td>
+            <td>{{ d.shares if d.shares else '-' }}</td>
+            <td>{{ "%.1f"|format(d.score) if d.score else '-' }}</td>
+            <td>
+                {% if d.reasons_list %}
+                <ul class="compact-list">
+                    {% for r in d.reasons_list %}
+                    <li>{{ r }}</li>
+                    {% endfor %}
+                </ul>
+                {% elif d.exit_reason %}
+                {{ d.exit_reason }}
+                {% else %}-{% endif %}
+            </td>
+            <td><a href="/runs/{{ d.run_id }}" class="link-arrow">{{ d.mode }}</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<div class="empty-state"><p>No decisions recorded{% if selected_ticker %} for {{ selected_ticker }}{% endif %}.</p></div>
+{% endif %}
+{% endblock %}

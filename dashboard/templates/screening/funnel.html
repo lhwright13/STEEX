@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Screening - STEEX{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Screening Funnel</h1>
+    <p>How the universe narrows at each filtering stage</p>
+</div>
+
+{% if latest %}
+<div class="grid-2">
+    <article>
+        <header>Latest Funnel - {{ latest.timestamp | ts }}</header>
+        <div class="card-body">
+            <div class="funnel-steps">
+                {% set max_val = latest.universe or 1 %}
+                {% for label, val in [('Universe', latest.universe), ('Stage 1', latest.stage_1), ('Stage 2', latest.stage_2), ('Stage 3', latest.stage_3), ('Stage 4', latest.stage_4), ('Stage 5', latest.stage_5), ('Final', latest.final)] %}
+                {% if val is not none %}
+                <div class="funnel-step">
+                    <span class="step-label">{{ label }}</span>
+                    <div class="step-bar" style="width: {{ (val / max_val * 100)|round(1) }}%">{{ val }}</div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </article>
+
+    <article>
+        <header>Funnel Over Time</header>
+        <div class="card-body chart-wrap">
+            <canvas id="historyChart"></canvas>
+        </div>
+    </article>
+</div>
+{% endif %}
+
+<h2 class="section-title">Screening History</h2>
+{% if history %}
+<figure>
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Mode</th>
+            <th>Universe</th>
+            <th>S1</th>
+            <th>S2</th>
+            <th>S3</th>
+            <th>S4</th>
+            <th>S5</th>
+            <th>Final</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in history %}
+        <tr>
+            <td class="text-muted">{{ s.timestamp | ts }}</td>
+            <td><span class="mode-tag">{{ mode_icon(s.mode) }} {{ s.mode }}</span></td>
+            <td>{{ s.universe or 0 }}</td>
+            <td>{{ s.stage_1 or 0 }}</td>
+            <td>{{ s.stage_2 or 0 }}</td>
+            <td>{{ s.stage_3 or 0 }}</td>
+            <td>{{ s.stage_4 or 0 }}</td>
+            <td>{{ s.stage_5 or 0 }}</td>
+            <td><strong class="text-green">{{ s.final or 0 }}</strong></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</figure>
+{% else %}
+<div class="empty-state"><p>No screening data recorded yet.</p></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if history|length > 1 %}
+<script>
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(30,41,59,0.5)';
+
+const histCtx = document.getElementById('historyChart');
+const histLabels = [{% for s in history|reverse %}'{{ s.timestamp | ts }}',{% endfor %}];
+new Chart(histCtx, {
+    type: 'line',
+    data: {
+        labels: histLabels,
+        datasets: [
+            {
+                label: 'Universe',
+                data: [{% for s in history|reverse %}{{ s.universe or 0 }},{% endfor %}],
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59,130,246,0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3,
+                pointBackgroundColor: '#3b82f6',
+            },
+            {
+                label: 'Final',
+                data: [{% for s in history|reverse %}{{ s.final or 0 }},{% endfor %}],
+                borderColor: '#22c55e',
+                backgroundColor: 'rgba(34,197,94,0.1)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 3,
+                pointBackgroundColor: '#22c55e',
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16 } }
+        },
+        scales: {
+            y: { beginAtZero: true },
+            x: { ticks: { maxRotation: 45 } }
+        }
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

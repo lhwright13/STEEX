@@ -247,7 +247,7 @@ def main():
     logger.info("  1. Enable PySR in config/config.yaml:")
     logger.info("     pysr_enabled: true")
     logger.info("     weight_pysr: 0.10")
-    logger.info("  2. Start dashboard: streamlit run dashboard/app.py")
+    logger.info("  2. Start dashboard: flask --app dashboard.app run")
     logger.info("  3. Navigate to Alpha Discovery page")
     logger.info("=" * 60)
 

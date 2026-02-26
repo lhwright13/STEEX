@@ -385,7 +385,7 @@ def main():
 
     if args.live:
         console.print("\n[bold]LIVE MODE[/bold] - Confirm actions in dashboard")
-        console.print("Run: streamlit run dashboard/app.py")
+        console.print("Run: flask --app dashboard.app run")
 
 
 if __name__ == "__main__":
