@@ -6,8 +6,8 @@
 2. [Daily Workflow](#daily-workflow)
 3. [Commands Reference](#commands-reference)
 4. [Understanding the Output](#understanding-the-output)
-5. [Strategy Overview](#strategy-overview)
-6. [Configuration](#configuration)
+5. [Configuration](#configuration)
+6. [Scheduler Setup](#scheduler-setup)
 7. [Troubleshooting](#troubleshooting)
 
 ---
@@ -17,466 +17,406 @@
 ### Prerequisites
 
 - Python 3.10 or higher
-- Internet connection (for SEC and Yahoo Finance data)
+- Alpaca Markets account (paper trading is free)
+- Internet connection for market data APIs
 
 ### Setup
 
 ```bash
-# Clone or navigate to the project directory
 cd STEEX
 
-# Create virtual environment
 python -m venv venv
+source venv/bin/activate
 
-# Activate virtual environment
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Install package in development mode
 pip install -e .
 ```
 
-### Alpaca Broker Setup (Optional)
+### Alpaca Broker Setup (Required)
+
+Alpaca is the source of truth for all holdings and account data. Add API keys to your shell profile:
 
 ```bash
-# Add API keys to your shell profile or .env file
+# Add to ~/.bash_profile or ~/.zprofile
 export ALPACA_API_KEY="your-key"
 export ALPACA_SECRET_KEY="your-secret"
+```
 
-# Test connection
+Test the connection:
+
+```bash
+source ~/.bash_profile
 python -c "
 from src.broker.alpaca import AlpacaBroker
 b = AlpacaBroker(paper=True)
 acct = b.get_account()
-print(f'Buying power: \${acct.buying_power:,.2f}')
 print(f'Equity: \${acct.equity:,.2f}')
+print(f'Cash: \${acct.cash:,.2f}')
+print(f'Buying power: \${acct.buying_power:,.2f}')
 "
 ```
 
 API keys are never stored in config files. Use environment variables or a `.env` file (gitignored).
 
+### Optional API Keys
+
+These improve sentiment analysis but are not required:
+
+```bash
+export FINNHUB_API_KEY="your-key"          # Primary sentiment source
+export ALPHA_VANTAGE_API_KEY="your-key"    # Sentiment fallback
+```
+
 ### Verify Installation
 
 ```bash
-# Test the insider scanner
-python scripts/scan_insiders.py --fast
-
-# Test the daily scanner
-python scripts/daily_scan.py --debug
+python scripts/run_manager.py pre_market --paper --dry-run
 ```
 
 ---
 
 ## Daily Workflow
 
-### Morning Routine (Before Market Open)
+### How the Pipeline Works
 
-1. **Run the pre-market pipeline** - Screens, ranks, and optionally executes
-2. **Review candidates** - Confirm or skip each entry
-3. **Orders placed** - Limit orders via Alpaca at market open
+Each run goes through this sequence:
 
-### Step-by-Step (QuantManager)
+1. **Broker Sync** - Reconcile positions with Alpaca (source of truth)
+2. **Data Refresh** - Fetch insider filings, check VIX, validate price API
+3. **Regime Check** - Classify market by VIX level (normal/elevated/crisis)
+4. **Risk Assessment** - Update stops, check drawdown, detect exit signals
+5. **Execute Exits** - Auto-fire stop-loss and VIX exits
+6. **Screening** - Run 5-stage pipeline on S&P 500
+7. **Execute Entries** - Present candidates, confirm or auto-execute
+8. **Report** - Save JSON report, print summary
+
+### Morning Routine (Pre-Market)
 
 ```bash
-# Activate your environment
 source venv/bin/activate
 
-# Dry run first to see what the system would do (no orders)
+# Preview what the system would do (no orders)
 python scripts/run_manager.py pre_market --paper --dry-run
 
-# Paper trading with confirmation prompts
+# Paper trading with confirmation prompts for each entry
 python scripts/run_manager.py pre_market --paper
 
-# Auto-confirm all entries (paper)
+# Auto-confirm all entries (for scheduler use)
 python scripts/run_manager.py pre_market --paper --yes
-
-# Midday monitoring (checks stops, VIX, exits)
-python scripts/run_manager.py monitor --paper
-
-# End of day wrap-up
-python scripts/run_manager.py post_market --paper
 ```
 
-### Legacy Scanners (still available)
+### Midday Check (Monitor)
+
+No screening, no new entries. Checks stops, VIX, and exits only.
 
 ```bash
-# Run the standalone daily scan
-python scripts/daily_scan.py
+python scripts/run_manager.py monitor --paper
+```
 
-# Debug mode to see what passed each stage
-python scripts/daily_scan.py --debug
+### End of Day (Post-Market)
 
-# Check insider activity separately
-python scripts/scan_insiders.py --days 7
+Updates stops with closing prices, executes end-of-day exits, generates daily report.
+
+```bash
+python scripts/run_manager.py post_market --paper
 ```
 
 ### Interpreting Results
 
 | Pipeline Result | Action |
 |-----------------|--------|
-| 2+ candidates | Review top picks, confirm entries |
+| 2+ candidates with score > 55 | Review top picks, confirm entries |
 | 1 candidate | Consider single position or wait |
 | 0 candidates | No action today - strategy is selective |
+| Exit signals | Stop-loss and VIX exits auto-fire; others are recommendations |
 
 ---
 
 ## Commands Reference
 
-### Daily Scanner
+### QuantManager (Primary)
 
 ```bash
-python scripts/daily_scan.py [OPTIONS]
+python scripts/run_manager.py <mode> [OPTIONS]
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--date YYYY-MM-DD` | Scan for a specific date (default: today) |
-| `--top N` | Show top N picks (default: 2) |
-| `--verbose`, `-v` | Show detailed information for picks |
-| `--all-candidates` | Show all candidates, not just top picks |
-| `--debug` | Show stocks passing each stage |
-| `--skip-insider` | Skip insider filter (testing only) |
-| `--expanded` | Use expanded universe (S&P 500 + insider activity stocks) |
-| `--insider-only` | Only scan stocks with recent insider activity (small-caps) |
+| Mode | Description |
+|------|-------------|
+| `pre_market` | Full pipeline (default) |
+| `monitor` | Midday risk check |
+| `post_market` | End-of-day wrap-up |
+| `full` | Run all three in sequence |
+| `train` | PySR walk-forward training |
 
-**Examples:**
+| Flag | Description |
+|------|-------------|
+| `--paper` | Enable broker, paper trading |
+| `--live` | Enable broker, real money |
+| `--no-broker` | Force simulation (backtesting only) |
+| `--dry-run` | Preview only, no execution |
+| `--yes` | Auto-confirm all entries |
+| `--verbose` | Extra output |
+| `--portfolio N` | Override portfolio value |
+
+### Legacy Scanners (Still Available)
 
 ```bash
-# Standard daily scan (S&P 500 only)
+# Standalone daily scan
 python scripts/daily_scan.py
+python scripts/daily_scan.py --debug --all-candidates
 
-# Expanded universe (S&P 500 + stocks with insider activity)
-python scripts/daily_scan.py --expanded
-
-# Small-caps only (stocks with recent insider buying)
-python scripts/daily_scan.py --insider-only
-
-# See all 121 momentum stocks with debug info
-python scripts/daily_scan.py --debug --all-candidates --skip-insider
-
-# Verbose output for top 5 picks
-python scripts/daily_scan.py --top 5 --verbose
-```
-
-### Insider Scanner
-
-```bash
-python scripts/scan_insiders.py [OPTIONS]
-```
-
-| Option | Description |
-|--------|-------------|
-| `--days N`, `-d N` | Days to look back (default: 3) |
-| `--max N`, `-m N` | Max filings to process (default: 150) |
-| `--fast`, `-f` | Use Atom feed (faster, less data) |
-| `--quiet`, `-q` | Suppress progress output |
-
-**Examples:**
-
-```bash
-# Quick scan of recent filings
-python scripts/scan_insiders.py --fast
-
-# Thorough 7-day scan
+# Insider scanner
 python scripts/scan_insiders.py --days 7 --max 500
-
-# Quiet mode for scripts
-python scripts/scan_insiders.py --quiet
+python scripts/scan_insiders.py --fast
 ```
 
 ---
 
 ## Understanding the Output
 
-### Daily Scanner Output
+### Pipeline Summary
 
 ```
-Screening Results
-Universe size:        503    <- Total S&P 500 stocks
-Stage 1 (filters):    476    <- Passed price/volume/earnings filter
-Stage 2 (momentum):   121    <- Passed momentum criteria
-Stage 3 (insider):    2      <- Had insider buying
-Stage 4 (sentiment):  2      <- Passed sentiment (currently passthrough)
+0. Broker Sync
+   Equity: $50,000 | Cash: $47,000 | Positions: 2
+
+1. Data Refresh
+   Sources: 3/3 healthy
+
+2. Data Health
+   All data sources healthy
+
+3. Market Regime
+   NORMAL (VIX: 18.5)
+
+4. Portfolio Risk
+   Positions: 2/10
+   P&L: +$350
+
+5. Exit Signals
+   No exit signals
+
+6. Screening Pipeline
+   503 -> 8 candidates
+
+7. Buy Candidates
+   AAPL @ $185.50 x 12 shares ($2,226) | Score: 67.3
 ```
 
-### Stage Breakdown
+### Screening Funnel
 
 | Stage | What It Filters |
 |-------|-----------------|
-| Stage 1 | Price > $5, Volume > 500K, No earnings in 5 days |
-| Stage 2 | 6M return > 10%, 1M return > 0%, Above 50 & 200 MA |
-| Stage 3 | Insider purchases in last 30 days |
-| Stage 4 | Sentiment check (not yet implemented) |
+| Stage 1 | Price > $5, volume > 500K, no earnings in 5 days |
+| Stage 2 | 6M return > 15%, 1M return > 5%, above 50/200 MA |
+| Stage 3 | Insider enrichment (adds cluster buy scores) |
+| Stage 4 | Combined sentiment > 30 (stock + geopolitical) |
+| Stage 5 | P/E < 50, ROE > 5%, debt/equity < 2.0 |
 
-### Picks Table
+### VIX Regime
 
-```
-┏━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
-│ Rank │ Ticker │ Score │ 6M Return │ Insiders │ Insider $ │ Reasons         │
-```
+| VIX | Regime | Position Size | Entries |
+|-----|--------|--------------|---------|
+| < 15 | Low vol | 1.0x | Yes |
+| 15-25 | Normal | 1.0x | Yes |
+| 25-35 | Elevated | 0.5x | Yes (reduced) |
+| > 35 | Crisis | 0.0x | No |
 
-| Column | Meaning |
-|--------|---------|
-| Score | Composite score (0-100) |
-| 6M Return | 6-month price return |
-| Insiders | Number of unique insider buyers |
-| Insider $ | Total dollar value of insider purchases |
-| Reasons | Why this stock was picked |
+### Exit Signals
 
-### Insider Scanner Output
-
-**Transaction Codes:**
-
-| Code | Meaning | Signal |
-|------|---------|--------|
-| P | Open market purchase | Bullish |
-| S | Sale | Bearish |
-| A | Award/grant | Neutral |
-| J | Other acquisition | Mixed |
-
-**Cluster Buy Scores (0-100):**
-
-| Score | Strength |
-|-------|----------|
-| 80-100 | Very strong - multiple insiders, high value |
-| 60-79 | Strong - CEO/CFO buying or cluster |
-| 40-59 | Moderate - significant purchase |
-| 20-39 | Weak - small or single purchase |
-
-### VIX Levels
-
-| VIX Level | Status | Action |
-|-----------|--------|--------|
-| < 20 | Normal | Trade normally |
-| 20-30 | Elevated | Monitor closely |
-| 30-40 | High | Tighten stops to 5% |
-| > 40 | Spike | Exit 50% of positions |
-
----
-
-## Strategy Overview
-
-### The MIS Strategy
-
-**M**omentum + **I**nsider + **S**entiment
-
-The strategy looks for stocks with:
-1. Strong price momentum (trending up)
-2. Insider buying activity (management confidence)
-3. Positive sentiment (optional enhancement)
-
-### Why It Works
-
-- **Momentum** has the strongest academic backing for excess returns
-- **Insider buying** is historically bullish (they know more than we do)
-- **Combining signals** reduces false positives
-
-### Selection Process
-
-```
-S&P 500 (503 stocks)
-    |
-    v
-Stage 1: Universe Filter (price, volume, earnings)
-    |
-    v
-Stage 2: Momentum Screen (6M > 10%, above MAs)
-    |
-    v
-Stage 3: Insider Filter (recent purchases)
-    |
-    v
-Stage 4: Sentiment Check (optional)
-    |
-    v
-Final Ranking -> Top 2 Picks
-```
-
-### Position Sizing
-
-| Parameter | Value |
-|-----------|-------|
-| Daily picks | 2 stocks |
-| Position size | 4% of portfolio each |
-| Max positions | 10 concurrent |
-| Max sector | 30% of portfolio |
-
-### Exit Rules
-
-| Condition | Action |
-|-----------|--------|
-| -10% from entry | Stop loss (immediate) |
-| +10% gain | Trail 12% from high |
-| +20% gain | Trail 15% from high |
-| +30% gain | Trail 15% from high |
-| Below 50-day MA | Exit (end of day) |
-| 30 trading days | Time-based exit |
-| VIX > 30 | Tighten stops to 5% |
-| VIX > 40 | Exit 50% of positions |
+| Condition | Urgency | Action |
+|-----------|---------|--------|
+| Stop loss (-10%) | Immediate | Auto-exit |
+| Trailing stop | Immediate | Auto-exit |
+| VIX > 40 | Immediate | Auto-exit 50% |
+| Below 50-day MA | End of day | Auto-exit at post_market |
+| Max hold (30 days) | Next session | Recommendation |
 
 ---
 
 ## Configuration
 
-### Environment Variables
+### Config File
 
-All settings can be overridden with environment variables prefixed with `STEEX_`:
-
-```bash
-export STEEX_DAILY_PICKS=3
-export STEEX_MOMENTUM_MIN_RETURN=0.15
-export STEEX_INITIAL_STOP_PCT=0.10
-```
-
-### Configuration File
-
-Create a `.env` file in the project root:
-
-```env
-STEEX_DAILY_PICKS=2
-STEEX_MAX_POSITIONS=20
-STEEX_POSITION_SIZE_PCT=0.05
-STEEX_INITIAL_STOP_PCT=0.07
-STEEX_VIX_CAUTION_LEVEL=30
-STEEX_VIX_EXIT_LEVEL=40
-```
-
-### Key Parameters
+All parameters are in `config/config.yaml`. Key settings:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `momentum_lookback_days` | 126 | 6-month momentum period |
-| `short_momentum_days` | 21 | 1-month momentum period |
 | `momentum_min_return` | 0.15 | Minimum 6M return (15%) |
-| `insider_lookback_days` | 30 | Days to look for insider buys |
-| `min_price` | 5.0 | Minimum stock price |
-| `min_volume` | 500000 | Minimum daily volume |
-| `earnings_blackout_days` | 5 | Days before earnings to avoid |
 | `daily_picks` | 2 | Stocks to pick per day |
 | `max_positions` | 10 | Maximum concurrent positions |
-| `position_size_pct` | 0.04 | Position size (4% of portfolio) |
+| `position_size_pct` | 0.04 | Base position size (4%) |
 | `initial_stop_pct` | 0.10 | Initial stop loss (10%) |
 | `max_hold_days` | 30 | Maximum holding period |
-| `broker_enabled` | false | Enable live broker execution |
-| `broker_paper` | true | Use paper trading (safety net) |
+| `max_sector_pct` | 0.30 | Maximum sector exposure (30%) |
+| `broker_enabled` | true | Alpaca broker always on |
+| `broker_paper` | true | Paper trading (safety net) |
 
 ### Scoring Weights
 
-| Factor | Weight | Description |
-|--------|--------|-------------|
+| Factor | Weight | Source |
+|--------|--------|--------|
 | Momentum | 30% | 6-month return percentile |
-| Insider | 25% | Insider buying strength |
+| Insider | 25% | SEC Form 4 cluster buy score |
 | Volume | 15% | Volume surge percentile |
-| Sentiment | 15% | Combined sentiment score |
+| Sentiment | 15% | Finnhub + VADER + geopolitical |
 | Fundamental | 10% | P/E, ROE, debt/equity |
-| Options | 5% | Put/call ratio signal |
+| Options | 5% | Put/call ratio |
+| PySR | 10% | Symbolic regression (when trained) |
+
+### Environment Variable Overrides
+
+Any setting can be overridden with the `STEEX_` prefix:
+
+```bash
+export STEEX_INITIAL_STOP_PCT=0.08
+export STEEX_MAX_POSITIONS=15
+export STEEX_DAILY_PICKS=3
+```
+
+Priority: init settings > environment variables > YAML config > defaults.
+
+---
+
+## Scheduler Setup
+
+The scheduler runs the pipeline automatically via cron and `claude -p` (non-interactive mode). Claude reads the agent docs, reasons about market conditions, and executes the pipeline.
+
+### Install
+
+```bash
+# Preview cron entries
+scheduler/install.sh --show
+
+# Install cron schedule
+scheduler/install.sh
+
+# Verify
+crontab -l
+```
+
+### Default Schedule (ET, weekdays)
+
+| Mode | Time | Description |
+|------|------|-------------|
+| pre_market | 8:30 AM | Full pipeline |
+| monitor | 12:00 PM | Risk check |
+| post_market | 4:30 PM | EOD wrap-up |
+
+### Manual Run
+
+```bash
+scheduler/run.sh pre_market
+scheduler/run.sh monitor
+scheduler/run.sh post_market
+```
+
+### Safety Defaults
+
+- `paper: true` - paper trading only
+- `dry_run: false` - executes trades (change to true for preview-only)
+- `allowed_tools: "Bash,Read,Glob,Grep"` - Claude cannot edit source files
+- Cron requires the Mac to be awake during scheduled times
+
+### Uninstall
+
+```bash
+scheduler/uninstall.sh
+```
+
+See `scheduler/README.md` for details.
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+### "Broker is required but failed to initialize"
 
-**"No candidates found matching all criteria"**
+Alpaca API keys are not set. Add them to your shell profile:
 
-This is normal. The strategy is selective. Options:
-- Run with `--debug` to see what passed each stage
-- Run with `--skip-insider` to see momentum picks
-- Check insider scanner separately to see what buying exists
+```bash
+export ALPACA_API_KEY="your-key"
+export ALPACA_SECRET_KEY="your-secret"
+```
 
-**"ImportError: attempted relative import beyond top-level package"**
+Then `source ~/.bash_profile` and retry.
+
+### "No candidates found"
+
+Normal. The strategy is selective. Options:
+- Run with `--dry-run` to see the screening funnel
+- Check if the market is in "crisis" regime (VIX > 35 blocks entries)
+- Run `python scripts/daily_scan.py --debug` to see what passed each stage
+
+### "Fill timeout" on broker orders
+
+The market is closed. Alpaca DAY limit orders need the market to be open to fill. Run during market hours (9:30 AM - 4:00 PM ET).
+
+### "ImportError: attempted relative import"
 
 Run: `pip install -e .`
 
-**"HTTP Error 403" when fetching S&P 500 list**
+### Cron not firing
 
-The Wikipedia scraper needs a user-agent. This should be fixed, but if it persists, the system falls back to ~100 major stocks.
+- Mac was probably asleep. Keep it awake during market hours.
+- Check Full Disk Access for `/usr/sbin/cron` in System Settings.
+- Verify cron entries: `crontab -l`
 
-**Slow performance**
+### Stale local positions
 
-- Use `--fast` flag with insider scanner
-- The daily scan processes 500 stocks - this takes 2-3 minutes
-
-**Missing dependency errors**
-
-```bash
-pip install -r requirements.txt
-pip install lxml  # For Wikipedia parsing
-```
+If local `positions.json` is out of sync with Alpaca, the broker sync at the start of each run will fix it automatically - removing local-only positions and adding broker-only positions.
 
 ### Data Sources
 
 | Data | Source | Rate Limit |
 |------|--------|------------|
-| Prices | Yahoo Finance | 2000 req/hour |
+| Prices / VIX / Fundamentals / Options | Yahoo Finance | 2000 req/hour |
 | Insider (Form 4) | SEC EDGAR | 10 req/second |
 | S&P 500 list | Wikipedia | None |
-| VIX | Yahoo Finance | Shared with prices |
-| Order Execution | Alpaca Markets | 200 req/minute |
-
-### Logs and Debugging
-
-```bash
-# Verbose daily scan
-python scripts/daily_scan.py --debug --verbose
-
-# Check what the screener sees
-python -c "
-from src.data.universe import Universe
-u = Universe()
-print(f'Universe size: {len(u.get_sp500())}')
-"
-
-# Test SEC connection
-python scripts/scan_insiders.py --fast --max 10
-```
+| Sentiment | Finnhub | 60 req/minute (free) |
+| Sentiment fallback | Alpha Vantage | 25 req/day (free) |
+| Geopolitical | GDELT Project | No limit |
+| Execution / Positions | Alpaca Markets | 200 req/minute |
 
 ---
 
-## Quick Reference Card
+## Quick Reference
 
 ```
-DAILY COMMANDS (QuantManager)
------------------------------
-python scripts/run_manager.py pre_market --paper --dry-run  # Preview only
-python scripts/run_manager.py pre_market --paper            # Paper trade
-python scripts/run_manager.py monitor --paper               # Midday check
-python scripts/run_manager.py post_market --paper           # End of day
+DAILY COMMANDS
+--------------
+python scripts/run_manager.py pre_market --paper --dry-run  # Preview
+python scripts/run_manager.py pre_market --paper             # Paper trade
+python scripts/run_manager.py monitor --paper                # Midday check
+python scripts/run_manager.py post_market --paper            # End of day
 
-LEGACY COMMANDS
----------------
-python scripts/daily_scan.py              # Standalone scan
-python scripts/daily_scan.py --debug      # Show all stages
-python scripts/scan_insiders.py --days 7  # 7-day insider scan
-
-WHAT THE NUMBERS MEAN
----------------------
+SCORING
+-------
 Score 70+  = Strong candidate
-Score 55+  = Passes entry threshold
+Score 55+  = Passes entry threshold (manager_min_score_entry)
 6M > 15%   = Passes momentum filter
 Insiders 3+ = Cluster buy signal
 
-VIX ACTIONS
------------
-< 25  = Trade normally
+VIX REGIME
+----------
+< 25  = Trade normally (1.0x size)
 25-35 = Reduced position sizes (0.5x)
 > 35  = No new entries
 > 40  = Exit 50% of positions
 
 POSITION RULES
 --------------
-Entry: Limit order via Alpaca (or simulation)
-Size: 4% of portfolio per stock
-Stop: 10% initial, trailing after +10%
+Size: 3-6% of portfolio (volatility-adjusted)
+Stop: 10% initial, trailing after +10% gain
 Max hold: 30 trading days
 Max positions: 10
+Max sector: 30%
 
 BROKER FLAGS
 ------------
---paper      Enable broker, paper trading
---live       Enable broker, real money
---no-broker  Force simulation mode
---dry-run    Preview only, no execution
+--paper      Paper trading via Alpaca
+--live       Real money via Alpaca
+--no-broker  Simulation only (backtesting)
+--dry-run    Preview, no execution
+--yes        Auto-confirm entries
 ```

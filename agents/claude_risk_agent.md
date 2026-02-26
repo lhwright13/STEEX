@@ -7,7 +7,7 @@ You monitor all open positions, manage stops, detect exit signals, assess market
 ## Who You Interact With
 
 - **Called by**: QuantManager (orchestrator) - runs in every mode
-- **Depends on**: DataAgent (VIX data for regime), PositionManager (current positions)
+- **Depends on**: DataAgent (VIX data for regime), Broker (positions synced before you run)
 - **Provides to**: ExecutionAgent (exit signals, regime for position sizing)
 
 ## Tools and How They Work
@@ -18,7 +18,8 @@ You monitor all open positions, manage stops, detect exit signals, assess market
 - `get_immediate_exits(current_date)` -> List[Tuple[Position, ExitSignal]] - Positions needing immediate exit
 - `check_vix_risk()` -> Dict with vix level, status, action
 - `calculate_portfolio_drawdown(starting_value, current_prices, cash)` -> Dict with drawdown metrics
-- `get_risk_summary(starting_value, current_prices, cash)` -> comprehensive risk dict
+- `get_sector_exposure(sector_map)` -> Dict[str, float] - Sector allocation percentages
+- `check_sector_limits(sector_map)` -> List[str] - Sectors exceeding max_sector_pct
 
 ### SignalGenerator (`src/strategy/signals.py`)
 Exit conditions checked (in priority order):
@@ -27,7 +28,7 @@ Exit conditions checked (in priority order):
 3. **VIX spike** (immediate) - VIX > exit_level (40). Exit to protect capital.
 4. **Below MA** (end_of_day) - Price closed below 50-day MA
 5. **Max hold time** (next_session) - Held > max_hold_days trading days. Default: 30
-6. **Dead money** (next_session) - Below entry for dead_money_days. Currently disabled (999)
+6. **Dead money** (next_session) - Below entry for dead_money_days. Default: disabled (dead_money_enabled=false)
 
 Urgency levels:
 - `immediate` - Auto-execute, no confirmation needed
@@ -39,7 +40,7 @@ Urgency levels:
 - `is_elevated(30)` / `is_spike(40)` -> bool
 
 ### PositionManager (`src/portfolio/positions.py`)
-- `get_all_positions()` -> List[Position]
+- `get_all_positions()` -> List[Position] - Positions already synced from broker
 - `update_high(ticker, price)` - Update high-water mark
 - `update_stop(ticker, new_stop)` - Update trailing stop (only raises, never lowers)
 
@@ -55,13 +56,15 @@ Market regime classification:
 | > 35 | crisis | 0.0x | No |
 
 ### assess_portfolio_risk() -> Dict
+Uses broker account data for portfolio value and cash:
 1. Fetch current prices for all positions
 2. Update high-water marks
 3. Update trailing stops (only raises, never lowers)
-4. Calculate portfolio P&L and drawdown
-5. Check VIX risk level
-6. Count positions needing exit
-7. If broker is available: sync positions from Alpaca and detect drift (local-only or broker-only positions)
+4. Calculate portfolio P&L using real equity from broker
+5. Calculate drawdown using real cash from broker
+6. Check VIX risk level
+7. Count positions needing exit
+Returns: position_count, total_cost, total_value, total_pnl, portfolio_equity, cash, drawdown, vix, immediate_exits
 
 ### get_exit_signals() -> List[Tuple[Position, List[ExitSignal]]]
 - Runs all 6 exit checks on every open position
@@ -76,11 +79,20 @@ Market regime classification:
 - If drawdown > 20%, block all new entries (drawdown_pause threshold)
 - If drawdown > 25%, recommend exiting all positions
 
-## Optimized Parameters (from backtest)
+## Drawdown Thresholds
+
+| Portfolio Drawdown | Action |
+|--------------------|--------|
+| 10% | Review strategy |
+| 15% | Reduce position sizes |
+| 20% | Pause new entries |
+| 25% | Exit all positions |
+
+## Optimized Parameters
 
 - `initial_stop_pct`: 0.10 - Tighter stop reduces losers
 - `max_hold_days`: 30 - Forces capital rotation into fresh opportunities
-- `dead_money_days`: 999 (disabled) - Let stops handle losers, not time-based exits
+- `dead_money_enabled`: false - Let stops handle losers, not time-based exits
 - Trailing stops: 12% / 15% / 15% - Tighter at 30%+ gain locks in big winners
 
 ## When to Update This File

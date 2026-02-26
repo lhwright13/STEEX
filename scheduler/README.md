@@ -53,14 +53,15 @@ scheduler/uninstall.sh
 
 ## Safety Defaults
 
-The config ships with conservative defaults:
+The config ships with safe defaults:
 
 - `paper: true` - paper trading only
-- `dry_run: true` - show plan without executing
-- `allowed_tools: "Bash,Read,Glob,Grep"` - Claude cannot edit or write files
+- `dry_run: false` - executes trades (set to true for preview-only mode)
+- `allowed_tools: "Bash,Read,Glob,Grep"` - Claude cannot edit or write source files
 - `broker_enabled: true` in main config - Alpaca is the source of truth
+- `run.sh` sources `~/.bash_profile` and `~/.zprofile` for API keys
 
-To go live, change `dry_run: false` per-mode in `config.yaml`.
+If the broker fails to initialize (missing keys), the pipeline halts rather than falling back to simulation.
 
 ## Requirements
 

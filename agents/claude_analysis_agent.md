@@ -14,11 +14,36 @@ You run the multi-stage stock screening pipeline and rank candidates by composit
 
 ### StockScreener (`src/strategy/screener.py`)
 5-stage pipeline:
-1. **Universe filter** - Price > $5, volume > 500K, no earnings within 5 days, 6 months history
-2. **Momentum filter** - 6-month return > 15%, positive 1-month momentum, above 50/200 MA
-3. **Insider enrichment** - Adds insider buyer count, total value, cluster score (no longer a hard filter)
-4. **Sentiment filter** - Combined stock-specific + geopolitical sentiment > 30
-5. **Fundamental filter** - P/E < 50, ROE > 5%, debt/equity < 2.0
+
+**Stage 1 - Universe Filter:**
+- Price > $5 (avoid penny stocks)
+- Average daily volume > 500K (liquidity)
+- No earnings within 5 trading days (avoid binary events)
+- Minimum 126 days of trading history
+
+**Stage 2 - Momentum Screen:**
+- 6-month return > 15%
+- 1-month return > 5%
+- Price above 50-day MA
+- Price above 200-day MA
+- Overextension filter (top 5% excluded) - currently disabled via `overextension_filter_enabled: false`
+
+**Stage 3 - Insider Enrichment:**
+- Fetches Form 4 filings from SEC EDGAR
+- Adds insider buyer count, total value, cluster buy score
+- Not a hard filter - enriches with insider data for scoring
+
+**Stage 4 - Sentiment Filter:**
+- Combined stock-specific + geopolitical sentiment
+- Finnhub news API + VADER NLP with financial lexicon
+- Geopolitical events from GDELT mapped to sector impacts
+- Minimum score: 30 (out of 100) to pass
+
+**Stage 5 - Fundamental Filter:**
+- P/E ratio < 50 (filter out speculative)
+- ROE > 5% (quality filter)
+- Debt/equity < 2.0 (leverage limit)
+- Plus enrichment: options data (put/call ratio, IV), PySR predictions
 
 Key method:
 - `StockScreener().run_pipeline(reference_date=None)` -> ScreeningPipelineResult
@@ -33,17 +58,17 @@ Composite scoring with weights:
 - Sentiment: 15% (`weight_sentiment`)
 - Fundamental: 10% (`weight_fundamental`)
 - Options: 5% (`weight_options`)
-- PySR: variable (`weight_pysr`)
+- PySR: 10% (`weight_pysr`) - when trained model is available
 
 Key methods:
 - `StockRanker().rank_stocks(results)` -> List[RankedStock] (sorted by composite score)
 - `StockRanker().get_top_picks(results, n)` -> List[RankedStock] (top N)
 - `StockRanker().format_pick_summary(pick)` -> Dict with reasons list
 
-### ScreeningResult fields
+### ScreeningResult Fields
 ticker, momentum_6m, momentum_1m, above_ma_50, above_ma_200, insider_buyers, total_insider_value, volume_surge, sentiment_score, fundamental_score, options_score, pysr_score, sector
 
-### RankedStock fields
+### RankedStock Fields
 ticker, composite_score, momentum_score, insider_score, volume_score, sentiment_score, fundamental_score, options_score, pysr_score, rank, screening_result
 
 ## Methods
@@ -55,15 +80,21 @@ ticker, composite_score, momentum_score, insider_score, volume_score, sentiment_
 
 ### rank_candidates(pipeline_result) -> List[RankedStock]
 - Rank via composite score
-- Filter to top N (`settings.daily_picks`)
+- Filter to top N (`settings.daily_picks`, default 2)
 - Log ranked list with scores
+
+## Typical Funnel
+
+```
+503 universe -> 480 stage 1 -> 100 stage 2 -> 20 stage 3 -> 15 stage 4 -> 8 stage 5 -> 2 entries
+```
 
 ## Performance Notes
 
 - The screening pipeline is the slowest part of the system (API calls for each ticker)
 - Typical runtime: 3-10 minutes depending on universe size
-- Consider caching price/momentum data to reduce API calls
-- The pipeline processes ~3000 tickers in the S&P universe
+- SQLite L2 cache (`data/cache.db`) reduces repeated API calls
+- The pipeline processes the full S&P 500 universe
 
 ## When to Update This File
 

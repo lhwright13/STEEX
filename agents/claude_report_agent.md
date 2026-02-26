@@ -8,7 +8,7 @@ You compile all data from a pipeline run into structured reports, save them to d
 
 - **Called by**: QuantManager (orchestrator) - always runs last
 - **Depends on**: All other agents (you compile their output)
-- **Provides to**: Dashboard (reads report JSON), User (console output)
+- **Provides to**: Dashboard (reads report JSON), User (console output), Scheduler logs
 
 ## Tools and How They Work
 
@@ -19,10 +19,9 @@ You compile all data from a pipeline run into structured reports, save them to d
 ### Report Storage
 - Reports saved to `data/reports/report_YYYYMMDD_HHMMSS.json`
 - Latest always saved as `data/reports/latest.json`
-- Dashboard pages can read `latest.json` for current state
+- Dashboard reads `latest.json` for current state
 
 ### Rich Console (`rich` library)
-- Same patterns as `scripts/morning_routine.py`
 - Panel for headers, Table for data grids
 - Color coding: green for profit, red for loss, yellow for warnings
 
@@ -35,7 +34,14 @@ Compiles the full report structure:
     timestamp, mode,
     data_health: {healthy, issues},
     regime: {name, vix, sizing_multiplier, entries_allowed},
-    portfolio: {position_count, total_value, total_pnl, positions: [...]},
+    portfolio: {
+        position_count, total_cost, total_value,
+        total_pnl_dollars, total_pnl_pct,
+        portfolio_equity,    // from broker account
+        cash,                // from broker account
+        drawdown, vix, immediate_exits,
+        positions: [...]
+    },
     exits: [{ticker, price, pnl, reason, urgency}, ...],
     entries: [{ticker, price, shares, score, reasons}, ...],
     screening: {universe, stage_1, ..., final},
@@ -56,12 +62,13 @@ Console output sections:
 1. Header (mode, date)
 2. Regime + VIX
 3. Data health (if issues)
-4. Portfolio positions table (sorted by P&L)
-5. Exit signals (with AUTO/REC labels)
-6. Buy candidates table
-7. Screening funnel
-8. Risk alerts
-9. Track record (trades, win rate, profit factor)
+4. Account: Equity + Cash (from broker)
+5. Portfolio positions table (sorted by P&L)
+6. Exit signals (with AUTO/REC labels)
+7. Buy candidates table
+8. Screening funnel
+9. Risk alerts
+10. Track record (trades, win rate, profit factor)
 
 ## Audit Log
 
@@ -75,4 +82,4 @@ The `self.log` list on QuantManager accumulates entries throughout the run:
 - When adding new sections to the report
 - When the dashboard expects new fields in latest.json
 - When changing console output formatting
-- When adding email/Slack notification support
+- When adding notification support (email, Slack, etc.)
