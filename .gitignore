@@ -172,13 +172,22 @@ Thumbs.db
 
 # STEEX data files
 /data/
+positions.json
+trades.json
 *.sqlite
 *.db
 *.png
 
+# API credentials
+.env.*
+secrets/
+
 # Log files
 *.log
 fetch_log.txt
+
+# Scheduler logs
+scheduler/logs/
 
 # Backtest results
 backtest_results/

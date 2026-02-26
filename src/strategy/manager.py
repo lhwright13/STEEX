@@ -15,6 +15,7 @@ from rich.table import Table
 from rich import box
 
 from config.settings import Settings, get_settings
+from ..broker.base import Broker
 from ..data.price import PriceProvider
 from ..data.vix import VixProvider
 from ..portfolio.positions import Position, PositionManager
@@ -52,6 +53,7 @@ class QuantManager:
         ranker: Optional[StockRanker] = None,
         price_provider: Optional[PriceProvider] = None,
         vix_provider: Optional[VixProvider] = None,
+        broker: Optional[Broker] = None,
     ):
         self.settings = settings or get_settings()
         self.price_provider = price_provider or PriceProvider()
@@ -70,6 +72,21 @@ class QuantManager:
         )
         self.screener = screener or StockScreener(settings=self.settings)
         self.ranker = ranker or StockRanker(self.settings)
+
+        # Broker setup
+        self.broker = broker
+        if self.broker is None and self.settings.broker_enabled:
+            try:
+                from ..broker.alpaca import AlpacaBroker
+
+                self.broker = AlpacaBroker(paper=self.settings.broker_paper)
+                mode = "paper" if self.settings.broker_paper else "LIVE"
+                console.print(f"[bold]Broker: Alpaca ({mode})[/bold]")
+            except Exception as e:
+                console.print(f"[bold red]Broker init failed: {e}[/bold red]")
+                raise RuntimeError(
+                    f"Broker is required but failed to initialize: {e}"
+                ) from e
 
         self.log: List[Dict] = []
         self.report: Dict = {}
@@ -280,6 +297,28 @@ class QuantManager:
             1 for _, signals in all_exits if any(s.urgency == "immediate" for s in signals)
         )
 
+        # Broker position sync (detect drift)
+        broker_drift = []
+        if self.broker:
+            try:
+                broker_positions = {
+                    p.ticker: p for p in self.broker.get_positions()
+                }
+                local_tickers = {pos.ticker for pos in positions}
+                broker_tickers = set(broker_positions.keys())
+
+                for t in local_tickers - broker_tickers:
+                    broker_drift.append(f"{t}: local only (not in broker)")
+                for t in broker_tickers - local_tickers:
+                    broker_drift.append(f"{t}: broker only (not tracked locally)")
+
+                if broker_drift:
+                    self._log("risk", "Position drift detected", {"drift": broker_drift})
+                    for msg in broker_drift:
+                        console.print(f"  [yellow]DRIFT: {msg}[/yellow]")
+            except Exception as e:
+                self._log("risk", f"Broker position sync failed: {e}")
+
         summary = {
             "position_count": port_summary["position_count"],
             "total_cost": port_summary["total_cost"],
@@ -290,6 +329,7 @@ class QuantManager:
             "vix": vix_risk,
             "immediate_exits": immediate_count,
             "positions": port_summary["positions"],
+            "broker_drift": broker_drift,
         }
 
         self.report["portfolio"] = summary
@@ -518,15 +558,37 @@ class QuantManager:
                     continue
 
             # Execute the entry
+            entry_price = entry["price"]
+            entry_shares = entry["shares"]
+
+            if self.broker:
+                result = self.broker.buy(entry["ticker"], entry_shares, entry_price)
+                if result.status == "filled":
+                    entry_price = result.filled_price
+                    entry_shares = int(result.filled_qty)
+                    console.print(
+                        f"  [green]Broker filled: {entry_shares} shares "
+                        f"@ ${entry_price:.2f}[/green]"
+                    )
+                else:
+                    console.print(
+                        f"  [red]Broker order failed: {result.error}[/red]"
+                    )
+                    self._log(
+                        "execution",
+                        f"Broker buy failed for {entry['ticker']}: {result.error}",
+                    )
+                    continue
+
             pos = self.position_manager.add_position(
                 ticker=entry["ticker"],
-                entry_price=entry["price"],
-                shares=entry["shares"],
+                entry_price=entry_price,
+                shares=entry_shares,
                 score=entry["score"],
                 reasons=entry["reasons"],
             )
             executed.append(entry)
-            self._log("execution", f"Entered {entry['ticker']} @ ${entry['price']:.2f} x {entry['shares']}")
+            self._log("execution", f"Entered {entry['ticker']} @ ${entry_price:.2f} x {entry_shares}")
             console.print(f"  [green]Entered {entry['ticker']}[/green]")
 
         return executed
@@ -559,12 +621,34 @@ class QuantManager:
                 if position is None:
                     continue
 
+                exit_price = item["price"]
+
+                if self.broker:
+                    result = self.broker.sell(
+                        item["ticker"], position.shares, exit_price
+                    )
+                    if result.status == "filled":
+                        exit_price = result.filled_price
+                        console.print(
+                            f"  [green]Broker sell filled @ ${exit_price:.2f}[/green]"
+                        )
+                    else:
+                        console.print(
+                            f"  [red]Broker sell failed for {item['ticker']}: "
+                            f"{result.error} - keeping position open[/red]"
+                        )
+                        self._log(
+                            "execution",
+                            f"Broker sell failed for {item['ticker']}: {result.error}",
+                        )
+                        continue
+
                 self.trade_tracker.record_trade(
                     ticker=item["ticker"],
                     entry_date=position.entry_datetime,
                     exit_date=datetime.now(),
                     entry_price=position.entry_price,
-                    exit_price=item["price"],
+                    exit_price=exit_price,
                     shares=position.shares,
                     exit_reason=item["reason"],
                     score=position.score,
@@ -575,7 +659,7 @@ class QuantManager:
 
                 console.print(
                     f"  [{pnl_color}]EXIT {item['ticker']}[/{pnl_color}] "
-                    f"@ ${item['price']:.2f} | P&L: ${item['pnl_dollars']:+,.0f} "
+                    f"@ ${exit_price:.2f} | P&L: ${item['pnl_dollars']:+,.0f} "
                     f"({item['pnl_pct']:+.1f}%) | {item['reason']}"
                 )
                 self._log("execution", f"Auto-exited {item['ticker']}: {item['reason']}")

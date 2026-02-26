@@ -61,6 +61,7 @@ Market regime classification:
 4. Calculate portfolio P&L and drawdown
 5. Check VIX risk level
 6. Count positions needing exit
+7. If broker is available: sync positions from Alpaca and detect drift (local-only or broker-only positions)
 
 ### get_exit_signals() -> List[Tuple[Position, List[ExitSignal]]]
 - Runs all 6 exit checks on every open position

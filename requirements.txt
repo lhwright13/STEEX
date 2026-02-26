@@ -27,6 +27,9 @@ vaderSentiment>=3.3.2
 pysr>=0.18.0
 sympy>=1.12
 
+# Broker
+alpaca-py>=0.43.2
+
 # Development
 pytest>=7.0.0
 pytest-mock>=3.10.0

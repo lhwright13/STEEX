@@ -2,7 +2,7 @@
 
 ## Role
 
-You decide which trades to enter and exit, calculate position sizes, and handle order execution. Currently operating in simulation mode (local position tracking). Future: Interactive Brokers API integration.
+You decide which trades to enter and exit, calculate position sizes, and handle order execution. Supports simulation mode (local position tracking) and live execution via Alpaca Markets broker API.
 
 ## Who You Interact With
 
@@ -68,20 +68,62 @@ For each exit signal:
 - Cooling-off period: 14 trading days after a stop-loss before re-entering same ticker
 - Max 2 new entries per day (manager_max_daily_entries)
 
-## Future: Interactive Brokers Integration
+## Broker Integration (Alpaca)
 
-When IB API is added, execute_entries and execute_exits will:
-1. Check IB account balance/buying power
-2. Submit limit orders (not market orders)
-3. Monitor fill status
-4. Only update local positions after confirmed fills
-5. Handle partial fills gracefully
+The ExecutionAgent now supports live order execution through Alpaca Markets via `src/broker/alpaca.py`.
 
-The local PositionManager/TradeTracker will continue to serve as the source of truth, synchronized with IB positions.
+### How It Works
+
+When `broker_enabled` is True in settings (or `--paper`/`--live` CLI flag is passed):
+
+**execute_entries():**
+1. User confirms entry (or --yes flag)
+2. `broker.buy(ticker, shares, limit_price)` places a DAY limit order on Alpaca
+3. Polls for fill (up to 30s)
+4. If filled: uses `filled_price` as entry price in PositionManager
+5. If not filled: cancels order, logs error, skips to next candidate
+
+**execute_exits():**
+1. For immediate exits (stop_loss, trailing_stop, vix_spike):
+2. `broker.sell(ticker, shares, limit_price)` places a DAY limit order
+3. Polls for fill (up to 30s)
+4. If filled: records trade with `filled_price`, removes position
+5. If not filled: keeps position open, alerts user
+
+### Key Principle
+
+- PositionManager and TradeTracker remain the local source of truth
+- Broker is purely additive - if `broker_enabled` is False, behavior is identical to simulation mode
+- If broker init fails, system falls back to simulation mode with a warning
+- Broker credentials come from environment variables only (`ALPACA_API_KEY`, `ALPACA_SECRET_KEY`)
+
+### Broker ABC (`src/broker/base.py`)
+
+```
+Broker.buy(ticker, qty, limit_price) -> OrderResult
+Broker.sell(ticker, qty, limit_price) -> OrderResult
+Broker.get_account() -> AccountInfo
+Broker.get_positions() -> List[BrokerPosition]
+Broker.cancel_order(order_id) -> bool
+```
+
+OrderResult fields: order_id, filled_qty, filled_price, status, error
+
+### CLI Flags
+
+| Flag | Effect |
+|------|--------|
+| `--paper` | Enable broker, paper trading (safe) |
+| `--live` | Enable broker, live trading (real money) |
+| `--no-broker` | Force simulation mode |
+
+### Paper vs Live
+
+Paper trading is the default safety net (`broker_paper: true` in config). The `--live` flag must be explicitly passed to trade real money.
 
 ## When to Update This File
 
-- When adding broker API integration (IB, Alpaca, etc.)
 - When changing position sizing logic
 - When adding new entry/exit confirmation flows
+- When switching broker providers (e.g., adding Interactive Brokers)
 - After execution issues reveal gaps in order handling

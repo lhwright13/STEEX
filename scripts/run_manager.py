@@ -10,6 +10,9 @@ Usage:
     python scripts/run_manager.py --portfolio 50000  # Set portfolio value
     python scripts/run_manager.py --dry-run          # Show plan without executing
     python scripts/run_manager.py --yes              # Auto-confirm entries
+    python scripts/run_manager.py --paper            # Enable broker (paper trading)
+    python scripts/run_manager.py --live             # Enable broker (LIVE trading)
+    python scripts/run_manager.py --no-broker        # Force simulation mode
 """
 
 import argparse
@@ -55,12 +58,38 @@ def main():
         help="Detailed output",
     )
 
+    broker_group = parser.add_mutually_exclusive_group()
+    broker_group.add_argument(
+        "--paper",
+        action="store_true",
+        help="Enable broker with paper trading",
+    )
+    broker_group.add_argument(
+        "--live",
+        action="store_true",
+        help="Enable broker with LIVE trading",
+    )
+    broker_group.add_argument(
+        "--no-broker",
+        action="store_true",
+        help="Force simulation mode (no broker)",
+    )
+
     args = parser.parse_args()
 
     settings = get_settings()
 
     if args.portfolio is not None:
         settings.manager_portfolio_value = args.portfolio
+
+    if args.paper:
+        settings.broker_enabled = True
+        settings.broker_paper = True
+    elif args.live:
+        settings.broker_enabled = True
+        settings.broker_paper = False
+    elif args.no_broker:
+        settings.broker_enabled = False
 
     manager = QuantManager(settings=settings)
 

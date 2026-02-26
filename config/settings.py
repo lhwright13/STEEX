@@ -285,6 +285,14 @@ class Settings(BaseSettings):
         default=True, description="Enable persistent SQLite cache for data providers"
     )
 
+    # Broker settings
+    broker_enabled: bool = Field(
+        default=False, description="Enable live broker execution (default off)"
+    )
+    broker_paper: bool = Field(
+        default=True, description="Use paper trading (default on, safety net)"
+    )
+
     # Data paths
     data_dir: str = Field(default="data", description="Directory for cached data")
     positions_file: str = Field(

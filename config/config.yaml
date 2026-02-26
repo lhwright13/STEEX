@@ -144,6 +144,13 @@ cache_db_path: "data/cache.db"   # SQLite cache database file path
 cache_enabled: true              # Enable persistent SQLite cache for data providers
 
 # -----------------------------------------------------------------------------
+# Broker Settings
+# -----------------------------------------------------------------------------
+broker_enabled: true             # Broker always on - Alpaca is source of truth
+broker_paper: true               # Use paper trading (default on, safety net)
+# API keys come from environment variables only: ALPACA_API_KEY, ALPACA_SECRET_KEY
+
+# -----------------------------------------------------------------------------
 # Data Paths
 # -----------------------------------------------------------------------------
 data_dir: "data"                 # Directory for cached data

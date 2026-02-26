@@ -62,6 +62,23 @@ All parameters live in `config/config.yaml` and `config/settings.py`. Key manage
 - `manager_max_daily_entries`: Max new positions per day (default 2)
 - `manager_min_score_entry`: Minimum composite score for entry (default 55.0)
 - `manager_require_insider`: Whether insider activity is required (default false)
+- `broker_enabled`: Enable live broker execution (default false)
+- `broker_paper`: Use paper trading when broker is enabled (default true)
+
+API keys are environment variables only (`ALPACA_API_KEY`, `ALPACA_SECRET_KEY`) - never in config files.
+
+### CLI Broker Flags
+
+```bash
+python scripts/run_manager.py pre_market --paper      # Broker on, paper trading
+python scripts/run_manager.py pre_market --live        # Broker on, LIVE trading
+python scripts/run_manager.py pre_market --no-broker   # Force simulation
+python scripts/run_manager.py pre_market --dry-run     # No execution at all
+```
+
+### Broker Behavior
+
+When broker is enabled, `execute_entries()` and `execute_exits()` place real orders via Alpaca before updating local state. If broker init fails or an order fails, the system falls back gracefully (skips the entry or keeps the position open). PositionManager/TradeTracker remain the source of truth.
 
 ## Optimized Parameters (from backtest sweep)
 

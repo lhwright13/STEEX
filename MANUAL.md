@@ -38,6 +38,25 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+### Alpaca Broker Setup (Optional)
+
+```bash
+# Add API keys to your shell profile or .env file
+export ALPACA_API_KEY="your-key"
+export ALPACA_SECRET_KEY="your-secret"
+
+# Test connection
+python -c "
+from src.broker.alpaca import AlpacaBroker
+b = AlpacaBroker(paper=True)
+acct = b.get_account()
+print(f'Buying power: \${acct.buying_power:,.2f}')
+print(f'Equity: \${acct.equity:,.2f}')
+"
+```
+
+API keys are never stored in config files. Use environment variables or a `.env` file (gitignored).
+
 ### Verify Installation
 
 ```bash
@@ -54,25 +73,40 @@ python scripts/daily_scan.py --debug
 
 ### Morning Routine (Before Market Open)
 
-1. **Check VIX levels** - The daily scanner does this automatically
-2. **Run the daily scan** - Get stock picks for the day
-3. **Review cluster buys** - Check for strong insider signals
-4. **Place orders** - At market open + 15 minutes
+1. **Run the pre-market pipeline** - Screens, ranks, and optionally executes
+2. **Review candidates** - Confirm or skip each entry
+3. **Orders placed** - Limit orders via Alpaca at market open
 
-### Step-by-Step
+### Step-by-Step (QuantManager)
 
 ```bash
 # Activate your environment
 source venv/bin/activate
 
-# Run the full daily scan
+# Dry run first to see what the system would do (no orders)
+python scripts/run_manager.py pre_market --paper --dry-run
+
+# Paper trading with confirmation prompts
+python scripts/run_manager.py pre_market --paper
+
+# Auto-confirm all entries (paper)
+python scripts/run_manager.py pre_market --paper --yes
+
+# Midday monitoring (checks stops, VIX, exits)
+python scripts/run_manager.py monitor --paper
+
+# End of day wrap-up
+python scripts/run_manager.py post_market --paper
+```
+
+### Legacy Scanners (still available)
+
+```bash
+# Run the standalone daily scan
 python scripts/daily_scan.py
 
-# If no candidates found, check what passed momentum
+# Debug mode to see what passed each stage
 python scripts/daily_scan.py --debug
-
-# See momentum picks without insider requirement (for reference)
-python scripts/daily_scan.py --debug --skip-insider
 
 # Check insider activity separately
 python scripts/scan_insiders.py --days 7
@@ -80,9 +114,9 @@ python scripts/scan_insiders.py --days 7
 
 ### Interpreting Results
 
-| Stage 3 Result | Action |
-|----------------|--------|
-| 2+ candidates | Review top picks, place orders |
+| Pipeline Result | Action |
+|-----------------|--------|
+| 2+ candidates | Review top picks, confirm entries |
 | 1 candidate | Consider single position or wait |
 | 0 candidates | No action today - strategy is selective |
 
@@ -265,20 +299,21 @@ Final Ranking -> Top 2 Picks
 | Parameter | Value |
 |-----------|-------|
 | Daily picks | 2 stocks |
-| Position size | 5% of portfolio each |
-| Max positions | 20 concurrent |
+| Position size | 4% of portfolio each |
+| Max positions | 10 concurrent |
 | Max sector | 30% of portfolio |
 
 ### Exit Rules
 
 | Condition | Action |
 |-----------|--------|
-| -7% from entry | Stop loss |
-| +10% gain | Trail 10% from high |
-| +20% gain | Trail 12% from high |
+| -10% from entry | Stop loss (immediate) |
+| +10% gain | Trail 12% from high |
+| +20% gain | Trail 15% from high |
 | +30% gain | Trail 15% from high |
-| Below 50-day MA | Exit |
-| 60 trading days | Time-based exit |
+| Below 50-day MA | Exit (end of day) |
+| 30 trading days | Time-based exit |
+| VIX > 30 | Tighten stops to 5% |
 | VIX > 40 | Exit 50% of positions |
 
 ---
@@ -314,24 +349,29 @@ STEEX_VIX_EXIT_LEVEL=40
 |-----------|---------|-------------|
 | `momentum_lookback_days` | 126 | 6-month momentum period |
 | `short_momentum_days` | 21 | 1-month momentum period |
-| `momentum_min_return` | 0.10 | Minimum 6M return (10%) |
+| `momentum_min_return` | 0.15 | Minimum 6M return (15%) |
 | `insider_lookback_days` | 30 | Days to look for insider buys |
 | `min_price` | 5.0 | Minimum stock price |
 | `min_volume` | 500000 | Minimum daily volume |
 | `earnings_blackout_days` | 5 | Days before earnings to avoid |
 | `daily_picks` | 2 | Stocks to pick per day |
-| `max_positions` | 20 | Maximum concurrent positions |
-| `initial_stop_pct` | 0.07 | Initial stop loss (7%) |
-| `max_hold_days` | 60 | Maximum holding period |
+| `max_positions` | 10 | Maximum concurrent positions |
+| `position_size_pct` | 0.04 | Position size (4% of portfolio) |
+| `initial_stop_pct` | 0.10 | Initial stop loss (10%) |
+| `max_hold_days` | 30 | Maximum holding period |
+| `broker_enabled` | false | Enable live broker execution |
+| `broker_paper` | true | Use paper trading (safety net) |
 
 ### Scoring Weights
 
 | Factor | Weight | Description |
 |--------|--------|-------------|
-| Momentum | 40% | 6-month return percentile |
-| Insider | 30% | Insider buying strength |
-| Volume | 20% | Volume surge percentile |
-| Sentiment | 10% | Sentiment score (stub) |
+| Momentum | 30% | 6-month return percentile |
+| Insider | 25% | Insider buying strength |
+| Volume | 15% | Volume surge percentile |
+| Sentiment | 15% | Combined sentiment score |
+| Fundamental | 10% | P/E, ROE, debt/equity |
+| Options | 5% | Put/call ratio signal |
 
 ---
 
@@ -374,6 +414,7 @@ pip install lxml  # For Wikipedia parsing
 | Insider (Form 4) | SEC EDGAR | 10 req/second |
 | S&P 500 list | Wikipedia | None |
 | VIX | Yahoo Finance | Shared with prices |
+| Order Execution | Alpaca Markets | 200 req/minute |
 
 ### Logs and Debugging
 
@@ -397,29 +438,45 @@ python scripts/scan_insiders.py --fast --max 10
 ## Quick Reference Card
 
 ```
-DAILY COMMANDS
---------------
-python scripts/daily_scan.py              # Standard scan
+DAILY COMMANDS (QuantManager)
+-----------------------------
+python scripts/run_manager.py pre_market --paper --dry-run  # Preview only
+python scripts/run_manager.py pre_market --paper            # Paper trade
+python scripts/run_manager.py monitor --paper               # Midday check
+python scripts/run_manager.py post_market --paper           # End of day
+
+LEGACY COMMANDS
+---------------
+python scripts/daily_scan.py              # Standalone scan
 python scripts/daily_scan.py --debug      # Show all stages
 python scripts/scan_insiders.py --days 7  # 7-day insider scan
 
 WHAT THE NUMBERS MEAN
 ---------------------
 Score 70+  = Strong candidate
-Score 50+  = Moderate candidate
-6M > 20%   = Good momentum
+Score 55+  = Passes entry threshold
+6M > 15%   = Passes momentum filter
 Insiders 3+ = Cluster buy signal
 
 VIX ACTIONS
 -----------
-< 30  = Trade normally
-30-40 = Tighten stops to 5%
+< 25  = Trade normally
+25-35 = Reduced position sizes (0.5x)
+> 35  = No new entries
 > 40  = Exit 50% of positions
 
 POSITION RULES
 --------------
-Entry: Market open + 15 min, limit order
-Size: 5% of portfolio per stock
-Stop: 7% initial, trailing after +10%
-Exit: 60 days max hold
+Entry: Limit order via Alpaca (or simulation)
+Size: 4% of portfolio per stock
+Stop: 10% initial, trailing after +10%
+Max hold: 30 trading days
+Max positions: 10
+
+BROKER FLAGS
+------------
+--paper      Enable broker, paper trading
+--live       Enable broker, real money
+--no-broker  Force simulation mode
+--dry-run    Preview only, no execution
 ```
