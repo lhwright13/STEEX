@@ -216,7 +216,7 @@ class AlpacaBroker(Broker):
         """Return market calendar entries for a date range."""
         try:
             request = GetCalendarRequest(start=start, end=end)
-            entries = self.client.get_calendar(filter=request)
+            entries = self.client.get_calendar(filters=request)
             return [
                 {
                     "date": str(entry.date),

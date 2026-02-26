@@ -16,6 +16,9 @@ LOG_DIR="$SCRIPT_DIR/logs"
 LOCK_DIR="$SCRIPT_DIR/locks"
 VENV_PYTHON="$PROJECT_DIR/venv/bin/python"
 
+# Ensure Homebrew and common tool paths are available (cron has minimal PATH)
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node/" 2>/dev/null | sort -V | tail -1)/bin:$PATH" 2>/dev/null
+
 # Source profile for API keys (Alpaca, Finnhub, etc.)
 # shellcheck disable=SC1090
 [ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile" 2>/dev/null
@@ -262,6 +265,10 @@ INGEST_FLAGS=""
 if [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --dry-run"; fi
 if [ "$PAPER" = "True" ] || [ "$PAPER" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --paper"; fi
 "$VENV_PYTHON" scripts/ingest_run.py --start --run-id "$RUN_ID" --mode "$MANAGER_MODE" --log-path "$LOGFILE" $INGEST_FLAGS || true
+
+# Unset CLAUDECODE to allow scheduler to invoke claude -p
+# (Claude Code sets this to prevent accidental nesting; cron is intentional)
+unset CLAUDECODE
 
 "${CMD[@]}" 2>&1 | tee "$LOGFILE"
 
