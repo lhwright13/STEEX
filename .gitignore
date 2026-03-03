@@ -186,8 +186,9 @@ secrets/
 *.log
 fetch_log.txt
 
-# Scheduler logs
+# Scheduler runtime
 scheduler/logs/
+scheduler/locks/
 
 # Backtest results
 backtest_results/
