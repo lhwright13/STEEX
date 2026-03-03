@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, render_template
 from dashboard.db import DashboardDB
+from dashboard.utils import load_heartbeat
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -10,6 +11,7 @@ def status():
     running = db.get_running_run()
     latest = db.get_latest_run()
     regime = db.get_latest_regime()
+    heartbeat = load_heartbeat()
 
     return jsonify({
         "running": running,
@@ -18,6 +20,13 @@ def status():
             "name": regime["regime_name"] if regime else None,
             "vix": regime["vix_level"] if regime else None,
         } if regime else None,
+        "heartbeat": {
+            "overall": heartbeat.get("overall"),
+            "timestamp": heartbeat.get("timestamp"),
+            "positions": heartbeat.get("checks", {}).get("positions", {}).get("broker_count"),
+            "stops": heartbeat.get("checks", {}).get("stops", {}).get("active_stops"),
+            "equity": heartbeat.get("checks", {}).get("api", {}).get("equity"),
+        } if heartbeat else None,
     })
 
 

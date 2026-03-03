@@ -1,6 +1,6 @@
-import json
 from flask import Blueprint, render_template, request
 from dashboard.db import DashboardDB
+from dashboard.utils import parse_json_field
 
 bp = Blueprint("decisions", __name__)
 
@@ -13,13 +13,7 @@ def decision_list():
     tickers = db.get_distinct_tickers()
 
     for d in decisions:
-        if d.get("reasons"):
-            try:
-                d["reasons_list"] = json.loads(d["reasons"])
-            except (json.JSONDecodeError, TypeError):
-                d["reasons_list"] = []
-        else:
-            d["reasons_list"] = []
+        parse_json_field(d, "reasons", "reasons_list")
 
     return render_template(
         "decisions/list.html",

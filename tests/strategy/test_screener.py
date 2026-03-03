@@ -50,10 +50,11 @@ class TestStockScreener:
         screener = StockScreener(settings=test_settings)
 
         tickers = ["AAPL", "MSFT", "GOOGL"]
-        result = screener.stage_4_sentiment_filter(tickers)
+        result_tickers, sentiment_data = screener.stage_4_sentiment_filter(tickers)
 
-        # Should pass all through (it's a stub)
-        assert result == tickers
+        # Should pass all through
+        assert result_tickers == tickers
+        assert isinstance(sentiment_data, dict)
 
     # Integration tests would require mocking multiple components
     # or using real API calls which are slow

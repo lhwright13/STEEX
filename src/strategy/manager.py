@@ -184,7 +184,7 @@ class QuantManager:
             if pos is None:
                 continue
             # Use the stop price as approximate exit price
-            exit_price = pos.stop_price if pos.stop_price else pos.entry_price
+            exit_price = pos.current_stop if pos.current_stop else pos.entry_price
             self.trade_tracker.record_trade(
                 ticker=ticker,
                 entry_date=pos.entry_datetime,
@@ -418,7 +418,7 @@ class QuantManager:
                 if pos is None:
                     continue
                 new_server_stop = round(
-                    pos.stop_price * (1 - self.settings.server_stop_offset_pct), 2
+                    pos.current_stop * (1 - self.settings.server_stop_offset_pct), 2
                 )
                 self.broker.update_stop_order(ticker, pos.shares, new_server_stop)
                 self._log("risk", f"Server stop updated for {ticker} @ ${new_server_stop:.2f}")
@@ -1712,7 +1712,7 @@ class QuantManager:
             positions = self.position_manager.get_all_positions()
             for pos in positions:
                 server_stop = round(
-                    pos.stop_price * (1 - self.settings.server_stop_offset_pct), 2
+                    pos.current_stop * (1 - self.settings.server_stop_offset_pct), 2
                 )
 
                 if dry_run:

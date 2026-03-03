@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template
 from dashboard.db import DashboardDB
+from dashboard.utils import load_heartbeat
 
 bp = Blueprint("index", __name__)
 
@@ -15,6 +16,7 @@ def overview():
     total_runs = db.get_run_count()
     success_runs = db.get_run_count(status="success")
     failed_runs = db.get_run_count(status="failed")
+    heartbeat = load_heartbeat()
 
     return render_template(
         "index.html",
@@ -26,4 +28,5 @@ def overview():
         total_runs=total_runs,
         success_runs=success_runs,
         failed_runs=failed_runs,
+        heartbeat=heartbeat,
     )

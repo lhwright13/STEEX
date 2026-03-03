@@ -2,7 +2,6 @@
 
 from typing import Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 
 from ..data.price import PriceProvider
@@ -175,66 +174,3 @@ class MomentumCalculator:
 
         return passed, data
 
-    def is_positive_short_term(
-        self,
-        ticker: str,
-        short_term_days: int = 21,
-    ) -> bool:
-        """Check if short-term momentum is positive.
-
-        Args:
-            ticker: Stock ticker symbol
-            short_term_days: Number of trading days for short-term
-
-        Returns:
-            True if short-term return is positive
-        """
-        momentum = self.get_momentum(ticker, short_term_days)
-        return momentum is not None and momentum > 0
-
-    def filter_positive_short_term(
-        self,
-        tickers: List[str],
-        short_term_days: int = 21,
-    ) -> List[str]:
-        """Filter tickers requiring positive short-term momentum.
-
-        Args:
-            tickers: List of ticker symbols
-            short_term_days: Number of trading days
-
-        Returns:
-            Filtered list of tickers
-        """
-        momentum_values = self.get_momentum_batch(tickers, short_term_days)
-        return [t for t, m in momentum_values.items() if m > 0]
-
-    def calculate_momentum_score(
-        self,
-        ticker: str,
-        momentum_6m: Optional[float] = None,
-        momentum_1m: Optional[float] = None,
-    ) -> float:
-        """Calculate a combined momentum score.
-
-        Args:
-            ticker: Stock ticker symbol
-            momentum_6m: Pre-calculated 6-month momentum
-            momentum_1m: Pre-calculated 1-month momentum
-
-        Returns:
-            Momentum score (0-100)
-        """
-        if momentum_6m is None:
-            momentum_6m = self.get_momentum(ticker, 126) or 0
-        if momentum_1m is None:
-            momentum_1m = self.get_momentum(ticker, 21) or 0
-
-        # Score based on momentum values
-        # 6-month momentum: 0-50% return maps to 0-70 score
-        score_6m = min(70, max(0, momentum_6m * 140))
-
-        # 1-month momentum: 0-10% return maps to 0-30 score
-        score_1m = min(30, max(0, momentum_1m * 300))
-
-        return score_6m + score_1m

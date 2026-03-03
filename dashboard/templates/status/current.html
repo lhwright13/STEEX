@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-header">
     <h1>System Status</h1>
-    <p>Cron health, schedule, and system checks</p>
+    <p>Scheduler health, schedule, and system checks</p>
 </div>
 
 <div class="stats-row">
@@ -34,24 +34,90 @@
     </div>
 </div>
 
+{% if heartbeat %}
+<h2 class="section-title">Heartbeat Health</h2>
+<div class="stats-row">
+    <div class="stat-card accent-{% if heartbeat.overall == 'OK' %}green{% else %}red{% endif %}">
+        <div class="stat-label">Overall</div>
+        <div class="stat-value {% if heartbeat.overall == 'OK' %}green{% else %}red{% endif %}">{{ heartbeat.overall }}</div>
+        <div class="stat-sub">{{ heartbeat.timestamp | ts }}</div>
+    </div>
+    {% if heartbeat.checks.api %}
+    <div class="stat-card accent-cyan">
+        <div class="stat-label">Account</div>
+        <div class="stat-value" style="font-size:1.1rem">${{ "%.0f"|format(heartbeat.checks.api.equity) }}</div>
+        <div class="stat-sub">Cash: ${{ "%.0f"|format(heartbeat.checks.api.cash) }}</div>
+    </div>
+    {% endif %}
+    {% if heartbeat.checks.positions %}
+    <div class="stat-card accent-purple">
+        <div class="stat-label">Positions</div>
+        <div class="stat-value">{{ heartbeat.checks.positions.broker_count }}</div>
+        <div class="stat-sub">
+            {% if heartbeat.checks.positions.missing_local %}
+            <span class="text-red">{{ heartbeat.checks.positions.missing_local | length }} missing local</span>
+            {% elif heartbeat.checks.positions.stale_local %}
+            <span class="text-amber">{{ heartbeat.checks.positions.stale_local | length }} stale</span>
+            {% else %}
+            Synced
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% if heartbeat.checks.stops %}
+    <div class="stat-card accent-amber">
+        <div class="stat-label">Server Stops</div>
+        <div class="stat-value">{{ heartbeat.checks.stops.active_stops }}</div>
+        <div class="stat-sub">
+            {% if heartbeat.checks.stops.missing_stops %}
+            <span class="text-red">{{ heartbeat.checks.stops.missing_stops | length }} missing</span>
+            {% elif heartbeat.checks.stops.orphan_stops %}
+            <span class="text-amber">{{ heartbeat.checks.stops.orphan_stops | length }} orphaned</span>
+            {% else %}
+            {{ heartbeat.checks.stops.positions_with_stops }} covered
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% if heartbeat.checks.market %}
+    <div class="stat-card accent-blue">
+        <div class="stat-label">Market</div>
+        <div class="stat-value {% if heartbeat.checks.market.is_open %}green{% else %}text-dim{% endif %}" style="font-size:1.1rem">{{ "Open" if heartbeat.checks.market.is_open else "Closed" }}</div>
+        <div class="stat-sub">
+            {% if heartbeat.checks.market.today_close %}
+            Close: {{ heartbeat.checks.market.today_close }}
+            {% elif heartbeat.checks.market.next_open %}
+            Next open: {{ heartbeat.checks.market.next_open | ts }}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="grid-2">
     <div>
         <h2 class="section-title">Schedule</h2>
         <article>
             <div class="card-body">
+                {% if schedule %}
                 <table>
                     <thead>
-                        <tr><th>Mode</th><th>Time</th></tr>
+                        <tr><th>Mode</th><th>Time</th><th>Manager Mode</th></tr>
                     </thead>
                     <tbody>
-                        {% for mode, time in schedule.items() %}
+                        {% for key, s in schedule.items() %}
                         <tr>
-                            <td><span class="mode-tag">{{ mode_icon(mode) }} {{ mode }}</span></td>
-                            <td>{{ time }}</td>
+                            <td><span class="mode-tag">{{ mode_icon(s.manager_mode) }} {{ key }}</span></td>
+                            <td>{{ s.time }}</td>
+                            <td class="text-dim">{{ s.manager_mode }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+                {% else %}
+                <p class="text-dim">Could not read scheduler config</p>
+                {% endif %}
             </div>
         </article>
     </div>
@@ -80,6 +146,36 @@
                             <td>Total runs recorded</td>
                             <td>{{ total }}</td>
                         </tr>
+                        {% if heartbeat %}
+                        <tr>
+                            <td>Alpaca API</td>
+                            <td>
+                                {% if heartbeat.checks.api and heartbeat.checks.api.status == 'OK' %}
+                                <span class="badge badge-ok">Pass</span>
+                                {% else %}
+                                <span class="badge badge-warn">Fail</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Stop order coverage</td>
+                            <td>
+                                {% if heartbeat.checks.stops %}
+                                    {% if heartbeat.checks.stops.missing_stops %}
+                                    <span class="badge badge-warn">{{ heartbeat.checks.stops.missing_stops | length }} missing</span>
+                                    {% else %}
+                                    <span class="badge badge-ok">Pass</span>
+                                    {% endif %}
+                                {% else %}
+                                <span class="badge badge-neutral">N/A</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Last heartbeat</td>
+                            <td class="text-muted">{{ heartbeat.timestamp | ts }}</td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>

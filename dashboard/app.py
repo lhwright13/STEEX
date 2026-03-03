@@ -42,9 +42,14 @@ def _ts_time(ts):
 
 def _mode_icon(mode):
     icons = {
-        "pre_market": Markup('<span class="mode-icon" title="Pre-market">&#9788;</span>'),
+        "heartbeat": Markup('<span class="mode-icon" title="Heartbeat">&#9829;</span>'),
+        "screen": Markup('<span class="mode-icon" title="Screen">&#9788;</span>'),
+        "enter": Markup('<span class="mode-icon" title="Enter">&#9654;</span>'),
         "monitor": Markup('<span class="mode-icon" title="Monitor">&#9673;</span>'),
+        "stop_sync": Markup('<span class="mode-icon" title="Stop Sync">&#9632;</span>'),
         "post_market": Markup('<span class="mode-icon" title="Post-market">&#9790;</span>'),
+        "learning": Markup('<span class="mode-icon" title="Learning">&#9881;</span>'),
+        "pre_market": Markup('<span class="mode-icon" title="Pre-market">&#9788;</span>'),
     }
     return icons.get(mode, "")
 

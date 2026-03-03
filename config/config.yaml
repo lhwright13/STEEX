@@ -118,7 +118,6 @@ pysr_timeout: 3600               # Training timeout in seconds
 pysr_train_months: 12            # Walk-forward training window
 pysr_val_months: 1               # Walk-forward validation window
 pysr_walk_forward_folds: 6       # Number of walk-forward folds
-pysr_sample_frequency_days: 5    # Days between training samples
 weight_pysr: 0.10                # PySR weight in composite scoring
 
 # -----------------------------------------------------------------------------

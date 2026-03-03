@@ -178,9 +178,8 @@ class BacktestEngine:
                 cost = trade_value * transaction_cost
                 cash += trade_value - cost
 
-                # Add to blocked list if stopped out
-                if reason == "stop_loss":
-                    # Block for cooling_off_days trading days
+                # Block re-entry after stop-loss or trailing stop (matches manager.py:614)
+                if reason in ("stop_loss", "trailing_stop"):
                     blocked_until = current_date + timedelta(
                         days=int(self.settings.cooling_off_days * 7 / 5)
                     )
@@ -233,6 +232,9 @@ class BacktestEngine:
                 if portfolio_value * self.settings.min_cash_reserve_pct > cash:
                     continue  # Not enough cash reserve
 
+                # Regime sizing multiplier (matches live manager.py logic)
+                regime_multiplier = self._get_regime_multiplier(vix_level)
+
                 # Volatility-adjusted position sizing
                 if self.settings.vol_sizing_enabled:
                     df = price_data.get(ticker)
@@ -245,10 +247,12 @@ class BacktestEngine:
                             pos_size_pct = self.settings.vol_med_position_pct
                         else:
                             pos_size_pct = self.settings.vol_high_position_pct
+                        # Apply regime multiplier on top (matches manager.py:589)
+                        pos_size_pct *= regime_multiplier
                     else:
-                        pos_size_pct = self.settings.position_size_pct
+                        pos_size_pct = self.settings.position_size_pct * regime_multiplier
                 else:
-                    pos_size_pct = self.settings.position_size_pct
+                    pos_size_pct = self.settings.position_size_pct * regime_multiplier
 
                 position_value = portfolio_value * pos_size_pct
                 shares = int(position_value / entry_price)
@@ -401,6 +405,23 @@ class BacktestEngine:
         except (KeyError, IndexError):
             return None
 
+    def _get_regime_multiplier(self, vix_level: Optional[float]) -> float:
+        """Get position sizing multiplier based on VIX regime.
+
+        Matches the fallback logic in manager.py:517-551 for when the
+        multi-factor regime detector is not available (backtest context).
+        """
+        if vix_level is None:
+            return 0.5  # Unknown regime - conservative
+        elif vix_level < 15:
+            return 1.0  # low_vol
+        elif vix_level <= 25:
+            return 1.0  # normal
+        elif vix_level <= 35:
+            return 0.5  # elevated
+        else:
+            return 0.0  # crisis - no new entries
+
     def _calculate_positions_value(
         self,
         positions: Dict[str, BacktestPosition],
@@ -450,6 +471,10 @@ class BacktestEngine:
                     if (pos.high_since_entry - pos.entry_price) / pos.entry_price >= threshold:
                         trail_pct = trail
 
+                # VIX-based stop tightening (matches signals.py:415-416)
+                if vix_level and vix_level > self.settings.vix_caution_level:
+                    trail_pct = min(trail_pct, self.settings.vix_tight_stop_pct)
+
                 if -gain_from_high >= trail_pct:
                     exits.append((ticker, price, "trailing_stop"))
                     continue
@@ -466,10 +491,11 @@ class BacktestEngine:
                 exits.append((ticker, price, "max_hold_time"))
                 continue
 
-            # Dead money
-            if trading_days >= self.settings.dead_money_days and price < pos.entry_price:
-                exits.append((ticker, price, "dead_money"))
-                continue
+            # Dead money (gated on config, matches signals.py:308)
+            if self.settings.dead_money_enabled:
+                if trading_days >= self.settings.dead_money_days and price < pos.entry_price:
+                    exits.append((ticker, price, "dead_money"))
+                    continue
 
             # Below MA check (simplified - use 50-day MA)
             df = price_data.get(ticker)

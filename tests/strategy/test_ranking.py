@@ -23,10 +23,21 @@ class TestStockRanker:
             insider_score=70,
             volume_score=60,
             sentiment_score=50,
+            fundamental_score=50,
+            options_score=50,
+            pysr_score=50,
         )
 
-        # 0.40*80 + 0.30*70 + 0.20*60 + 0.10*50 = 32 + 21 + 12 + 5 = 70
-        assert score == 70
+        expected = (
+            test_settings.weight_momentum * 80
+            + test_settings.weight_insider * 70
+            + test_settings.weight_volume * 60
+            + test_settings.weight_sentiment * 50
+            + test_settings.weight_fundamental * 50
+            + test_settings.weight_options * 50
+            + test_settings.weight_pysr * 50
+        )
+        assert score == pytest.approx(expected)
 
     def test_rank_stocks(self, test_settings):
         """Test stock ranking."""
@@ -107,6 +118,9 @@ class TestStockRanker:
             insider_score=80,
             volume_score=50,
             sentiment_score=50,
+            fundamental_score=50,
+            options_score=50,
+            pysr_score=50,
             rank=1,
             screening_result=result,
         )

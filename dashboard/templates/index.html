@@ -44,6 +44,43 @@
     </div>
 </div>
 
+{% if heartbeat %}
+<div class="stats-row">
+    <div class="stat-card accent-{% if heartbeat.overall == 'OK' %}green{% else %}red{% endif %}">
+        <div class="stat-label">Health</div>
+        <div class="stat-value {% if heartbeat.overall == 'OK' %}green{% else %}red{% endif %}">{{ heartbeat.overall }}</div>
+        <div class="stat-sub">{{ heartbeat.timestamp | ts }}</div>
+    </div>
+    {% if heartbeat.checks.api %}
+    <div class="stat-card accent-cyan">
+        <div class="stat-label">Equity</div>
+        <div class="stat-value" style="font-size:1.2rem">${{ "%.0f"|format(heartbeat.checks.api.equity) }}</div>
+        <div class="stat-sub">BP: ${{ "%.0f"|format(heartbeat.checks.api.buying_power) }}</div>
+    </div>
+    {% endif %}
+    {% if heartbeat.checks.positions %}
+    <div class="stat-card accent-purple">
+        <div class="stat-label">Positions</div>
+        <div class="stat-value">{{ heartbeat.checks.positions.broker_count }}</div>
+        <div class="stat-sub">{{ heartbeat.checks.positions.local_count }} local</div>
+    </div>
+    {% endif %}
+    {% if heartbeat.checks.stops %}
+    <div class="stat-card accent-amber">
+        <div class="stat-label">Server Stops</div>
+        <div class="stat-value">{{ heartbeat.checks.stops.active_stops }}</div>
+        <div class="stat-sub">
+            {% if heartbeat.checks.stops.missing_stops %}
+            <span class="text-red">{{ heartbeat.checks.stops.missing_stops | length }} unprotected</span>
+            {% else %}
+            All covered
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="grid-2">
     <div>
         <h2 class="section-title">Recent Decisions</h2>

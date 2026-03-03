@@ -41,22 +41,6 @@ class TestPriceProvider:
         assert isinstance(price, float)
         assert price > 0
 
-    def test_get_returns(self, mock_price_provider, sample_ohlcv_data):
-        """Test return calculation."""
-        # Manually calculate expected return
-        prices = sample_ohlcv_data["Close"]
-        expected = (prices.iloc[-1] - prices.iloc[-21]) / prices.iloc[-21]
-
-        # Create a provider that uses the sample data
-        from src.data.price import PriceProvider
-
-        provider = PriceProvider()
-        provider.get_ohlcv = lambda ticker, **kwargs: sample_ohlcv_data
-
-        returns = provider.get_returns("AAPL", 20)
-        # Allow some tolerance for date alignment
-        assert returns is not None
-
     def test_caching(self, sample_ohlcv_data):
         """Test that caching works."""
         from src.data.price import PriceProvider

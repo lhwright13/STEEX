@@ -10,9 +10,14 @@
 <form method="get" action="/runs" class="filter-row">
     <select name="mode" aria-label="Filter by mode">
         <option value="">All modes</option>
-        <option value="pre_market" {{ 'selected' if mode == 'pre_market' }}>Pre-Market</option>
+        <option value="heartbeat" {{ 'selected' if mode == 'heartbeat' }}>Heartbeat</option>
+        <option value="screen" {{ 'selected' if mode == 'screen' }}>Screen</option>
+        <option value="enter" {{ 'selected' if mode == 'enter' }}>Enter</option>
         <option value="monitor" {{ 'selected' if mode == 'monitor' }}>Monitor</option>
+        <option value="stop_sync" {{ 'selected' if mode == 'stop_sync' }}>Stop Sync</option>
         <option value="post_market" {{ 'selected' if mode == 'post_market' }}>Post-Market</option>
+        <option value="learning" {{ 'selected' if mode == 'learning' }}>Learning</option>
+        <option value="pre_market" {{ 'selected' if mode == 'pre_market' }}>Pre-Market</option>
     </select>
     <select name="status" aria-label="Filter by status">
         <option value="">All statuses</option>

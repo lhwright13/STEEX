@@ -176,9 +176,6 @@ class Settings(BaseSettings):
     sentiment_min_score: float = Field(
         default=30.0, description="Minimum sentiment score to pass filter (0-100)"
     )
-    sentiment_cache_ttl: int = Field(
-        default=3600, description="Sentiment cache TTL in seconds (1 hour)"
-    )
     geopolitical_enabled: bool = Field(
         default=True, description="Enable geopolitical/macro sentiment"
     )
@@ -256,9 +253,6 @@ class Settings(BaseSettings):
     )
     pysr_walk_forward_folds: int = Field(
         default=6, description="Number of walk-forward folds"
-    )
-    pysr_sample_frequency_days: int = Field(
-        default=5, description="Days between training samples"
     )
     weight_pysr: float = Field(
         default=0.10, description="PySR score weight in composite scoring"

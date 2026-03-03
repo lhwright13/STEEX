@@ -169,29 +169,6 @@ class TechnicalIndicators:
             "aligned": above_short and above_long,
         }
 
-    def filter_above_ma(
-        self,
-        tickers: List[str],
-        short_ma: int = 50,
-        long_ma: int = 200,
-    ) -> List[str]:
-        """Filter tickers that are above both MAs.
-
-        Args:
-            tickers: List of ticker symbols
-            short_ma: Short-term MA period
-            long_ma: Long-term MA period
-
-        Returns:
-            Filtered list of tickers
-        """
-        passed = []
-        for ticker in tickers:
-            alignment = self.check_trend_alignment(ticker, short_ma, long_ma)
-            if alignment["aligned"]:
-                passed.append(ticker)
-        return passed
-
     def get_volume_surge(
         self,
         ticker: str,

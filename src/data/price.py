@@ -1,7 +1,7 @@
 """Price data provider using yfinance."""
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import pandas as pd
 import yfinance as yf
@@ -191,68 +191,3 @@ class PriceProvider(DataProvider):
             return None
         return df["Close"].iloc[-1]
 
-    def get_returns(
-        self,
-        ticker: str,
-        days: int,
-        end: Optional[datetime] = None,
-    ) -> Optional[float]:
-        """Calculate return over N trading days.
-
-        Args:
-            ticker: Stock ticker symbol
-            days: Number of trading days
-            end: End date (defaults to today)
-
-        Returns:
-            Return as decimal (e.g., 0.10 for 10%) or None
-        """
-        # Fetch extra days to account for non-trading days
-        calendar_days = int(days * 1.5) + 10
-        df = self.get_ohlcv(ticker, days=calendar_days)
-
-        if df.empty or len(df) < days:
-            return None
-
-        try:
-            end_price = df["Close"].iloc[-1]
-            start_price = df["Close"].iloc[-min(days, len(df))]
-
-            if start_price > 0:
-                return (end_price - start_price) / start_price
-            return None
-        except (IndexError, KeyError):
-            return None
-
-    def get_price_vs_ma(
-        self,
-        ticker: str,
-        ma_period: int,
-    ) -> Optional[Dict[str, Union[float, bool]]]:
-        """Get current price position relative to moving average.
-
-        Args:
-            ticker: Stock ticker symbol
-            ma_period: Moving average period (e.g., 50 or 200)
-
-        Returns:
-            Dict with price, ma, and above_ma boolean
-        """
-        # Fetch enough data for MA calculation
-        calendar_days = int(ma_period * 1.5) + 20
-        df = self.get_ohlcv(ticker, days=calendar_days)
-
-        if df.empty or len(df) < ma_period:
-            return None
-
-        try:
-            current_price = df["Close"].iloc[-1]
-            ma_value = df["Close"].rolling(window=ma_period).mean().iloc[-1]
-
-            return {
-                "price": current_price,
-                "ma": ma_value,
-                "above_ma": current_price > ma_value,
-            }
-        except (IndexError, KeyError):
-            return None

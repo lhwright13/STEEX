@@ -76,18 +76,3 @@ class TestMomentumCalculator:
         # Should have data for all tickers
         assert len(data) == 3
 
-    def test_momentum_score(self, mock_price_provider):
-        """Test momentum score calculation."""
-        calc = MomentumCalculator(price_provider=mock_price_provider)
-
-        score = calc.calculate_momentum_score(
-            "AAPL",
-            momentum_6m=0.20,  # 20% return
-            momentum_1m=0.05,  # 5% return
-        )
-
-        # Score should be positive for positive momentum
-        assert score > 0
-        # 6m: 0.20 * 140 = 28 (capped)
-        # 1m: 0.05 * 300 = 15
-        assert score <= 100

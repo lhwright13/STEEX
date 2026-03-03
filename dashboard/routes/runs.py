@@ -1,6 +1,6 @@
-import json
 from flask import Blueprint, render_template, request
 from dashboard.db import DashboardDB
+from dashboard.utils import parse_json_field
 
 bp = Blueprint("runs", __name__)
 
@@ -43,30 +43,13 @@ def run_detail(run_id):
 
     # Parse JSON fields for display
     for d in decisions:
-        if d.get("reasons"):
-            try:
-                d["reasons_list"] = json.loads(d["reasons"])
-            except (json.JSONDecodeError, TypeError):
-                d["reasons_list"] = []
-        else:
-            d["reasons_list"] = []
+        parse_json_field(d, "reasons", "reasons_list")
 
     for e in events:
-        if e.get("data_json"):
-            try:
-                e["data_parsed"] = json.loads(e["data_json"])
-            except (json.JSONDecodeError, TypeError):
-                e["data_parsed"] = None
-        else:
-            e["data_parsed"] = None
+        parse_json_field(e, "data_json", "data_parsed", default=None)
 
-    if regime and regime.get("risk_alerts"):
-        try:
-            regime["alerts_list"] = json.loads(regime["risk_alerts"])
-        except (json.JSONDecodeError, TypeError):
-            regime["alerts_list"] = []
-    elif regime:
-        regime["alerts_list"] = []
+    if regime:
+        parse_json_field(regime, "risk_alerts", "alerts_list")
 
     return render_template(
         "runs/detail.html",

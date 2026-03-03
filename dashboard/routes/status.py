@@ -1,15 +1,60 @@
 import subprocess
 from datetime import datetime
+from pathlib import Path
+
 from flask import Blueprint, render_template
 from dashboard.db import DashboardDB
+from dashboard.utils import load_heartbeat
 
 bp = Blueprint("status", __name__)
 
-SCHEDULE = {
-    "pre_market": "08:30 ET",
-    "monitor": "12:00 ET",
-    "post_market": "16:30 ET",
-}
+PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
+SCHEDULER_CONFIG = PROJECT_DIR / "scheduler" / "config.yaml"
+
+
+def _load_schedule():
+    """Read the schedule from scheduler/config.yaml."""
+    try:
+        import yaml
+        with open(SCHEDULER_CONFIG) as f:
+            cfg = yaml.safe_load(f)
+        modes = cfg.get("modes", {})
+        schedule = {}
+        for key, val in modes.items():
+            if not val.get("enabled"):
+                continue
+            cron = val.get("schedule", "")
+            manager_mode = val.get("mode_name", key)
+            schedule[key] = {
+                "cron": cron,
+                "time": _cron_to_human(cron),
+                "manager_mode": manager_mode,
+                "enabled": True,
+            }
+        return schedule
+    except Exception:
+        return {}
+
+
+def _cron_to_human(cron):
+    """Convert a cron expression to a human-readable time string."""
+    try:
+        parts = cron.split()
+        minute = int(parts[0])
+        hour = int(parts[1])
+        dow = parts[4] if len(parts) > 4 else "*"
+        time_str = f"{hour}:{minute:02d} ET"
+        day_map = {
+            "1-5": "weekdays",
+            "0": "Sun",
+            "5": "Fri",
+            "6": "Sat",
+            "*": "daily",
+        }
+        days = day_map.get(dow, dow)
+        return f"{time_str}, {days}"
+    except (ValueError, IndexError):
+        return cron
 
 
 @bp.route("/status")
@@ -19,24 +64,25 @@ def current():
     latest = db.get_latest_run()
     recent_runs = db.get_runs(limit=10)
 
-    # Count by status
     total = db.get_run_count()
     successes = db.get_run_count(status="success")
     failures = db.get_run_count(status="failed")
 
-    # Check cron status
     cron_ok = _check_cron()
+    schedule = _load_schedule()
+    heartbeat = load_heartbeat()
 
     return render_template(
         "status/current.html",
         running=running,
         latest=latest,
         recent_runs=recent_runs,
-        schedule=SCHEDULE,
+        schedule=schedule,
         total=total,
         successes=successes,
         failures=failures,
         cron_ok=cron_ok,
+        heartbeat=heartbeat,
         now=datetime.utcnow().isoformat(),
     )
 
