@@ -63,20 +63,20 @@ PostMortem (trade analysis, 90 days)
 
 ## Daily Schedule
 
-The scheduler (`scheduler/config.yaml`) runs 9 cron jobs that break the trading day into discrete phases. Each phase runs through `claude -p` with a mode-specific prompt and a market calendar gate that skips runs on holidays or when the market is closed.
+The scheduler (`scheduler/config.yaml`) runs 9 cron jobs that break the trading day into discrete phases. Each phase runs `scheduler/run.sh <mode>`, which calls Python scripts directly with a market calendar gate that skips runs on holidays or when the market is closed.
 
 ```
-Time ET     Mode              What it does
--------     ----              ------------
-7:00 AM     heartbeat         API health, account check, stop reconciliation
-8:15 AM     screen            Data refresh + screening + ranking (NO entries)
-9:45 AM     enter             Load screen results, execute entries, place server-side stops
-11:00 AM    monitor           Risk check, stops, exits
-1:30 PM     monitor           Risk check, stops, exits
-3:45 PM     stop_sync         Update trailing stops, sync server-side stops before close
-4:30 PM     post_market       EOD wrap-up, post-mortem, report
-6:00 PM Fri learning          Weekly parameter optimization
-10:00 AM Sun heartbeat        Weekend heartbeat
+Time ET     Mode              Command
+-------     ----              -------
+7:00 AM     heartbeat         health_check.py
+8:15 AM     screen            run_manager.py screen --paper
+9:45 AM     enter             run_manager.py enter --paper --yes
+11:00 AM    monitor           run_manager.py monitor --paper
+1:30 PM     monitor           run_manager.py monitor --paper
+3:45 PM     stop_sync         run_manager.py stop_sync --paper
+4:30 PM     post_market       run_manager.py post_market --paper
+6:00 PM Fri learning          run_learning.py --verbose
+10:00 AM Sun heartbeat        health_check.py
 ```
 
 The `screen` and `enter` modes replace the old monolithic `pre_market` for daily use. `pre_market` still works as a combined mode for manual runs. Screening happens before market open so entries can wait for the opening auction to settle (9:45 AM). Server-side GTC stops on Alpaca protect positions even if the Mac sleeps or crashes.

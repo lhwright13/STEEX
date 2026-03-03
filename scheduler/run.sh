@@ -17,7 +17,7 @@ LOCK_DIR="$SCRIPT_DIR/locks"
 VENV_PYTHON="$PROJECT_DIR/venv/bin/python"
 
 # Ensure Homebrew and common tool paths are available (cron has minimal PATH)
-export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node/" 2>/dev/null | sort -V | tail -1)/bin:$PATH" 2>/dev/null
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # Source profile for API keys (Alpaca, Finnhub, etc.)
 # shellcheck disable=SC1090
@@ -170,21 +170,10 @@ trap 'rm -f "$LOCKFILE"' EXIT
 # Read settings (mode-specific with fallback to defaults)
 # ---------------------------------------------------------------------------
 
-MODEL="$(mode_get "$CONFIG_MODE" "model")"
-MAX_BUDGET="$(mode_get "$CONFIG_MODE" "max_budget_usd")"
-ALLOWED_TOOLS="$(mode_get "$CONFIG_MODE" "allowed_tools")"
 PAPER="$(mode_get "$CONFIG_MODE" "paper")"
 DRY_RUN="$(mode_get "$CONFIG_MODE" "dry_run")"
 AUTO_CONFIRM="$(mode_get "$CONFIG_MODE" "auto_confirm")"
-OUTPUT_FORMAT="$(mode_get "$CONFIG_MODE" "output_format")"
-NO_SESSION="$(mode_get "$CONFIG_MODE" "no_session_persistence")"
-PROMPT_FILE="$(yaml_get "modes.${CONFIG_MODE}.prompt_file")"
 MAX_LOG_DAYS="$(yaml_get "max_log_days")"
-
-if [ -z "$PROMPT_FILE" ] || [ ! -f "$PROJECT_DIR/$PROMPT_FILE" ]; then
-    echo "Error: prompt file not found: $PROJECT_DIR/$PROMPT_FILE"
-    exit 1
-fi
 
 # ---------------------------------------------------------------------------
 # Build run_manager.py flags from config
@@ -204,54 +193,11 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Load and prepare prompt
-# ---------------------------------------------------------------------------
-
-PROMPT="$(cat "$PROJECT_DIR/$PROMPT_FILE")"
-
-# Inject runtime flags into the {{FLAGS}} placeholder
-PROMPT="${PROMPT//\{\{FLAGS\}\}/$RUN_FLAGS}"
-
-# Append runtime metadata
-TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-PROMPT="$PROMPT
-
----
-Runtime metadata (injected by scheduler):
-- Mode: $MANAGER_MODE
-- Config mode: $CONFIG_MODE
-- Timestamp: $TIMESTAMP
-- Dry run: $DRY_RUN
-- Paper trading: $PAPER
-- Working directory: $PROJECT_DIR"
-
-# Append system prompt for safety guardrails
-SYSTEM_APPEND="You are running in automated scheduler mode. Do NOT modify any source code files. Do NOT create or delete files outside of data/. Only read code, run the pipeline, and report results. Working directory: $PROJECT_DIR"
-
-# ---------------------------------------------------------------------------
-# Build claude command
-# ---------------------------------------------------------------------------
-
-LOGFILE="$LOG_DIR/${CONFIG_MODE}_$(date '+%Y%m%d_%H%M%S').log"
-
-CMD=(
-    claude
-    -p "$PROMPT"
-    --model "$MODEL"
-    --max-budget-usd "$MAX_BUDGET"
-    --allowedTools "$ALLOWED_TOOLS"
-    --output-format "$OUTPUT_FORMAT"
-    --append-system-prompt "$SYSTEM_APPEND"
-)
-
-if [ "$NO_SESSION" = "True" ] || [ "$NO_SESSION" = "true" ]; then
-    CMD+=(--no-session-persistence)
-fi
-
-# ---------------------------------------------------------------------------
 # Execute
 # ---------------------------------------------------------------------------
 
+TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+LOGFILE="$LOG_DIR/${CONFIG_MODE}_$(date '+%Y%m%d_%H%M%S').log"
 RUN_ID="${CONFIG_MODE}_$(date '+%Y%m%d_%H%M%S')"
 
 echo "[$TIMESTAMP] Starting $MODE run (dry_run=$DRY_RUN, paper=$PAPER)"
@@ -266,11 +212,20 @@ if [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then INGEST_FLAGS="$INGES
 if [ "$PAPER" = "True" ] || [ "$PAPER" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --paper"; fi
 "$VENV_PYTHON" scripts/ingest_run.py --start --run-id "$RUN_ID" --mode "$MANAGER_MODE" --log-path "$LOGFILE" $INGEST_FLAGS || true
 
-# Unset CLAUDECODE to allow scheduler to invoke claude -p
-# (Claude Code sets this to prevent accidental nesting; cron is intentional)
-unset CLAUDECODE
-
-"${CMD[@]}" 2>&1 | tee "$LOGFILE"
+# Route to the correct Python command based on mode
+case "$MANAGER_MODE" in
+    heartbeat)
+        "$VENV_PYTHON" scripts/health_check.py 2>&1 | tee "$LOGFILE"
+        ;;
+    learning)
+        LEARNING_FLAGS="--verbose"
+        if [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then LEARNING_FLAGS="$LEARNING_FLAGS --dry-run"; fi
+        "$VENV_PYTHON" scripts/run_learning.py $LEARNING_FLAGS 2>&1 | tee "$LOGFILE"
+        ;;
+    *)
+        "$VENV_PYTHON" scripts/run_manager.py "$MANAGER_MODE" $RUN_FLAGS 2>&1 | tee "$LOGFILE"
+        ;;
+esac
 
 EXIT_CODE=${PIPESTATUS[0]}
 echo "[$TIMESTAMP] $MODE completed with exit code $EXIT_CODE"

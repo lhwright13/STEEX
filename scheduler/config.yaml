@@ -1,76 +1,61 @@
 # STEEX Scheduler Configuration
-# Controls how and when claude -p invocations run the trading pipeline.
+# Controls when and how the trading pipeline runs via cron.
+#
+# IMPORTANT: Cron runs in system local time (PST on this machine).
+# All schedule expressions are in PST. ET equivalents noted in comments.
+# PST = ET - 3 hours (both coasts observe DST simultaneously).
 
 # ---------------------------------------------------------------------------
 # Defaults - applied to all modes unless overridden
 # ---------------------------------------------------------------------------
 defaults:
-  model: "sonnet"
-  max_budget_usd: 1.00
-  allowed_tools: "Bash,Read,Glob,Grep"
   paper: true
   dry_run: false
   auto_confirm: true
-  output_format: "text"
-  no_session_persistence: true
 
 # ---------------------------------------------------------------------------
 # Modes - each corresponds to a run_manager.py operating mode
+# Schedule times are PST (system local). ET equivalents in comments.
 # ---------------------------------------------------------------------------
 modes:
   heartbeat_morning:
     enabled: true
-    schedule: "0 7 * * 1-5"      # 7:00 AM ET, weekdays
-    prompt_file: "scheduler/prompts/heartbeat.md"
-    max_budget_usd: 0.25
+    schedule: "0 4 * * 1-5"       # 4:00 AM PST = 7:00 AM ET, weekdays
     mode_name: "heartbeat"
 
   screen:
     enabled: true
-    schedule: "15 8 * * 1-5"     # 8:15 AM ET, weekdays
-    prompt_file: "scheduler/prompts/screen.md"
-    max_budget_usd: 2.00
+    schedule: "15 5 * * 1-5"      # 5:15 AM PST = 8:15 AM ET, weekdays
 
   enter:
     enabled: true
-    schedule: "45 9 * * 1-5"     # 9:45 AM ET, weekdays
-    prompt_file: "scheduler/prompts/enter.md"
-    max_budget_usd: 1.50
+    schedule: "45 6 * * 1-5"      # 6:45 AM PST = 9:45 AM ET, weekdays
 
   monitor_midday:
     enabled: true
-    schedule: "0 11 * * 1-5"     # 11:00 AM ET, weekdays
-    prompt_file: "scheduler/prompts/monitor.md"
+    schedule: "0 8 * * 1-5"       # 8:00 AM PST = 11:00 AM ET, weekdays
     mode_name: "monitor"
 
   monitor_afternoon:
     enabled: true
-    schedule: "30 13 * * 1-5"    # 1:30 PM ET, weekdays
-    prompt_file: "scheduler/prompts/monitor.md"
+    schedule: "30 10 * * 1-5"     # 10:30 AM PST = 1:30 PM ET, weekdays
     mode_name: "monitor"
 
   stop_sync:
     enabled: true
-    schedule: "45 15 * * 1-5"    # 3:45 PM ET, weekdays
-    prompt_file: "scheduler/prompts/stop_sync.md"
-    max_budget_usd: 0.50
+    schedule: "45 12 * * 1-5"     # 12:45 PM PST = 3:45 PM ET, weekdays
 
   post_market:
     enabled: true
-    schedule: "30 16 * * 1-5"    # 4:30 PM ET, weekdays
-    prompt_file: "scheduler/prompts/post_market.md"
+    schedule: "30 13 * * 1-5"     # 1:30 PM PST = 4:30 PM ET, weekdays
 
   learning:
     enabled: true
-    schedule: "0 18 * * 5"       # 6:00 PM ET, Fridays
-    prompt_file: "scheduler/prompts/learning.md"
-    max_budget_usd: 5.00
+    schedule: "0 15 * * 5"        # 3:00 PM PST = 6:00 PM ET, Fridays
 
   heartbeat_weekend:
     enabled: true
-    schedule: "0 10 * * 0"       # 10:00 AM ET, Sundays
-    prompt_file: "scheduler/prompts/heartbeat.md"
-    max_budget_usd: 0.25
+    schedule: "0 7 * * 0"         # 7:00 AM PST = 10:00 AM ET, Sundays
     mode_name: "heartbeat"
 
 # ---------------------------------------------------------------------------
