@@ -1,14 +1,14 @@
 # STEEX Scheduler
 
-Automated cron-based scheduler that invokes `claude -p` (non-interactive mode) to run the trading pipeline on a timer. Claude reads the agent docs, reasons about market conditions, executes the pipeline, and reports results.
+Automated cron-based scheduler that runs the trading pipeline on a timer via Python scripts.
 
 ## How It Works
 
 1. **cron** fires at scheduled times
-2. **run.sh** reads `config.yaml`, checks the market gate, loads the prompt template, and builds a `claude -p` command
+2. **run.sh** reads `config.yaml`, checks the market gate, and routes to the correct Python script
 3. **market_gate.py** queries Alpaca's clock/calendar to decide if the mode should run (skips holidays, checks market hours)
 4. **lockfile** prevents overlapping runs of the same mode
-5. **Claude** reads the relevant agent doc, runs the pipeline, reads the report, and summarizes results
+5. **Python scripts** execute the pipeline (run_manager.py, health_check.py, or run_learning.py)
 6. Output is logged to `scheduler/logs/`
 
 ## Files
@@ -16,7 +16,7 @@ Automated cron-based scheduler that invokes `claude -p` (non-interactive mode) t
 | File | Purpose |
 |------|---------|
 | `config.yaml` | Schedules, model, budget, safety flags, tool permissions |
-| `run.sh` | Main entry point - market gate, lockfile, parses config, runs `claude -p` |
+| `run.sh` | Main entry point - market gate, lockfile, parses config, runs Python scripts |
 | `install.sh` | Reads config and writes cron entries (dynamic mode discovery, idempotent) |
 | `uninstall.sh` | Removes cron entries, preserves other crontab entries |
 | `prompts/heartbeat.md` | Health check - API connectivity, stop reconciliation |
@@ -91,7 +91,6 @@ The config ships with safe defaults:
 
 - `paper: true` - paper trading only
 - `dry_run: false` - executes trades (set to true for preview-only mode)
-- `allowed_tools: "Bash,Read,Glob,Grep"` - Claude cannot edit or write source files
 - `broker_enabled: true` in main config - Alpaca is the source of truth
 - `server_stops_enabled: true` - GTC stops on Alpaca protect positions even if the system goes offline
 - `run.sh` sources `~/.bash_profile` and `~/.zprofile` for API keys
@@ -103,7 +102,6 @@ If the broker fails to initialize (missing keys), the pipeline halts rather than
 
 - macOS with cron enabled (grant Full Disk Access to `/usr/sbin/cron` in System Settings)
 - Machine must be awake during scheduled times (cron does not fire while asleep; server-side stops provide a safety net)
-- Valid Claude CLI auth (`claude` command must work)
 - Alpaca API keys in `~/.bash_profile` (ALPACA_API_KEY, ALPACA_SECRET_KEY)
 - Project venv with pyyaml installed
 

@@ -15,27 +15,22 @@ CONFIG_FILE = Path(__file__).parent / "config.yaml"
 class YamlConfigSettingsSource(PydanticBaseSettingsSource):
     """Load settings from YAML config file."""
 
+    def _load(self) -> Dict[str, Any]:
+        if not hasattr(self, "_yaml_data"):
+            self._yaml_data = {}
+            if CONFIG_FILE.exists():
+                with open(CONFIG_FILE) as f:
+                    self._yaml_data = yaml.safe_load(f) or {}
+        return self._yaml_data
+
     def get_field_value(
         self, field: Any, field_name: str
     ) -> Tuple[Any, str, bool]:
-        """Get field value from YAML config."""
-        if not hasattr(self, "_yaml_data"):
-            self._yaml_data = {}
-            if CONFIG_FILE.exists():
-                with open(CONFIG_FILE) as f:
-                    self._yaml_data = yaml.safe_load(f) or {}
-
-        value = self._yaml_data.get(field_name)
+        value = self._load().get(field_name)
         return value, field_name, value is not None
 
     def __call__(self) -> Dict[str, Any]:
-        """Return all values from YAML."""
-        if not hasattr(self, "_yaml_data"):
-            self._yaml_data = {}
-            if CONFIG_FILE.exists():
-                with open(CONFIG_FILE) as f:
-                    self._yaml_data = yaml.safe_load(f) or {}
-        return {k: v for k, v in self._yaml_data.items() if v is not None}
+        return {k: v for k, v in self._load().items() if v is not None}
 
 
 class Settings(BaseSettings):
@@ -65,9 +60,6 @@ class Settings(BaseSettings):
     # Insider trading parameters
     insider_lookback_days: int = Field(
         default=30, description="Days to look back for insider activity"
-    )
-    min_insider_buyers: int = Field(
-        default=1, description="Minimum number of insider buyers"
     )
     min_cluster_buyers: int = Field(
         default=3, description="Minimum insiders for cluster buy signal"

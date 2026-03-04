@@ -149,24 +149,21 @@ class PriceProvider(DataProvider):
             if data.empty:
                 return results
 
-            # Handle single vs multiple tickers
-            if len(tickers) == 1:
-                ticker_data = data
-                ticker_data.columns = [c.replace(" ", "_") for c in ticker_data.columns]
-                results[tickers[0]] = ticker_data
-                cache_key = self._get_cache_key(tickers[0], start, end, days)
-                self._set_cache(cache_key, ticker_data)
-            else:
-                for ticker in tickers:
-                    try:
+            # yfinance >= 1.2 always returns MultiIndex columns (Price, Ticker)
+            # Flatten by extracting each ticker via xs()
+            for ticker in tickers:
+                try:
+                    if isinstance(data.columns, pd.MultiIndex):
                         ticker_data = data.xs(ticker, axis=1, level=1)
-                        if not ticker_data.empty:
-                            ticker_data.columns = [c.replace(" ", "_") for c in ticker_data.columns]
-                            results[ticker] = ticker_data
-                            cache_key = self._get_cache_key(ticker, start, end, days)
-                            self._set_cache(cache_key, ticker_data)
-                    except (KeyError, ValueError):
-                        continue
+                    else:
+                        ticker_data = data
+                    if not ticker_data.empty:
+                        ticker_data.columns = [c.replace(" ", "_") for c in ticker_data.columns]
+                        results[ticker] = ticker_data
+                        cache_key = self._get_cache_key(ticker, start, end, days)
+                        self._set_cache(cache_key, ticker_data)
+                except (KeyError, ValueError):
+                    continue
 
         except Exception:
             # Fall back to individual fetches

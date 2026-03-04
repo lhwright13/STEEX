@@ -6,7 +6,7 @@ An agent-based automated trading system that screens S&P 500 stocks using moment
 
 ## Architecture
 
-STEEX is built around a **QuantManager** orchestrator that coordinates five specialized agents. Each agent owns a specific domain and exposes tools that the orchestrator calls in sequence.
+STEEX is built around a **QuantManager** orchestrator that coordinates eleven specialized agents. Each agent owns a specific domain and exposes tools that the orchestrator calls in sequence.
 
 ```
 QuantManager (orchestrator)
@@ -16,9 +16,15 @@ QuantManager (orchestrator)
     +-- RiskAgent        -- Monitors positions, stops, VIX, drawdown
     +-- ExecutionAgent   -- Decides and executes entries/exits via Alpaca
     +-- ReportAgent      -- Compiles reports, logs everything
+    +-- RegimeAgent      -- Multi-factor market regime detection
+    +-- PortfolioAgent   -- Diversified portfolio construction
+    +-- BacktestAgent    -- Walk-forward backtesting
+    +-- PostMortemAgent  -- Completed trade analysis
+    +-- ResearchAgent    -- Signal research and weight optimization
+    +-- LearningAgent    -- Self-optimizing parameter tuning
 ```
 
-Each agent is documented in `agents/claude_*.md`. These docs are read by the Claude-based scheduler when it runs the pipeline autonomously via `claude -p`.
+Each agent is documented in `agents/claude_*.md`.
 
 ## Data Sources
 
@@ -103,7 +109,8 @@ S&P 500 (~503 stocks)
 | Sentiment | 15% | Finnhub + VADER + geopolitical |
 | Fundamental | 10% | P/E, ROE, debt/equity composite |
 | Options | 5% | Put/call ratio signal |
-| PySR | 10% | Symbolic regression prediction (when trained) |
+
+PySR symbolic regression adds a 10% bonus weight when a trained model is available (disabled by default).
 
 ## Position Management
 
@@ -141,7 +148,7 @@ Alpaca Markets is the **source of truth** for all holdings and account data. On 
 
 ## Automated Scheduling
 
-The `scheduler/` directory provides cron-based automation that invokes `claude -p` (non-interactive mode). Claude reads the agent docs, reasons about market conditions, runs the pipeline, and reports results. A market calendar gate (`scripts/market_gate.py`) skips runs on holidays and ensures modes that need the market open only run during trading hours.
+The `scheduler/` directory provides cron-based automation that runs Python scripts directly. A market calendar gate (`scripts/market_gate.py`) skips runs on holidays and ensures modes that need the market open only run during trading hours.
 
 | Mode | Schedule (ET) | Description |
 |------|--------------|-------------|
@@ -221,7 +228,7 @@ STEEX/
     run_learning.py            # Learning loop CLI
   scheduler/
     config.yaml                # Scheduler settings (model, budget, tools)
-    run.sh                     # Main entry - parses config, market gate, runs claude -p
+    run.sh                     # Main entry - parses config, market gate, runs pipeline
     install.sh                 # Install cron schedule (dynamic mode discovery)
     uninstall.sh               # Remove cron schedule
     prompts/                   # Prompt templates for each mode

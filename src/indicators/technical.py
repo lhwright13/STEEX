@@ -152,6 +152,8 @@ class TechnicalIndicators:
     ) -> Dict[str, bool]:
         """Check if price is above both short and long MAs.
 
+        Fetches price data once for both MA calculations.
+
         Args:
             ticker: Stock ticker symbol
             short_ma: Short-term MA period
@@ -160,14 +162,25 @@ class TechnicalIndicators:
         Returns:
             Dict with above_short_ma, above_long_ma, and aligned
         """
-        above_short = self.is_above_ma(ticker, short_ma)
-        above_long = self.is_above_ma(ticker, long_ma)
+        calendar_days = int(max(short_ma, long_ma) * 1.5) + 20
+        df = self.price_provider.get_ohlcv(ticker, days=calendar_days)
 
-        return {
-            "above_short_ma": above_short,
-            "above_long_ma": above_long,
-            "aligned": above_short and above_long,
-        }
+        if df.empty or len(df) < max(short_ma, long_ma):
+            return {"above_short_ma": False, "above_long_ma": False, "aligned": False}
+
+        try:
+            price = df["Close"].iloc[-1]
+            short_val = self.moving_average(df["Close"], short_ma).iloc[-1]
+            long_val = self.moving_average(df["Close"], long_ma).iloc[-1]
+            above_short = price > short_val
+            above_long = price > long_val
+            return {
+                "above_short_ma": above_short,
+                "above_long_ma": above_long,
+                "aligned": above_short and above_long,
+            }
+        except (IndexError, KeyError):
+            return {"above_short_ma": False, "above_long_ma": False, "aligned": False}
 
     def get_volume_surge(
         self,

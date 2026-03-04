@@ -1,4 +1,4 @@
-# MIS Strategy Configuration
+# STEEX Strategy Configuration
 # All parameters can be overridden via environment variables with STEEX_ prefix
 # e.g., STEEX_INITIAL_STOP_PCT=0.10
 
@@ -21,7 +21,6 @@ ma_long: 200                     # Long-term moving average period
 # Insider Trading Parameters
 # -----------------------------------------------------------------------------
 insider_lookback_days: 30        # Days to look back for insider activity
-min_insider_buyers: 1            # Minimum number of insider buyers
 min_cluster_buyers: 3            # Minimum insiders for cluster buy signal
 min_purchase_value: 100000       # Minimum purchase value for significant signal
 
@@ -38,9 +37,9 @@ min_history_days: 126            # Minimum trading history required (6 months)
 # -----------------------------------------------------------------------------
 max_positions: 10                # Optimized: concentrated portfolio outperforms
 daily_picks: 2                   # Number of stocks to pick daily
-position_size_pct: 0.04          # Optimized: 4% position size (was 5%)
+position_size_pct: 0.04          # Base position size (4%)
 max_sector_pct: 0.30             # Maximum sector exposure (30%)
-max_single_position_pct: 0.20    # Maximum single position size (10%)
+max_single_position_pct: 0.10    # Maximum single position size (10%)
 min_cash_reserve_pct: 0.10       # Minimum cash reserve (10%)
 
 # -----------------------------------------------------------------------------
@@ -87,6 +86,13 @@ weight_fundamental: 0.10         # Fundamental analysis weight
 weight_options: 0.05             # Options intelligence weight
 
 # -----------------------------------------------------------------------------
+# Sentiment Analysis
+# -----------------------------------------------------------------------------
+geopolitical_enabled: true       # Enable geopolitical/macro sentiment
+geopolitical_weight: 0.40        # Weight of geopolitical vs stock-specific sentiment
+sentiment_stock_weight: 0.60     # Weight of stock-specific sentiment
+
+# -----------------------------------------------------------------------------
 # Fundamental Analysis
 # -----------------------------------------------------------------------------
 fundamental_enabled: true        # Enable fundamental analysis in screening
@@ -106,7 +112,7 @@ options_cache_ttl: 3600          # Cache TTL in seconds (1 hour)
 # -----------------------------------------------------------------------------
 # PySR Symbolic Regression (disabled by default)
 # -----------------------------------------------------------------------------
-pysr_enabled: true               # Enable PySR scoring in pipeline
+pysr_enabled: false              # Enable PySR scoring in pipeline (requires trained model)
 pysr_model_dir: "data/ml/models" # Directory for trained models
 pysr_dataset_dir: "data/ml/datasets"  # Directory for training datasets
 pysr_niterations: 40             # PySR search iterations
@@ -131,7 +137,7 @@ walkforward_signal_interval: 7     # Days between signal generations
 # -----------------------------------------------------------------------------
 # Portfolio Construction
 # -----------------------------------------------------------------------------
-portfolio_max_pairwise_corr: 0.70  # Max pairwise correlation for selection
+portfolio_max_pairwise_corr: 0.70  # Maximum pairwise correlation for diversification
 portfolio_risk_parity_enabled: true # Enable risk-parity weighting
 portfolio_correlation_lookback: 60  # Lookback days for correlation matrix
 
@@ -192,7 +198,7 @@ drawdown_pause: 0.20             # Drawdown level to pause new entries (20%)
 drawdown_exit: 0.25              # Drawdown level to exit all positions (25%)
 
 # -----------------------------------------------------------------------------
-# Transaction Costs (Robinhood)
+# Transaction Costs (Alpaca)
 # -----------------------------------------------------------------------------
 # For small-cap stocks, real costs include bid-ask spread + PFOF:
 #   - High volume (>1M): ~0.2% per trade

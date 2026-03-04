@@ -1,11 +1,14 @@
 """Insider buying scanner."""
 
+import logging
 from datetime import datetime
 from typing import List, Optional
 
 from ..client import EdgarClient
 from ..models import InsiderTransaction
 from ..parsers.form4 import parse_form4_xml
+
+logger = logging.getLogger(__name__)
 
 
 class InsiderScanner:
@@ -36,7 +39,7 @@ class InsiderScanner:
             List of InsiderTransaction objects for purchases
         """
         if verbose:
-            print("Fetching Form 4 filings...")
+            logger.info("Fetching Form 4 filings...")
 
         filings = self.client.get_form4_filings(
             days_back=days_back,
@@ -46,10 +49,10 @@ class InsiderScanner:
 
         if len(filings) > max_filings:
             if verbose:
-                print(f"Found {len(filings)} filings, limiting to {max_filings}")
+                logger.info("Found %d filings, limiting to %d", len(filings), max_filings)
             filings = filings[:max_filings]
         elif verbose:
-            print(f"Found {len(filings)} filings")
+            logger.info("Found %d filings", len(filings))
 
         purchases = []
         seen = set()
@@ -105,7 +108,7 @@ class InsiderScanner:
 
             processed += 1
             if verbose and processed % 50 == 0:
-                print(f"  Processed {processed}/{len(filings)}, found {len(purchases)} purchases")
+                logger.info("Processed %d/%d, found %d purchases", processed, len(filings), len(purchases))
 
         return purchases
 

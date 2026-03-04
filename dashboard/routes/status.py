@@ -37,13 +37,26 @@ def _load_schedule():
 
 
 def _cron_to_human(cron):
-    """Convert a cron expression to a human-readable time string."""
+    """Convert a cron expression to a human-readable time string.
+
+    Cron times are in system local time (PST). Convert to ET for display
+    since trading hours are conventionally shown in ET.
+    PST = ET - 3 hours.
+    """
     try:
         parts = cron.split()
         minute = int(parts[0])
         hour = int(parts[1])
         dow = parts[4] if len(parts) > 4 else "*"
-        time_str = f"{hour}:{minute:02d} ET"
+        # Convert PST to ET (+3 hours)
+        et_hour = hour + 3
+        if et_hour >= 24:
+            et_hour -= 24
+        period = "AM" if et_hour < 12 else "PM"
+        display_hour = et_hour if et_hour <= 12 else et_hour - 12
+        if display_hour == 0:
+            display_hour = 12
+        time_str = f"{display_hour}:{minute:02d} {period} ET"
         day_map = {
             "1-5": "weekdays",
             "0": "Sun",

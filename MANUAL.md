@@ -142,10 +142,13 @@ python scripts/run_manager.py <mode> [OPTIONS]
 
 | Mode | Description |
 |------|-------------|
-| `pre_market` | Full pipeline (default) |
-| `monitor` | Midday risk check |
-| `post_market` | End-of-day wrap-up |
-| `full` | Run all three in sequence |
+| `screen` | Pre-open: data refresh, screening, ranking (no entries) |
+| `enter` | Post-open: load screen results, execute entries |
+| `monitor` | Midday risk check, stops, exits only |
+| `stop_sync` | Pre-close: update trailing stops, sync server-side stops |
+| `post_market` | End-of-day wrap-up, post-mortem |
+| `learning` | Signal research, parameter optimization |
+| `pre_market` | Legacy combined mode (screen + enter) |
 | `train` | PySR walk-forward training |
 
 | Flag | Description |
@@ -157,18 +160,6 @@ python scripts/run_manager.py <mode> [OPTIONS]
 | `--yes` | Auto-confirm all entries |
 | `--verbose` | Extra output |
 | `--portfolio N` | Override portfolio value |
-
-### Legacy Scanners (Still Available)
-
-```bash
-# Standalone daily scan
-python scripts/daily_scan.py
-python scripts/daily_scan.py --debug --all-candidates
-
-# Insider scanner
-python scripts/scan_insiders.py --days 7 --max 500
-python scripts/scan_insiders.py --fast
-```
 
 ---
 
@@ -262,7 +253,8 @@ All parameters are in `config/config.yaml`. Key settings:
 | Sentiment | 15% | Finnhub + VADER + geopolitical |
 | Fundamental | 10% | P/E, ROE, debt/equity |
 | Options | 5% | Put/call ratio |
-| PySR | 10% | Symbolic regression (when trained) |
+
+PySR symbolic regression adds a 10% bonus weight when a trained model is available (disabled by default).
 
 ### Environment Variable Overrides
 
@@ -280,7 +272,7 @@ Priority: init settings > environment variables > YAML config > defaults.
 
 ## Scheduler Setup
 
-The scheduler runs the pipeline automatically via cron and `claude -p` (non-interactive mode). Claude reads the agent docs, reasons about market conditions, and executes the pipeline.
+The scheduler runs the pipeline automatically via cron, executing Python scripts directly.
 
 ### Install
 
@@ -297,17 +289,24 @@ crontab -l
 
 ### Default Schedule (ET, weekdays)
 
-| Mode | Time | Description |
-|------|------|-------------|
-| pre_market | 8:30 AM | Full pipeline |
-| monitor | 12:00 PM | Risk check |
-| post_market | 4:30 PM | EOD wrap-up |
+| Mode | Time | Days | Description |
+|------|------|------|-------------|
+| heartbeat | 7:00 AM | Mon-Fri | API health, account check, stop reconciliation |
+| screen | 8:15 AM | Mon-Fri | Data refresh, screening, ranking (no entries) |
+| enter | 9:45 AM | Mon-Fri | Load screen results, execute entries |
+| monitor | 11:00 AM | Mon-Fri | Risk check, stops, exits |
+| monitor | 1:30 PM | Mon-Fri | Risk check, stops, exits |
+| stop_sync | 3:45 PM | Mon-Fri | Update trailing stops, sync server-side stops |
+| post_market | 4:30 PM | Mon-Fri | EOD wrap-up, post-mortem |
+| learning | 6:00 PM | Fridays | Weekly parameter optimization |
+| heartbeat | 10:00 AM | Sundays | Weekend health check |
 
 ### Manual Run
 
 ```bash
-scheduler/run.sh pre_market
-scheduler/run.sh monitor
+scheduler/run.sh screen
+scheduler/run.sh enter
+scheduler/run.sh monitor_midday
 scheduler/run.sh post_market
 ```
 
@@ -315,8 +314,8 @@ scheduler/run.sh post_market
 
 - `paper: true` - paper trading only
 - `dry_run: false` - executes trades (change to true for preview-only)
-- `allowed_tools: "Bash,Read,Glob,Grep"` - Claude cannot edit source files
 - Cron requires the Mac to be awake during scheduled times
+- Server-side GTC stops protect positions even if the system goes offline
 
 ### Uninstall
 
@@ -346,7 +345,7 @@ Then `source ~/.bash_profile` and retry.
 Normal. The strategy is selective. Options:
 - Run with `--dry-run` to see the screening funnel
 - Check if the market is in "crisis" regime (VIX > 35 blocks entries)
-- Run `python scripts/daily_scan.py --debug` to see what passed each stage
+- Run `python scripts/run_manager.py screen --paper --dry-run` to see what passed each stage
 
 ### "Fill timeout" on broker orders
 

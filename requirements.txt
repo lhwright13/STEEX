@@ -1,26 +1,25 @@
 # Core dependencies
 requests>=2.28.0
-yfinance>=0.2.36
+yfinance>=1.2.0
 pandas>=2.0.0
 numpy>=1.24.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 pyyaml>=6.0.0
 lxml>=4.9.0
-
-# Backtesting
-vectorbt>=0.26.0
+scipy>=1.10.0
 
 # CLI output
 rich>=13.0.0
 
 # Dashboard
 flask>=3.0.0
+markupsafe>=2.1.0
 
 # Sentiment Analysis
 vaderSentiment>=3.3.2
 
-# Symbolic Regression
+# Symbolic Regression (optional - needed only for PySR training)
 pysr>=0.18.0
 sympy>=1.12
 

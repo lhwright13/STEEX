@@ -121,9 +121,9 @@ class Universe(DataProvider):
 
                 for ticker in batch:
                     try:
-                        if len(batch) > 1:
-                            close = data["Close"][ticker].iloc[-1]
-                            volume = data["Volume"][ticker].mean()
+                        if isinstance(data.columns, pd.MultiIndex):
+                            close = data[("Close", ticker)].iloc[-1]
+                            volume = data[("Volume", ticker)].mean()
                         else:
                             close = data["Close"].iloc[-1]
                             volume = data["Volume"].mean()

@@ -36,175 +36,53 @@ class StockRanker:
         """
         self.settings = settings or get_settings()
 
-    def calculate_momentum_percentile_score(
+    def _extract_scores(
         self,
         results: List[ScreeningResult],
+        field: str,
+        default: float = 50.0,
+        scale: float = 1.0,
     ) -> Dict[str, float]:
-        """Calculate percentile-based momentum scores.
+        """Extract a score field from screening results.
 
         Args:
             results: List of screening results
+            field: Attribute name on ScreeningResult
+            default: Default score when field is None
+            scale: Multiplier applied to non-None values
 
         Returns:
-            Dict mapping ticker to momentum score (0-100)
+            Dict mapping ticker to score (0-100)
         """
-        # Get momentum values
-        momentum_values = {}
-        for r in results:
-            if r.momentum_percentile is not None:
-                momentum_values[r.ticker] = r.momentum_percentile
-
-        # Convert percentile to 0-100 score
         scores = {}
-        for ticker, percentile in momentum_values.items():
-            scores[ticker] = percentile * 100
-
+        for r in results:
+            val = getattr(r, field, None)
+            scores[r.ticker] = val * scale if val is not None else default
         return scores
 
-    def calculate_insider_score(
+    def _calculate_volume_percentile_scores(
         self,
         results: List[ScreeningResult],
     ) -> Dict[str, float]:
-        """Calculate normalized insider scores.
-
-        Args:
-            results: List of screening results
-
-        Returns:
-            Dict mapping ticker to insider score (0-100)
-        """
-        # Get raw insider scores
-        raw_scores = {r.ticker: r.insider_score for r in results}
-
-        # Already normalized to 0-100 in the cluster scoring
-        return raw_scores
-
-    def calculate_volume_score(
-        self,
-        results: List[ScreeningResult],
-    ) -> Dict[str, float]:
-        """Calculate volume surge percentile scores.
-
-        Args:
-            results: List of screening results
-
-        Returns:
-            Dict mapping ticker to volume score (0-100)
-        """
-        # Get volume surge values
+        """Calculate volume scores as percentile ranks of volume surge."""
         volume_values = {}
         for r in results:
             if r.volume_surge is not None:
                 volume_values[r.ticker] = r.volume_surge
 
         if not volume_values:
-            return {r.ticker: 50 for r in results}  # Default middle score
+            return {r.ticker: 50 for r in results}
 
-        # Calculate percentile ranks
         sorted_items = sorted(volume_values.items(), key=lambda x: x[1])
         n = len(sorted_items)
-
         scores = {}
         for rank, (ticker, _) in enumerate(sorted_items):
             scores[ticker] = ((rank + 1) / n) * 100
 
-        # Fill in missing tickers with middle score
         for r in results:
             if r.ticker not in scores:
                 scores[r.ticker] = 50
 
-        return scores
-
-    def calculate_sentiment_score(
-        self,
-        results: List[ScreeningResult],
-    ) -> Dict[str, float]:
-        """Calculate sentiment scores from screening results.
-
-        Uses the combined stock-specific and geopolitical sentiment
-        calculated during stage 4 filtering.
-
-        Args:
-            results: List of screening results
-
-        Returns:
-            Dict mapping ticker to sentiment score (0-100)
-        """
-        scores = {}
-        for r in results:
-            if r.sentiment_score is not None:
-                scores[r.ticker] = r.sentiment_score
-            else:
-                scores[r.ticker] = 50  # Neutral fallback
-
-        return scores
-
-    def calculate_fundamental_score(
-        self,
-        results: List[ScreeningResult],
-    ) -> Dict[str, float]:
-        """Calculate fundamental scores from screening results.
-
-        Uses the fundamental score calculated during stage 5 filtering.
-
-        Args:
-            results: List of screening results
-
-        Returns:
-            Dict mapping ticker to fundamental score (0-100)
-        """
-        scores = {}
-        for r in results:
-            if r.fundamental_score is not None:
-                scores[r.ticker] = r.fundamental_score
-            else:
-                scores[r.ticker] = 50  # Neutral fallback
-
-        return scores
-
-    def calculate_options_score(
-        self,
-        results: List[ScreeningResult],
-    ) -> Dict[str, float]:
-        """Calculate options sentiment scores from screening results.
-
-        Uses the options score (put/call ratio, IV analysis) if available.
-
-        Args:
-            results: List of screening results
-
-        Returns:
-            Dict mapping ticker to options score (0-100)
-        """
-        scores = {}
-        for r in results:
-            if r.options_score is not None:
-                scores[r.ticker] = r.options_score
-            else:
-                scores[r.ticker] = 50  # Neutral fallback
-
-        return scores
-
-    def calculate_pysr_score(
-        self,
-        results: List[ScreeningResult],
-    ) -> Dict[str, float]:
-        """Calculate PySR scores from screening results.
-
-        Uses the PySR score computed during pipeline enrichment if available.
-
-        Args:
-            results: List of screening results
-
-        Returns:
-            Dict mapping ticker to PySR score (0-100)
-        """
-        scores = {}
-        for r in results:
-            if r.pysr_score is not None:
-                scores[r.ticker] = r.pysr_score
-            else:
-                scores[r.ticker] = 50  # Neutral fallback
         return scores
 
     def calculate_composite_score(
@@ -257,13 +135,13 @@ class StockRanker:
             return []
 
         # Calculate component scores
-        momentum_scores = self.calculate_momentum_percentile_score(results)
-        insider_scores = self.calculate_insider_score(results)
-        volume_scores = self.calculate_volume_score(results)
-        sentiment_scores = self.calculate_sentiment_score(results)
-        fundamental_scores = self.calculate_fundamental_score(results)
-        options_scores = self.calculate_options_score(results)
-        pysr_scores = self.calculate_pysr_score(results)
+        momentum_scores = self._extract_scores(results, "momentum_percentile", default=0, scale=100)
+        insider_scores = self._extract_scores(results, "insider_score", default=0)
+        volume_scores = self._calculate_volume_percentile_scores(results)
+        sentiment_scores = self._extract_scores(results, "sentiment_score")
+        fundamental_scores = self._extract_scores(results, "fundamental_score")
+        options_scores = self._extract_scores(results, "options_score")
+        pysr_scores = self._extract_scores(results, "pysr_score")
 
         # Calculate composite scores
         ranked = []
