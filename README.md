@@ -6,23 +6,26 @@ An agent-based automated trading system that screens S&P 500 stocks using moment
 
 ## Architecture
 
-STEEX is built around a **QuantManager** orchestrator that coordinates eleven specialized agents. Each agent owns a specific domain and exposes tools that the orchestrator calls in sequence.
+STEEX supports two execution modes:
+
+**Deterministic mode** (default) - QuantManager calls pipeline stages directly in Python. Fast, predictable, no external dependencies beyond market data APIs.
+
+**Agent mode** (`--agent` flag) - An Orchestrator launches Claude AI sub-agents via the claude CLI. Each agent reasons independently with access to trading tools via an MCP server, then a ManagerAgent synthesizes their conclusions into a final decision. Falls back to deterministic mode on failure.
 
 ```
-QuantManager (orchestrator)
-    |
-    +-- DataAgent        -- Fetches and validates external data
-    +-- AnalysisAgent    -- Runs 5-stage screening and ranking
-    +-- RiskAgent        -- Monitors positions, stops, VIX, drawdown
-    +-- ExecutionAgent   -- Decides and executes entries/exits via Alpaca
-    +-- ReportAgent      -- Compiles reports, logs everything
-    +-- RegimeAgent      -- Multi-factor market regime detection
-    +-- PortfolioAgent   -- Diversified portfolio construction
-    +-- BacktestAgent    -- Walk-forward backtesting
-    +-- PostMortemAgent  -- Completed trade analysis
-    +-- ResearchAgent    -- Signal research and weight optimization
-    +-- LearningAgent    -- Self-optimizing parameter tuning
+Deterministic:                     Agent Mode:
+QuantManager                       Orchestrator (registry-driven)
+    |                                  |
+    +-- screening pipeline             +-- DataAgent (claude CLI + MCP tools)
+    +-- ranking                        +-- RiskAgent (claude CLI + MCP tools)
+    +-- risk/stops                     +-- AnalysisAgent (claude CLI + MCP tools)
+    +-- execution                      +-- ManagerAgent (no tools, synthesizes)
+    +-- reporting                      +-- ExecutionAgent (claude CLI + MCP tools)
+                                       +-- ResearchAgent (claude CLI + MCP tools)
+                                       +-- ReportAgent (claude CLI + MCP tools)
 ```
+
+Agent definitions and mode sequences live in `config/agents.yaml`. Adding a new agent requires no code changes to the orchestrator - just a config entry, prompt file, and Pydantic conclusion model.
 
 Each agent is documented in `agents/claude_*.md`.
 
@@ -63,6 +66,10 @@ python scripts/run_manager.py pre_market --paper
 
 # Auto-confirm all entries
 python scripts/run_manager.py pre_market --paper --yes
+
+# Agent mode (requires claude CLI installed)
+python scripts/run_manager.py screen --paper --agent
+python scripts/run_manager.py screen --paper --dry-run --agent
 ```
 
 ## Pipeline Modes
@@ -175,7 +182,7 @@ See `scheduler/README.md` for details.
 
 ```
 STEEX/
-  agents/                      # Agent documentation (read by Claude scheduler)
+  agents/                      # Agent role documentation
     claude_manager.md          # Orchestrator - sequences all agents
     claude_data_agent.md       # Data fetching and validation
     claude_analysis_agent.md   # Screening and ranking pipeline
@@ -185,12 +192,21 @@ STEEX/
   config/
     config.yaml                # All tunable parameters
     settings.py                # Pydantic settings with YAML + env override
+    agents.yaml                # Agent definitions and mode sequences (registry)
   src/
     strategy/
-      manager.py               # QuantManager orchestrator
+      manager.py               # QuantManager - deterministic orchestrator
       screener.py              # 5-stage screening pipeline
       ranking.py               # Composite scoring and ranking
       signals.py               # Exit signal generator
+    agents/
+      orchestrator.py          # Agent mode orchestrator (registry-driven)
+      mcp_server.py            # MCP server exposing QuantManager tools
+      registry.py              # Config-driven agent/mode loader
+      conclusions.py           # Pydantic models for agent output
+      trace.py                 # Audit trail (AgentTrace, AgentSession)
+      evolution.py             # Prompt self-improvement system
+      prompts/                 # System prompts for each agent role
     broker/
       base.py                  # Abstract broker interface
       alpaca.py                # Alpaca Markets implementation
@@ -220,21 +236,26 @@ STEEX/
       predictor.py             # PySR model inference
       features.py              # Feature engineering
       dataset.py               # Training dataset builder
+    learning/
+      journal.py               # Learning loop knowledge persistence
     backtest/                  # Historical backtesting engine
   scripts/
-    run_manager.py             # CLI entry point for QuantManager
+    run_manager.py             # CLI entry point (deterministic + --agent mode)
     market_gate.py             # Market calendar gate (skips holidays/closed)
     health_check.py            # Heartbeat / health check
     run_learning.py            # Learning loop CLI
   scheduler/
-    config.yaml                # Scheduler settings (model, budget, tools)
+    config.yaml                # Scheduler settings
     run.sh                     # Main entry - parses config, market gate, runs pipeline
     install.sh                 # Install cron schedule (dynamic mode discovery)
     uninstall.sh               # Remove cron schedule
-    prompts/                   # Prompt templates for each mode
   dashboard/                   # Web dashboard
   data/
     reports/                   # Daily report JSONs
+    agents/sessions/           # Agent trace logs (auto-pruned after 30 days)
+    agents/prompts/            # Disk prompt overrides (evolved by agents)
+    agents/recommendations.json # Agent self-improvement suggestions
+    learning/                  # Learning loop journals and gaps
     cache.db                   # SQLite persistent cache
 ```
 
@@ -260,3 +281,4 @@ API keys are environment variables only - never in config files:
 - macOS (for cron scheduler; pipeline works on any OS)
 - Alpaca Markets paper trading account
 - Internet connection for market data APIs
+- Claude Code CLI (optional, for `--agent` mode only)

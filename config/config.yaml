@@ -252,3 +252,16 @@ manager_report_dir: "data/reports"  # Directory for daily reports
 manager_max_daily_entries: 2     # Maximum new positions per day
 manager_min_score_entry: 55.0    # Minimum composite score for entry
 manager_require_insider: false   # Require insider activity for entry
+
+# -----------------------------------------------------------------------------
+# Agent Settings (Claude AI multi-agent mode)
+# -----------------------------------------------------------------------------
+agent_enabled: false              # Enable Claude AI agent mode globally
+agent_max_turns: 15               # Maximum agentic turns per sub-agent
+agent_timeout_seconds: 600        # Timeout for each agent invocation (10 min)
+agent_fallback_deterministic: true  # Fall back to QuantManager if agent fails
+
+# Agent trace and evolution
+trace_retention_days: 30           # Days to keep agent session trace files
+evolution_enabled: false           # Enable agent prompt self-improvement
+evolution_max_rewrites_per_week: 1 # Max prompt rewrites per agent per week

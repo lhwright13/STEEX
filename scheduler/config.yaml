@@ -12,6 +12,7 @@ defaults:
   paper: true
   dry_run: false
   auto_confirm: true
+  agent: false                   # Use Claude AI agent mode (default: deterministic)
 
 # ---------------------------------------------------------------------------
 # Modes - each corresponds to a run_manager.py operating mode

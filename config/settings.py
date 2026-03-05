@@ -438,6 +438,33 @@ class Settings(BaseSettings):
         default=1, description="Test window for OOS validation folds"
     )
 
+    # Agent settings (Claude AI multi-agent mode)
+    agent_enabled: bool = Field(
+        default=False, description="Enable Claude AI agent mode globally"
+    )
+    agent_max_turns: int = Field(
+        default=15, description="Maximum agentic turns per sub-agent"
+    )
+    agent_timeout_seconds: int = Field(
+        default=600, description="Timeout for each agent invocation"
+    )
+    agent_fallback_deterministic: bool = Field(
+        default=True, description="Fall back to QuantManager if agent fails"
+    )
+
+    # Agent trace settings
+    trace_retention_days: int = Field(
+        default=30, description="Days to keep agent session traces"
+    )
+
+    # Agent evolution settings
+    evolution_enabled: bool = Field(
+        default=False, description="Enable agent prompt self-improvement"
+    )
+    evolution_max_rewrites_per_week: int = Field(
+        default=1, description="Maximum prompt rewrites per agent per week"
+    )
+
     # Manager settings
     manager_portfolio_value: float = Field(
         default=50000, description="Total portfolio value for position sizing"
@@ -467,6 +494,7 @@ class Settings(BaseSettings):
     model_config = {
         "env_prefix": "STEEX_",
         "env_file": ".env",
+        "extra": "ignore",
     }
 
     @classmethod

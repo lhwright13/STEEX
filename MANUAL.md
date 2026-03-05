@@ -5,10 +5,11 @@
 1. [Installation](#installation)
 2. [Daily Workflow](#daily-workflow)
 3. [Commands Reference](#commands-reference)
-4. [Understanding the Output](#understanding-the-output)
-5. [Configuration](#configuration)
-6. [Scheduler Setup](#scheduler-setup)
-7. [Troubleshooting](#troubleshooting)
+4. [Agent Mode](#agent-mode)
+5. [Understanding the Output](#understanding-the-output)
+6. [Configuration](#configuration)
+7. [Scheduler Setup](#scheduler-setup)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -160,6 +161,61 @@ python scripts/run_manager.py <mode> [OPTIONS]
 | `--yes` | Auto-confirm all entries |
 | `--verbose` | Extra output |
 | `--portfolio N` | Override portfolio value |
+| `--agent` | Use Claude AI agent mode instead of deterministic pipeline |
+
+---
+
+## Agent Mode
+
+Agent mode replaces the deterministic pipeline with Claude AI sub-agents that reason independently about trading decisions. Each agent has access to the same tools as the deterministic pipeline via an MCP server, but can adapt its approach based on context.
+
+### Prerequisites
+
+- Claude Code CLI installed (`claude` in PATH)
+- Alpaca API keys set (same as deterministic mode)
+
+### Running Agent Mode
+
+```bash
+# Agent mode screening (preview)
+python scripts/run_manager.py screen --paper --dry-run --agent
+
+# Agent mode with live paper trading
+python scripts/run_manager.py screen --paper --agent
+python scripts/run_manager.py enter --paper --yes --agent
+python scripts/run_manager.py monitor --paper --agent
+```
+
+### How It Works
+
+1. The Orchestrator reads mode sequences from `config/agents.yaml`
+2. Sub-agents run via the claude CLI with MCP tools for broker/data access
+3. Each agent produces a structured JSON conclusion
+4. A ManagerAgent synthesizes all conclusions into a final decision
+5. If any critical agent fails, the system falls back to deterministic QuantManager
+
+### Agent Trace and Audit
+
+Every agent run is recorded in `data/agents/sessions/`. Each session file contains:
+- Which agents ran and how long they took
+- Which tools each agent called
+- Agent conclusions and the final manager decision
+- Self-improvement suggestions (meta-recommendations)
+
+Trace files auto-prune after 30 days (configurable via `trace_retention_days`).
+
+### Agent Registry
+
+Agent definitions live in `config/agents.yaml`. To add a new agent:
+
+1. Add an entry in `config/agents.yaml` (name, prompt, conclusion model, tools)
+2. Create a prompt file: `src/agents/prompts/{name}.py` or `data/agents/prompts/{name}.md`
+3. Add a Pydantic conclusion model to `src/agents/conclusions.py`
+4. Add the agent to a mode's `sub_agents` list in agents.yaml
+
+### Prompt Evolution
+
+Agents can suggest improvements to their own prompts via the `meta` field in their conclusions. Suggestions are collected in `data/agents/recommendations.json` for review. When evolution is enabled (`evolution_enabled: true` in config), prompts can be automatically rewritten incorporating validated suggestions, with safety checks that prevent removal of critical rules.
 
 ---
 

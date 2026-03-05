@@ -24,6 +24,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from config.settings import get_settings
 from src.strategy.manager import QuantManager
 
@@ -64,6 +67,12 @@ def main():
         help="Detailed output",
     )
 
+    parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="Use Claude AI agent mode instead of deterministic pipeline",
+    )
+
     broker_group = parser.add_mutually_exclusive_group()
     broker_group.add_argument(
         "--paper",
@@ -97,6 +106,21 @@ def main():
     elif args.no_broker:
         settings.broker_enabled = False
 
+    # Agent mode: route to Claude AI orchestrator
+    if args.agent:
+        from src.agents.orchestrator import Orchestrator
+
+        orchestrator = Orchestrator(
+            settings=settings,
+            paper=args.paper,
+            dry_run=args.dry_run,
+            auto_confirm=args.yes,
+            verbose=args.verbose,
+        )
+        orchestrator.run_mode(args.mode)
+        return
+
+    # Deterministic mode: use QuantManager directly
     manager = QuantManager(settings=settings)
 
     if args.mode == "pre_market":

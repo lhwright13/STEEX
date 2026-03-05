@@ -26,6 +26,9 @@ sympy>=1.12
 # Broker
 alpaca-py>=0.43.2
 
+# AI Agent Mode (MCP server for Claude Code)
+mcp>=1.0.0
+
 # Development
 pytest>=7.0.0
 pytest-mock>=3.10.0

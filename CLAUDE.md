@@ -90,9 +90,53 @@ The `screen` and `enter` modes replace the old monolithic `pre_market` for daily
 - Stops: 10% initial, trailing at 12%/15%/15% for 10%/20%/30% gains
 - Hold period: 30 days max
 
+## Agent System (Claude AI Mode)
+
+The agent system (`src/agents/`) provides an alternative execution path where Claude AI agents make trading decisions instead of the deterministic pipeline.
+
+### Key Files
+
+- `src/agents/orchestrator.py` - Registry-driven mode execution, subprocess management, trace collection
+- `src/agents/mcp_server.py` - FastMCP stdio server exposing ~20 QuantManager tools
+- `src/agents/registry.py` - Loads agent definitions from `config/agents.yaml`, resolves prompts and conclusion types
+- `src/agents/conclusions.py` - Pydantic models for structured agent output (includes AgentMeta for self-improvement)
+- `src/agents/trace.py` - AgentTrace/AgentSession for audit trail, stored in `data/agents/sessions/`
+- `src/agents/evolution.py` - PromptEvolver for agent prompt self-improvement with safety constraints
+- `src/agents/prompts/*.py` - Default system prompts for each agent role
+- `config/agents.yaml` - Declarative agent definitions and mode sequences
+
+### Adding a New Agent
+
+1. Add entry in `config/agents.yaml` with name, prompt key, conclusion model, tools
+2. Create prompt: `src/agents/prompts/{name}.py` (code default) or `data/agents/prompts/{name}.md` (disk override)
+3. Add Pydantic conclusion model to `src/agents/conclusions.py` (include optional `meta: AgentMeta` field)
+4. Add agent to a mode's `sub_agents` list in `config/agents.yaml`
+
+### Prompt Resolution Order
+
+1. Disk override: `data/agents/prompts/{name}.md` (takes priority, can be evolved by agents)
+2. Code default: `src/agents/prompts/{name}.py` (fallback, checked into git)
+
+### Deterministic vs Agent Mode
+
+- `stop_sync` and `heartbeat` modes are always deterministic (no AI)
+- All other modes use the registry-driven Orchestrator in `--agent` mode
+- If a critical agent fails, the orchestrator falls back to QuantManager automatically
+- The MCP server runs as a subprocess - it does NOT import or run in the same process as the orchestrator
+
+### Data Files
+
+- `data/agents/sessions/*.json` - Trace logs (auto-pruned after `trace_retention_days`)
+- `data/agents/sessions/latest.json` - Most recent session
+- `data/agents/prompts/*.md` - Disk prompt overrides (evolved versions)
+- `data/agents/recommendations.json` - Accumulated meta-recommendations from agents
+- `data/agents/prompt_history.json` - Audit trail of prompt rewrites
+
 ## Development Notes
 
 - Always use the venv: `venv/bin/python`
 - Config changes require updating both `config/config.yaml` and `config/settings.py`
-- Agent documentation lives in `agents/` - update when behavior changes
-- Run tests from project root
+- Agent definitions live in `config/agents.yaml` - add new agents there, not in orchestrator code
+- Agent role documentation lives in `agents/` - update when behavior changes
+- Run tests from project root: `venv/bin/python -m pytest tests/`
+- All 142+ tests must pass before committing

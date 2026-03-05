@@ -1,0 +1,116 @@
+# STEEX Agent Registry
+# Declarative definitions of agents and mode sequences.
+# Adding a new agent: add entry here, create prompt file, add conclusion model.
+
+agents:
+  data:
+    prompt: "data"
+    conclusion: "DataConclusion"
+    max_turns: 10
+    needs_tools: true
+    allowed_tools:
+      - sync_broker
+      - prefetch_data
+      - refresh_data
+      - check_data_health
+
+  risk:
+    prompt: "risk"
+    conclusion: "RiskConclusion"
+    max_turns: 12
+    needs_tools: true
+    allowed_tools:
+      - sync_broker
+      - get_regime
+      - assess_portfolio_risk
+      - get_exit_signals
+      - get_positions
+      - get_account
+
+  analysis:
+    prompt: "analysis"
+    conclusion: "AnalysisConclusion"
+    max_turns: 15
+    needs_tools: true
+    allowed_tools:
+      - run_screening
+      - rank_candidates
+      - construct_portfolio
+
+  manager:
+    prompt: "manager"
+    conclusion: "ManagerDecision"
+    max_turns: 3
+    needs_tools: false
+
+  execution:
+    prompt: "execution"
+    conclusion: "ExecutionConclusion"
+    max_turns: 10
+    needs_tools: true
+    allowed_tools:
+      - sync_broker
+      - load_screen_results
+      - execute_entries
+      - execute_exits
+      - get_positions
+      - get_account
+
+  research:
+    prompt: "research"
+    conclusion: "ResearchConclusion"
+    max_turns: 10
+    needs_tools: true
+    allowed_tools:
+      - run_postmortem
+      - run_learning_loop
+      - get_trade_history
+
+  report:
+    prompt: "report"
+    conclusion: "ReportConclusion"
+    max_turns: 5
+    needs_tools: true
+    allowed_tools:
+      - generate_report
+      - get_trade_history
+
+modes:
+  screen:
+    sub_agents: [data, risk, analysis]
+    manager: manager
+    critical_agents: [risk, analysis]
+    post_actions: [save_screen, report]
+    fallback: screen
+
+  enter:
+    sub_agents: [risk]
+    manager: manager
+    critical_agents: [risk]
+    executor: execution
+    pre_actions: [load_screen]
+    post_actions: [report]
+    fallback: enter
+
+  monitor:
+    sub_agents: [risk]
+    manager: manager
+    critical_agents: [risk]
+    executor: execution
+    post_actions: [report]
+    fallback: monitor
+
+  post_market:
+    sub_agents: [risk, research]
+    manager: manager
+    critical_agents: [risk]
+    executor: execution
+    post_actions: [report]
+    fallback: post_market
+
+  learning:
+    sub_agents: [research]
+    manager: manager
+    critical_agents: [research]
+    post_actions: [report]
+    fallback: learning

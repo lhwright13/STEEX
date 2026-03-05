@@ -173,6 +173,7 @@ trap 'rm -f "$LOCKFILE"' EXIT
 PAPER="$(mode_get "$CONFIG_MODE" "paper")"
 DRY_RUN="$(mode_get "$CONFIG_MODE" "dry_run")"
 AUTO_CONFIRM="$(mode_get "$CONFIG_MODE" "auto_confirm")"
+AGENT_MODE="$(mode_get "$CONFIG_MODE" "agent")"
 MAX_LOG_DAYS="$(yaml_get "max_log_days")"
 
 # ---------------------------------------------------------------------------
@@ -185,6 +186,9 @@ if [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then
 fi
 if [ "$AUTO_CONFIRM" = "True" ] || [ "$AUTO_CONFIRM" = "true" ]; then
     RUN_FLAGS="$RUN_FLAGS --yes"
+fi
+if [ "$AGENT_MODE" = "True" ] || [ "$AGENT_MODE" = "true" ]; then
+    RUN_FLAGS="$RUN_FLAGS --agent"
 fi
 if [ "$PAPER" = "True" ] || [ "$PAPER" = "true" ]; then
     RUN_FLAGS="$RUN_FLAGS --paper"
