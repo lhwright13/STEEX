@@ -7,7 +7,8 @@
 # -----------------------------------------------------------------------------
 momentum_lookback_days: 126      # 6 months lookback for momentum calculation
 short_momentum_days: 21          # 1 month lookback for short-term momentum
-momentum_min_return: 0.15        # Minimum 6-month return (15%)
+momentum_min_return: 0.05        # Minimum 6-month return (5%)
+short_momentum_min_return: 0.00  # Minimum 1-month return (0% - just not negative)
 overextension_percentile: 0.95   # Top 5% excluded as overextended
 overextension_filter_enabled: false  # Disabled - backtest showed better returns
 
@@ -16,6 +17,7 @@ overextension_filter_enabled: false  # Disabled - backtest showed better returns
 # -----------------------------------------------------------------------------
 ma_short: 50                     # Short-term moving average period
 ma_long: 200                     # Long-term moving average period
+require_dual_ma: false           # Require price above both MAs (false = only 50-day)
 
 # -----------------------------------------------------------------------------
 # Insider Trading Parameters
@@ -240,7 +242,7 @@ learning_weight_change_cap: 0.10     # Max weight change per cycle (10%)
 learning_min_trades_for_analysis: 15 # Min trades for reliable analysis
 learning_oos_min_sharpe: 0.0         # Minimum OOS Sharpe for validation
 learning_oos_min_win_rate: 0.50      # Minimum OOS win rate for validation
-learning_feature_lookback_months: 6  # Months of feature data for research
+learning_feature_lookback_months: 2  # Months of feature data for research
 learning_validation_train_months: 3  # OOS validation training window
 learning_validation_test_months: 1   # OOS validation test window
 
@@ -265,3 +267,9 @@ agent_fallback_deterministic: true  # Fall back to QuantManager if agent fails
 trace_retention_days: 30           # Days to keep agent session trace files
 evolution_enabled: false           # Enable agent prompt self-improvement
 evolution_max_rewrites_per_week: 1 # Max prompt rewrites per agent per week
+
+# External MCP servers (supplement STEEX tools with third-party data)
+# Each server requires its API key set as an environment variable.
+mcp_alpaca_enabled: true           # Alpaca MCP: real-time quotes, order mgmt (uses ALPACA_API_KEY)
+mcp_polygon_enabled: false         # Polygon MCP: aggregates, news, options flow (needs POLYGON_API_KEY)
+mcp_alphavantage_enabled: true     # Alpha Vantage MCP: technical indicators, econ data (uses ALPHA_VANTAGE_API_KEY)

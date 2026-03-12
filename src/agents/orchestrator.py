@@ -1,22 +1,20 @@
-"""Orchestrator for the Claude AI multi-agent trading system.
+"""Registry-driven orchestrator for the Claude AI multi-agent trading system.
 
-Replaces QuantManager's mode methods with an ensemble of Claude agents.
-Each sub-agent runs independently via the claude CLI with an MCP server
-providing trading tools. A ManagerAgent synthesizes all conclusions into
-a final decision.
-
-Agent definitions and mode sequences are loaded from config/agents.yaml
-via the AgentRegistry. Adding a new agent requires no code changes -
-just a config entry, prompt file, and Pydantic conclusion model.
+Each mode launches sub-agents via the claude CLI, backed by the STEEX MCP
+server for tool access. A ManagerAgent synthesizes sub-agent conclusions
+into a final decision. Agent definitions and mode sequences are loaded
+from config/agents.yaml - adding a new agent requires no code changes.
 
 Usage:
     orchestrator = Orchestrator(settings, paper=True, dry_run=False)
     report = orchestrator.run_mode("screen")
 """
 
+import inspect
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -31,26 +29,16 @@ from rich.panel import Panel
 
 from config.settings import Settings, get_settings
 
-from .conclusions import (
-    AnalysisConclusion,
-    DataConclusion,
-    ExecutionConclusion,
-    ManagerDecision,
-    ReportConclusion,
-    ResearchConclusion,
-    RiskConclusion,
-)
+from .conclusions import LearningConclusion, LearningManagerDecision, ManagerDecision
 from .evolution import PromptEvolver
-from .registry import AgentConfig, AgentRegistry, ModeConfig
-from .trace import AgentSession, AgentTrace, ToolCall, extract_tool_calls_from_envelope
+from .registry import AgentRegistry, ModeConfig
+from .trace import AgentSession, AgentTrace, extract_tool_calls_from_envelope
 
 logger = logging.getLogger("steex.orchestrator")
 console = Console()
 
-# Modes that stay fully deterministic (no Claude agents)
 DETERMINISTIC_MODES = {"stop_sync", "heartbeat"}
 
-# Mode display names and colors
 MODE_DISPLAY = {
     "screen": ("Pre-Open Screening", "cyan"),
     "enter": ("Entry Execution", "green"),
@@ -60,7 +48,6 @@ MODE_DISPLAY = {
     "pre_market": ("Pre-Market (Screen)", "cyan"),
 }
 
-# Mode-specific manager task templates
 MANAGER_TASK_TEMPLATES = {
     "screen": (
         "Mode: screen (pre-open screening).\n"
@@ -90,12 +77,7 @@ MANAGER_TASK_TEMPLATES = {
 
 
 class Orchestrator:
-    """Runs trading modes as Claude agent ensembles.
-
-    Each mode launches sub-agents via the claude CLI, each backed by the
-    STEEX MCP server for tool access. Sub-agent conclusions are synthesized
-    by a ManagerAgent into a final decision.
-    """
+    """Runs trading modes as Claude agent ensembles."""
 
     def __init__(
         self,
@@ -118,15 +100,16 @@ class Orchestrator:
         self.registry = AgentRegistry()
         self.evolver = PromptEvolver(data_dir=self.settings.data_dir)
 
+    # ------------------------------------------------------------------
+    # Setup
+    # ------------------------------------------------------------------
+
     def _find_claude(self) -> str:
-        """Find the claude CLI binary."""
+        """Locate the claude CLI binary."""
         claude = shutil.which("claude")
         if claude:
             return claude
-        for path in [
-            "/usr/local/bin/claude",
-            os.path.expanduser("~/.claude/local/claude"),
-        ]:
+        for path in ["/usr/local/bin/claude", os.path.expanduser("~/.claude/local/claude")]:
             if os.path.isfile(path):
                 return path
         raise FileNotFoundError(
@@ -134,29 +117,74 @@ class Orchestrator:
         )
 
     def _get_mcp_config(self) -> str:
-        """Generate MCP config file for the claude CLI."""
+        """Write a temp MCP config file for the claude CLI.
+
+        Includes the core STEEX server plus any enabled external MCP servers
+        (Alpaca, Polygon/Massive, Alpha Vantage).
+        """
         if self._mcp_config_path and os.path.exists(self._mcp_config_path):
             return self._mcp_config_path
 
         venv_python = str(self._project_root / "venv" / "bin" / "python")
+        venv_bin = str(self._project_root / "venv" / "bin")
         server_script = str(self._project_root / "src" / "agents" / "mcp_server.py")
 
-        args = [venv_python, server_script]
+        server_args = []
         if self.paper:
-            args.append("--paper")
-        elif not self.paper:
-            args.append("--live")
+            server_args.append("--paper")
+        else:
+            server_args.append("--live")
         if self.dry_run:
-            args.append("--dry-run")
+            server_args.append("--dry-run")
 
-        config = {
-            "mcpServers": {
-                "steex": {
-                    "command": venv_python,
-                    "args": [server_script] + args[2:],
-                }
+        servers = {
+            "steex": {
+                "command": venv_python,
+                "args": [server_script] + server_args,
             }
         }
+
+        # Alpaca Official MCP - real-time quotes, order management, market data
+        if self.settings.mcp_alpaca_enabled:
+            alpaca_env = {}
+            for var in ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"):
+                val = os.environ.get(var)
+                if val:
+                    alpaca_env[var] = val
+            if self.paper:
+                alpaca_env["ALPACA_PAPER"] = "true"
+            if alpaca_env.get("ALPACA_API_KEY"):
+                servers["alpaca"] = {
+                    "command": venv_python,
+                    "args": ["-m", "alpaca_mcp_server"],
+                    "env": alpaca_env,
+                }
+            else:
+                logger.warning("Alpaca MCP enabled but ALPACA_API_KEY not set")
+
+        # Polygon/Massive MCP - aggregates, snapshots, news, options flow
+        if self.settings.mcp_polygon_enabled:
+            polygon_key = os.environ.get("POLYGON_API_KEY") or os.environ.get("MASSIVE_API_KEY")
+            if polygon_key:
+                servers["polygon"] = {
+                    "command": os.path.join(venv_bin, "mcp_massive"),
+                    "env": {"MASSIVE_API_KEY": polygon_key},
+                }
+            else:
+                logger.warning("Polygon MCP enabled but POLYGON_API_KEY not set")
+
+        # Alpha Vantage MCP - technical indicators, economic data, fundamentals
+        if self.settings.mcp_alphavantage_enabled:
+            av_key = os.environ.get("ALPHA_VANTAGE_API_KEY")
+            if av_key:
+                servers["alphavantage"] = {
+                    "command": os.path.join(venv_bin, "av-mcp"),
+                    "args": [av_key],
+                }
+            else:
+                logger.warning("Alpha Vantage MCP enabled but ALPHA_VANTAGE_API_KEY not set")
+
+        config = {"mcpServers": servers}
 
         fd, path = tempfile.mkstemp(suffix=".json", prefix="steex_mcp_")
         with os.fdopen(fd, "w") as f:
@@ -165,7 +193,7 @@ class Orchestrator:
         return path
 
     def _cleanup(self):
-        """Clean up temp files."""
+        """Remove temp files."""
         if self._mcp_config_path and os.path.exists(self._mcp_config_path):
             os.unlink(self._mcp_config_path)
             self._mcp_config_path = None
@@ -183,116 +211,92 @@ class Orchestrator:
         max_turns: int = 15,
         needs_tools: bool = True,
         allowed_tools: Optional[List[str]] = None,
+        external_servers: Optional[List[str]] = None,
         mode: str = "",
         run_id: str = "",
     ) -> Tuple[Optional[BaseModel], AgentTrace]:
         """Run a single agent via the claude CLI.
 
-        Returns:
-            Tuple of (parsed conclusion or None, AgentTrace)
+        Returns (parsed conclusion or None, trace).
         """
         trace = AgentTrace(run_id=run_id or str(uuid.uuid4())[:8], role=role, mode=mode)
         trace.start()
 
-        full_prompt = f"{system_prompt}\n\n---\n\n{task_message}"
+        # Re-resolve binary path before each invocation to handle
+        # mid-session updates (e.g. Homebrew auto-update).
+        try:
+            claude_bin = self._find_claude()
+        except FileNotFoundError:
+            claude_bin = self._claude_bin
 
         cmd = [
-            self._claude_bin,
-            "-p", full_prompt,
+            claude_bin,
+            "-p", f"{system_prompt}\n\n---\n\n{task_message}",
             "--output-format", "json",
             "--max-turns", str(max_turns),
         ]
 
         if needs_tools:
-            mcp_config = self._get_mcp_config()
-            cmd.extend(["--mcp-config", mcp_config])
-            # Auto-approve MCP tools so the agent doesn't block on permission prompts
+            cmd.extend(["--mcp-config", self._get_mcp_config()])
             if allowed_tools:
                 tool_perms = [f"mcp__steex__{t}" for t in allowed_tools]
             else:
                 tool_perms = ["mcp__steex__*"]
+            # Grant wildcard access to external MCP servers assigned to this agent
+            for server_name in (external_servers or []):
+                tool_perms.append(f"mcp__{server_name}__*")
             cmd.extend(["--allowedTools", ",".join(tool_perms)])
 
         console.print(f"  Running {role}...", style="dim")
-        logger.info("Running %s agent (max_turns=%d)", role, max_turns)
-
-        if self.verbose:
-            # Show the command (redact the full prompt for readability)
-            cmd_display = [c for c in cmd]
-            prompt_idx = cmd_display.index("-p") + 1 if "-p" in cmd_display else -1
-            if prompt_idx > 0:
-                prompt_preview = cmd_display[prompt_idx][:100] + "..." if len(cmd_display[prompt_idx]) > 100 else cmd_display[prompt_idx]
-                cmd_display[prompt_idx] = f'"{prompt_preview}"'
-            console.print(f"  [dim]$ {' '.join(cmd_display[:8])} ...[/dim]")
+        logger.info("Running %s (max_turns=%d)", role, max_turns)
 
         try:
             env = os.environ.copy()
             env.pop("CLAUDECODE", None)
 
-            # In verbose mode, let stderr flow to terminal so user can see
-            # agent progress (tool calls, thinking). Only capture stdout (JSON).
-            if self.verbose:
-                result = subprocess.run(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=None,  # inherits terminal - shows live progress
-                    text=True,
-                    timeout=self.settings.agent_timeout_seconds,
-                    cwd=str(self._project_root),
-                    env=env,
-                )
-            else:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.settings.agent_timeout_seconds,
-                    cwd=str(self._project_root),
-                    env=env,
-                )
+            result = subprocess.run(
+                cmd,
+                text=True,
+                timeout=self.settings.agent_timeout_seconds,
+                cwd=str(self._project_root),
+                env=env,
+                **({"stdout": subprocess.PIPE, "stderr": None} if self.verbose
+                   else {"capture_output": True}),
+            )
 
             if result.returncode != 0:
-                stderr_text = getattr(result, "stderr", "") or ""
-                logger.error("%s agent failed (rc=%d): %s", role, result.returncode, stderr_text[:500])
-                console.print(f"  [red]{role} agent failed[/red]")
-                if self.verbose and stderr_text:
-                    console.print(f"  stderr: {stderr_text[:300]}", style="dim red")
+                stderr_text = result.stderr or ""
+                logger.error("%s failed (rc=%d): %s", role, result.returncode, stderr_text[:500])
+                console.print(f"  [red]{role} failed[/red]")
                 trace.finish(success=False, error=f"exit code {result.returncode}")
                 return None, trace
 
-            # Parse the claude CLI JSON envelope
+            # Parse CLI JSON envelope
             try:
                 envelope = json.loads(result.stdout)
             except json.JSONDecodeError:
-                logger.error("%s: Failed to parse CLI output as JSON", role)
+                logger.error("%s: invalid CLI JSON output", role)
                 console.print(f"  [red]{role}: invalid CLI output[/red]")
                 trace.finish(success=False, error="invalid JSON output")
                 return None, trace
 
             if envelope.get("is_error"):
-                error_msg = envelope.get("result", "unknown")
-                logger.error("%s agent returned error: %s", role, error_msg)
+                error_msg = envelope.get("result", "unknown error")
+                logger.error("%s returned error: %s", role, error_msg)
                 console.print(f"  [red]{role} error: {error_msg}[/red]")
                 trace.finish(success=False, error=str(error_msg))
                 return None, trace
 
-            # Extract tool calls from envelope
-            tool_calls = extract_tool_calls_from_envelope(envelope)
-            for tc in tool_calls:
+            for tc in extract_tool_calls_from_envelope(envelope):
                 trace.add_tool_call(tc)
-            if not tool_calls:
-                logger.debug("%s: no tool calls extracted (envelope keys: %s)", role, list(envelope.keys()))
 
             agent_text = envelope.get("result", "")
             trace.raw_output = agent_text
-            logger.debug("%s raw output: %s", role, agent_text[:500])
 
-            # Extract conclusion JSON from agent's text response
             conclusion = self._parse_conclusion(agent_text, conclusion_type, role)
             if conclusion:
                 trace.set_conclusion(conclusion.model_dump())
                 trace.finish(success=True)
-                # Print trace summary
                 self._print_trace_summary(role, trace, conclusion)
             else:
                 console.print(f"  [yellow]{role}: could not parse conclusion[/yellow]")
@@ -301,71 +305,65 @@ class Orchestrator:
             return conclusion, trace
 
         except subprocess.TimeoutExpired:
-            logger.error("%s agent timed out", role)
+            logger.error("%s timed out after %ds", role, self.settings.agent_timeout_seconds)
             console.print(f"  [red]{role} timed out[/red]")
             trace.finish(success=False, error="timeout")
             return None, trace
         except Exception as e:
-            logger.error("%s agent error: %s", role, e)
+            logger.error("%s error: %s", role, e)
             console.print(f"  [red]{role} error: {e}[/red]")
             trace.finish(success=False, error=str(e))
             return None, trace
 
     def _print_trace_summary(self, role: str, trace: AgentTrace, conclusion: BaseModel):
-        """Print concise trace info after each agent completes."""
+        """Print a one-line status after each agent completes."""
         tools_str = ""
         if trace.tools_called:
             tool_names = [tc.get("tool", "?") for tc in trace.tools_called]
             tools_str = f" | Tools: {', '.join(tool_names)}"
 
-        duration_str = f"{trace.duration_seconds:.1f}s"
-        console.print(f"  [green]{role} complete[/green] ({duration_str}{tools_str})")
+        console.print(f"  [green]{role} complete[/green] ({trace.duration_seconds:.1f}s{tools_str})")
 
-        # Print meta-recommendations if present
         meta = getattr(conclusion, "meta", None)
         if meta:
-            for suggestion in (meta.prompt_suggestions or []):
-                console.print(f"    [dim]Prompt: {suggestion}[/dim]")
-            for suggestion in (meta.tool_suggestions or []):
-                console.print(f"    [dim]Tool: {suggestion}[/dim]")
-            for suggestion in (meta.process_suggestions or []):
-                console.print(f"    [dim]Process: {suggestion}[/dim]")
+            for s in meta.prompt_suggestions or []:
+                console.print(f"    [dim]Prompt: {s}[/dim]")
+            for s in meta.tool_suggestions or []:
+                console.print(f"    [dim]Tool: {s}[/dim]")
+            for s in meta.process_suggestions or []:
+                console.print(f"    [dim]Process: {s}[/dim]")
 
     def _parse_conclusion(
-        self,
-        text: str,
-        model_class: Type[BaseModel],
-        role: str,
+        self, text: str, model_class: Type[BaseModel], role: str,
     ) -> Optional[BaseModel]:
-        """Extract and parse a JSON conclusion from agent text output."""
-        import re
+        """Extract and validate a JSON conclusion from agent text output.
 
+        Tries three strategies: direct parse, fenced code block, and
+        brace-matching to find the last JSON object in the text.
+        """
         text = text.strip()
 
-        # Try direct parse first
+        # Direct parse
         try:
-            data = json.loads(text)
-            return model_class.model_validate(data)
+            return model_class.model_validate(json.loads(text))
         except (json.JSONDecodeError, Exception):
             pass
 
-        # Strip markdown code fences (```json ... ``` or ``` ... ```)
+        # Fenced code block
         fenced = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
         if fenced:
             try:
-                data = json.loads(fenced.group(1).strip())
-                return model_class.model_validate(data)
+                return model_class.model_validate(json.loads(fenced.group(1).strip()))
             except (json.JSONDecodeError, Exception):
                 pass
 
-        # Find the last JSON object in the text
+        # Brace-match the last JSON object
         last_brace = text.rfind("}")
         if last_brace == -1:
-            logger.warning("%s: No JSON object found in output", role)
+            logger.warning("%s: no JSON object found in output", role)
             return None
 
-        depth = 0
-        start = last_brace
+        depth, start = 0, last_brace
         for i in range(last_brace, -1, -1):
             if text[i] == "}":
                 depth += 1
@@ -376,20 +374,14 @@ class Orchestrator:
                     break
 
         try:
-            json_str = text[start:last_brace + 1]
-            data = json.loads(json_str)
-            return model_class.model_validate(data)
+            return model_class.model_validate(json.loads(text[start:last_brace + 1]))
         except (json.JSONDecodeError, Exception) as e:
-            logger.warning("%s: Failed to parse extracted JSON: %s", role, e)
+            logger.warning("%s: failed to parse extracted JSON: %s", role, e)
             return None
 
     def _fallback(self, mode: str, **kwargs) -> Dict:
-        """Fall back to deterministic QuantManager on agent failure."""
-        import inspect
-
-        console.print(
-            "[yellow]Agent mode failed, falling back to deterministic QuantManager[/yellow]"
-        )
+        """Fall back to deterministic QuantManager."""
+        console.print("[yellow]Agent mode failed, falling back to deterministic pipeline[/yellow]")
         logger.warning("Falling back to deterministic mode for %s", mode)
 
         from src.strategy.manager import QuantManager
@@ -404,41 +396,28 @@ class Orchestrator:
         if method is None:
             raise ValueError(f"Unknown mode: {mode}")
 
-        # Filter kwargs to only params the method accepts
         sig = inspect.signature(method)
         accepted = {k: v for k, v in kwargs.items() if k in sig.parameters}
         return method(**accepted)
 
     # ------------------------------------------------------------------
-    # Generic registry-driven mode execution
+    # Mode execution
     # ------------------------------------------------------------------
 
     def run_mode(self, mode: str) -> Optional[Dict]:
-        """Route to the appropriate mode, using registry if available."""
-        # Map pre_market to screen
+        """Entry point: route to registry-driven agent pipeline or deterministic fallback."""
         effective_mode = "screen" if mode == "pre_market" else mode
 
         if effective_mode in DETERMINISTIC_MODES:
-            from src.strategy.manager import QuantManager
-
-            try:
-                manager = QuantManager(settings=self.settings)
-            except RuntimeError:
-                self.settings.broker_enabled = False
-                manager = QuantManager(settings=self.settings)
-
-            method = getattr(manager, f"run_{effective_mode}", None)
-            if method:
-                return method(dry_run=self.dry_run, verbose=self.verbose)
-            return None
+            return self._run_deterministic(effective_mode)
 
         mode_config = self.registry.get_mode(effective_mode)
         if mode_config is None:
-            logger.error("Unknown mode for agent orchestrator: %s", effective_mode)
+            logger.error("Unknown mode: %s", effective_mode)
             return self._fallback(effective_mode, dry_run=self.dry_run, verbose=self.verbose)
 
         try:
-            return self._run_mode_generic(effective_mode, mode_config)
+            return self._run_pipeline(effective_mode, mode_config)
         except FileNotFoundError as e:
             console.print(f"[red]Agent mode unavailable: {e}[/red]")
             return self._fallback(
@@ -446,12 +425,26 @@ class Orchestrator:
                 dry_run=self.dry_run, verbose=self.verbose,
             )
 
-    def _run_mode_generic(self, mode: str, mode_config: ModeConfig) -> Dict:
-        """Execute a mode using registry-driven agent sequence."""
+    def _run_deterministic(self, mode: str) -> Optional[Dict]:
+        """Run a mode through the deterministic QuantManager (no AI)."""
+        from src.strategy.manager import QuantManager
+
+        try:
+            manager = QuantManager(settings=self.settings)
+        except RuntimeError:
+            self.settings.broker_enabled = False
+            manager = QuantManager(settings=self.settings)
+
+        method = getattr(manager, f"run_{mode}", None)
+        if method:
+            return method(dry_run=self.dry_run, verbose=self.verbose)
+        return None
+
+    def _run_pipeline(self, mode: str, mode_config: ModeConfig) -> Dict:
+        """Execute the full agent pipeline for a mode."""
         run_id = str(uuid.uuid4())[:8]
         session = AgentSession(run_id=run_id, mode=mode)
 
-        # Display header
         display_name, color = MODE_DISPLAY.get(mode, (mode.replace("_", " ").title(), "white"))
         console.print(Panel.fit(f"[bold]{display_name} (Agent Mode)[/bold]", border_style=color))
 
@@ -469,8 +462,78 @@ class Orchestrator:
         if "load_screen" in mode_config.pre_actions:
             screen_data = self._load_screen_results()
 
-        # Run sub-agents
+        # 1. Sub-agents
         console.print("\n[bold]1. Sub-Agent Analysis[/bold]")
+        conclusions = self._run_sub_agents(mode_config, task_context, session, mode, run_id)
+
+        # Bail to fallback if a critical agent failed
+        for critical in mode_config.critical_agents:
+            if conclusions.get(critical) is None:
+                session.fallback_used = True
+                self._finalize_session(session)
+                return self._fallback(
+                    mode_config.fallback or mode,
+                    dry_run=self.dry_run, auto_confirm=self.auto_confirm, verbose=self.verbose,
+                )
+
+        # 2. Manager synthesis
+        console.print("\n[bold]2. Manager Synthesis[/bold]")
+        decision = self._run_manager(mode_config, mode, conclusions, screen_data, today, session, run_id)
+
+        if decision is None:
+            session.fallback_used = True
+            self._finalize_session(session)
+            return self._fallback(
+                mode_config.fallback or mode,
+                dry_run=self.dry_run, auto_confirm=self.auto_confirm, verbose=self.verbose,
+            )
+
+        session.set_manager_decision(decision.model_dump())
+
+        # Post-actions
+        if "save_screen" in mode_config.post_actions:
+            self._save_screen_results(decision, conclusions.get("risk"))
+
+        # 3. Execution
+        if mode_config.executor and isinstance(decision, ManagerDecision):
+            self._run_execution(mode, mode_config, decision, today, session, run_id)
+
+        # Prompt evolution post-action (learning mode)
+        if "evolve_prompts" in mode_config.post_actions:
+            self._run_prompt_evolution(conclusions, decision, session)
+
+        # 4. Report agent (post_market only)
+        if "report" in mode_config.post_actions and mode == "post_market":
+            self._run_report_agent(mode, today, session, run_id)
+
+        # 5. Build and save structured report
+        step_num = len(mode_config.sub_agents) + 2 + (1 if mode_config.executor else 0)
+        console.print(f"\n[bold]{step_num}. Report[/bold]")
+
+        report = self._build_report(
+            mode, decision,
+            data=conclusions.get("data"),
+            risk=conclusions.get("risk"),
+            analysis=conclusions.get("analysis"),
+            research=conclusions.get("research"),
+            learning=conclusions.get("learning_agent"),
+        )
+        self._save_report(report)
+        self._print_summary(decision, conclusions.get("risk"))
+
+        self._finalize_session(session)
+        self._cleanup()
+        return report
+
+    # ------------------------------------------------------------------
+    # Pipeline stages
+    # ------------------------------------------------------------------
+
+    def _run_sub_agents(
+        self, mode_config: ModeConfig, task_context: str,
+        session: AgentSession, mode: str, run_id: str,
+    ) -> Dict[str, Optional[BaseModel]]:
+        """Run all sub-agents in sequence, collecting conclusions."""
         conclusions: Dict[str, Optional[BaseModel]] = {}
 
         for agent_name in mode_config.sub_agents:
@@ -490,38 +553,30 @@ class Orchestrator:
                 max_turns=agent_config.max_turns,
                 needs_tools=agent_config.needs_tools,
                 allowed_tools=agent_config.allowed_tools,
+                external_servers=agent_config.external_servers,
                 mode=mode,
                 run_id=run_id,
             )
             conclusions[agent_name] = result
             session.add_trace(trace)
 
-        # Check critical agents
-        for critical in mode_config.critical_agents:
-            if conclusions.get(critical) is None:
-                session.fallback_used = True
-                session.save(data_dir=self.settings.data_dir)
-                self._collect_evolution_meta(session)
-                return self._fallback(
-                    mode_config.fallback or mode,
-                    dry_run=self.dry_run,
-                    auto_confirm=self.auto_confirm,
-                    verbose=self.verbose,
-                )
+        return conclusions
 
-        # Manager synthesis
-        console.print("\n[bold]2. Manager Synthesis[/bold]")
-        conclusions_text = self._format_conclusions(
-            **{k: v for k, v in conclusions.items()}
-        )
+    def _run_manager(
+        self, mode_config: ModeConfig, mode: str,
+        conclusions: Dict[str, Optional[BaseModel]],
+        screen_data: Optional[Dict], today: str,
+        session: AgentSession, run_id: str,
+    ) -> Optional[BaseModel]:
+        """Synthesize sub-agent conclusions via the ManagerAgent."""
+        conclusions_text = self._format_conclusions(**conclusions)
 
-        # Add screen data to conclusions for enter mode
         if screen_data:
             conclusions_text += f"\n\nScreen Results (from earlier):\n{json.dumps(screen_data, indent=2)}"
 
-        manager_template = MANAGER_TASK_TEMPLATES.get(mode, f"Mode: {mode}.\nSynthesize conclusions.")
+        template = MANAGER_TASK_TEMPLATES.get(mode, f"Mode: {mode}.\nSynthesize conclusions.")
         manager_task = (
-            f"Today is {today}. {manager_template}\n"
+            f"Today is {today}. {template}\n"
             f"Dry run: {self.dry_run}.\n\n"
             f"Sub-agent conclusions:\n{conclusions_text}\n\n"
         )
@@ -529,9 +584,7 @@ class Orchestrator:
         manager_config = self.registry.get_agent(mode_config.manager)
         if manager_config is None:
             logger.error("Manager agent not in registry: %s", mode_config.manager)
-            session.fallback_used = True
-            session.save(data_dir=self.settings.data_dir)
-            return self._fallback(mode_config.fallback or mode, dry_run=self.dry_run, verbose=self.verbose)
+            return None
 
         manager_prompt = self.registry.resolve_prompt(mode_config.manager, data_dir=self.settings.data_dir)
         decision, trace = self._run_agent(
@@ -545,118 +598,165 @@ class Orchestrator:
             run_id=run_id,
         )
         session.add_trace(trace)
+        return decision
 
-        if decision is None:
-            session.fallback_used = True
-            session.save(data_dir=self.settings.data_dir)
-            self._collect_evolution_meta(session)
-            return self._fallback(
-                mode_config.fallback or mode,
-                dry_run=self.dry_run,
-                auto_confirm=self.auto_confirm,
-                verbose=self.verbose,
+    def _run_execution(
+        self, mode: str, mode_config: ModeConfig,
+        decision: ManagerDecision, today: str,
+        session: AgentSession, run_id: str,
+    ):
+        """Run the ExecutionAgent if there are trades to execute."""
+        should_execute = False
+        if mode == "enter":
+            # Exits always fire; entries only when approved
+            if decision.sells or (decision.entries_approved and decision.buys):
+                should_execute = True
+        elif mode in ("monitor", "post_market") and decision.sells:
+            should_execute = True
+
+        if not should_execute:
+            if mode == "enter":
+                console.print("  No trades to execute")
+            return
+
+        step_num = len(mode_config.sub_agents) + 2
+        console.print(f"\n[bold]{step_num}. Execution[/bold]")
+
+        exec_config = self.registry.get_agent(mode_config.executor)
+        if not exec_config:
+            return
+
+        exec_prompt = self.registry.resolve_prompt(mode_config.executor, data_dir=self.settings.data_dir)
+        exec_task = (
+            f"Today is {today}. Execute the manager's approved trades.\n"
+            f"Dry run: {self.dry_run}.\n\n"
+            f"Manager decision:\n{decision.model_dump_json(indent=2)}\n\n"
+            "Execute exits first, then entries."
+        )
+        _, exec_trace = self._run_agent(
+            role="ExecutionAgent",
+            system_prompt=exec_prompt,
+            task_message=exec_task,
+            conclusion_type=self.registry.resolve_conclusion_type(mode_config.executor),
+            max_turns=exec_config.max_turns,
+            needs_tools=exec_config.needs_tools,
+            allowed_tools=exec_config.allowed_tools,
+            external_servers=exec_config.external_servers,
+            mode=mode,
+            run_id=run_id,
+        )
+        session.add_trace(exec_trace)
+
+    def _run_report_agent(self, mode: str, today: str, session: AgentSession, run_id: str):
+        """Run the ReportAgent for post-market summaries."""
+        report_config = self.registry.get_agent("report")
+        if not report_config:
+            return
+
+        report_prompt = self.registry.resolve_prompt("report", data_dir=self.settings.data_dir)
+        _, report_trace = self._run_agent(
+            role="ReportAgent",
+            system_prompt=report_prompt,
+            task_message=f"Generate the {mode} report for {today}.",
+            conclusion_type=self.registry.resolve_conclusion_type("report"),
+            max_turns=report_config.max_turns,
+            needs_tools=report_config.needs_tools,
+            allowed_tools=report_config.allowed_tools,
+            external_servers=report_config.external_servers,
+            mode=mode,
+            run_id=run_id,
+        )
+        session.add_trace(report_trace)
+
+    def _run_prompt_evolution(
+        self,
+        conclusions: Dict[str, Optional[BaseModel]],
+        manager_decision: Optional[BaseModel],
+        session: AgentSession,
+    ):
+        """Execute prompt evolution post-action for learning mode.
+
+        Uses the LearningManagerDecision to determine which prompt
+        evolutions to apply, then calls PromptEvolver with data-backed
+        rationale from the LearningConclusion.
+        """
+        if not isinstance(manager_decision, LearningManagerDecision):
+            return
+
+        approved = manager_decision.prompt_evolutions_approved
+        if not approved:
+            return
+
+        # Find the LearningConclusion with prompt evolution recommendations
+        learning_conclusion = None
+        for name, conclusion in conclusions.items():
+            if isinstance(conclusion, LearningConclusion):
+                learning_conclusion = conclusion
+                break
+
+        if not learning_conclusion:
+            return
+
+        # Build lookup of recommendations by agent name
+        rec_lookup: Dict[str, Any] = {}
+        for rec in learning_conclusion.prompt_evolution_recommendations:
+            rec_lookup[rec.agent_name] = rec
+
+        console.print("\n[bold]Prompt Evolution[/bold]")
+        evolved_count = 0
+
+        for agent_name in approved:
+            rec = rec_lookup.get(agent_name)
+            if not rec:
+                console.print(f"  [yellow]{agent_name}: no recommendation found, skipping[/yellow]")
+                continue
+
+            try:
+                current_prompt = self.registry.resolve_prompt(
+                    agent_name, data_dir=self.settings.data_dir
+                )
+            except ValueError:
+                console.print(f"  [yellow]{agent_name}: agent not in registry, skipping[/yellow]")
+                continue
+
+            success = self.evolver.evolve_agent_with_rationale(
+                agent_name=agent_name,
+                current_prompt=current_prompt,
+                suggestion=rec.suggestion,
+                rationale=rec.rationale,
+                claude_bin=self._claude_bin,
             )
 
-        session.set_manager_decision(decision.model_dump())
-
-        # Post-actions: save screen results
-        if "save_screen" in mode_config.post_actions:
-            risk_conclusion = conclusions.get("risk")
-            self._save_screen_results(decision, risk_conclusion)
-
-        # Execution (if mode has an executor and there are trades)
-        if mode_config.executor and isinstance(decision, ManagerDecision):
-            should_execute = False
-            if mode == "enter" and decision.entries_approved and (decision.buys or decision.sells):
-                should_execute = True
-            elif mode in ("monitor", "post_market") and decision.sells:
-                should_execute = True
-
-            if should_execute:
-                step_num = len(mode_config.sub_agents) + 2
-                console.print(f"\n[bold]{step_num}. Execution[/bold]")
-
-                exec_config = self.registry.get_agent(mode_config.executor)
-                if exec_config:
-                    exec_prompt = self.registry.resolve_prompt(
-                        mode_config.executor, data_dir=self.settings.data_dir
-                    )
-                    exec_task = (
-                        f"Today is {today}. Execute the manager's approved trades.\n"
-                        f"Dry run: {self.dry_run}.\n\n"
-                        f"Manager decision:\n{decision.model_dump_json(indent=2)}\n\n"
-                        "Execute exits first, then entries."
-                    )
-                    _, exec_trace = self._run_agent(
-                        role="ExecutionAgent",
-                        system_prompt=exec_prompt,
-                        task_message=exec_task,
-                        conclusion_type=self.registry.resolve_conclusion_type(mode_config.executor),
-                        max_turns=exec_config.max_turns,
-                        needs_tools=exec_config.needs_tools,
-                        allowed_tools=exec_config.allowed_tools,
-                        mode=mode,
-                        run_id=run_id,
-                    )
-                    session.add_trace(exec_trace)
-            elif mode == "enter":
-                console.print("  No trades to execute")
-
-        # Post-actions: report agent
-        if "report" in mode_config.post_actions and mode == "post_market":
-            report_config = self.registry.get_agent("report")
-            if report_config:
-                report_prompt = self.registry.resolve_prompt("report", data_dir=self.settings.data_dir)
-                report_task = f"Generate the {mode} report for {today}."
-                _, report_trace = self._run_agent(
-                    role="ReportAgent",
-                    system_prompt=report_prompt,
-                    task_message=report_task,
-                    conclusion_type=self.registry.resolve_conclusion_type("report"),
-                    max_turns=report_config.max_turns,
-                    needs_tools=report_config.needs_tools,
-                    allowed_tools=report_config.allowed_tools,
-                    mode=mode,
-                    run_id=run_id,
+            if success:
+                evolved_count += 1
+                console.print(f"  [green]{agent_name}: prompt evolved[/green]")
+                logger.info(
+                    "Evolved prompt for %s: %s (rationale: %s)",
+                    agent_name, rec.suggestion, rec.rationale,
                 )
-                session.add_trace(report_trace)
+            else:
+                console.print(f"  [yellow]{agent_name}: evolution skipped (rate limit or safety)[/yellow]")
 
-        # Build and save report
-        risk_result = conclusions.get("risk")
-        data_result = conclusions.get("data")
-        analysis_result = conclusions.get("analysis")
-        research_result = conclusions.get("research")
+        if evolved_count:
+            console.print(f"  Evolved {evolved_count} prompt(s)")
+        else:
+            console.print("  No prompts evolved this cycle")
 
-        report_step = len(mode_config.sub_agents) + 2
-        if mode_config.executor:
-            report_step += 1
-        console.print(f"\n[bold]{report_step}. Report[/bold]")
+    # ------------------------------------------------------------------
+    # Session lifecycle
+    # ------------------------------------------------------------------
 
-        report = self._build_report(
-            mode, decision,
-            data=data_result,
-            risk=risk_result,
-            analysis=analysis_result,
-            research=research_result,
-        )
-        self._save_report(report)
-        self._print_summary(decision, risk_result)
-
-        # Save session trace and collect evolution meta
+    def _finalize_session(self, session: AgentSession):
+        """Save trace, collect evolution meta, prune old sessions."""
         session.save(data_dir=self.settings.data_dir)
         self._collect_evolution_meta(session)
-
-        # Prune old sessions
         AgentSession.prune_old_sessions(
             data_dir=self.settings.data_dir,
             max_days=getattr(self.settings, "trace_retention_days", 30),
         )
 
-        self._cleanup()
-        return report
-
     def _collect_evolution_meta(self, session: AgentSession):
-        """Collect meta-recommendations from session traces for evolution."""
+        """Forward meta-recommendations from traces to the prompt evolver."""
         try:
             from dataclasses import asdict
             session_data = {
@@ -664,7 +764,6 @@ class Orchestrator:
                 "mode": session.mode,
                 "traces": [asdict(t) for t in session.traces],
             }
-            # Remove internal timing attributes
             for trace_dict in session_data["traces"]:
                 trace_dict.pop("_start_time", None)
             self.evolver.collect_meta(session_data)
@@ -672,7 +771,7 @@ class Orchestrator:
             logger.debug("Failed to collect evolution meta: %s", e)
 
     # ------------------------------------------------------------------
-    # Legacy mode methods (delegate to generic runner)
+    # Legacy mode methods
     # ------------------------------------------------------------------
 
     def run_screen(self) -> Dict:
@@ -691,11 +790,11 @@ class Orchestrator:
         return self.run_mode("learning")
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Data helpers
     # ------------------------------------------------------------------
 
     def _format_conclusions(self, **kwargs) -> str:
-        """Format sub-agent conclusions as a readable text block."""
+        """Format sub-agent conclusions as markdown for the manager prompt."""
         parts = []
         for name, conclusion in kwargs.items():
             if conclusion is None:
@@ -707,7 +806,7 @@ class Orchestrator:
         return "\n".join(parts)
 
     def _save_screen_results(self, decision: ManagerDecision, risk: Optional[Any]):
-        """Save screen results for the enter phase."""
+        """Persist screen results for the enter phase."""
         screen_dir = Path(self.settings.data_dir) / "screen_results"
         screen_dir.mkdir(parents=True, exist_ok=True)
 
@@ -732,11 +831,10 @@ class Orchestrator:
         with open(screen_path, "w") as f:
             json.dump(screen_data, f, indent=2, default=str)
 
-        console.print(f"  Screen results saved: {screen_path}")
-        console.print(f"  {len(buy_list)} buy candidates queued for entry phase")
+        console.print(f"  Screen results saved ({len(buy_list)} candidates)")
 
     def _load_screen_results(self) -> Optional[Dict]:
-        """Load saved screen results."""
+        """Load screen results saved by a previous screen run."""
         screen_path = Path(self.settings.data_dir) / "screen_results" / "latest.json"
         if not screen_path.exists():
             return None
@@ -751,8 +849,9 @@ class Orchestrator:
         risk: Optional[BaseModel] = None,
         analysis: Optional[BaseModel] = None,
         research: Optional[BaseModel] = None,
+        learning: Optional[BaseModel] = None,
     ) -> Dict:
-        """Build a structured report from agent conclusions."""
+        """Build a structured report dict from agent conclusions."""
         report: Dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "mode": mode,
@@ -760,10 +859,7 @@ class Orchestrator:
         }
 
         if data and hasattr(data, "all_healthy"):
-            report["data_health"] = {
-                "healthy": data.all_healthy,
-                "issues": data.issues,
-            }
+            report["data_health"] = {"healthy": data.all_healthy, "issues": data.issues}
 
         if risk and hasattr(risk, "regime_name"):
             report["regime"] = {
@@ -797,10 +893,35 @@ class Orchestrator:
                 "gaps": research.gaps_flagged,
             }
 
+        if learning and isinstance(learning, LearningConclusion):
+            report["learning"] = {
+                "trades_analyzed": learning.trades_analyzed,
+                "win_rate": learning.win_rate,
+                "signals_degrading": learning.signals_degrading,
+                "weight_changes_proposed": learning.weight_changes_proposed,
+                "oos_validated": learning.oos_validated,
+                "config_changes_applied": learning.config_changes_applied,
+                "prompt_evolutions": [
+                    r.model_dump() for r in learning.prompt_evolution_recommendations
+                ],
+                "agent_insights_used": learning.agent_insights_used,
+                "gaps_flagged": learning.gaps_flagged,
+                "gaps_resolved": learning.gaps_resolved,
+            }
+
+        if isinstance(decision, LearningManagerDecision):
+            report["manager_decision"] = {
+                "config_changes_approved": decision.config_changes_approved,
+                "prompt_evolutions_approved": decision.prompt_evolutions_approved,
+                "prompt_evolutions_rejected": decision.prompt_evolutions_rejected,
+                "escalations": decision.escalations,
+                "reasoning": decision.reasoning,
+            }
+
         return report
 
     def _save_report(self, report: Dict) -> Path:
-        """Save report to JSON file."""
+        """Write report to timestamped JSON file and update latest pointer."""
         report_dir = Path(self.settings.manager_report_dir)
         report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -817,48 +938,54 @@ class Orchestrator:
         console.print(f"\nReport saved: {filepath}")
         return filepath
 
-    def _print_summary(
-        self,
-        decision: Optional[BaseModel],
-        risk: Optional[BaseModel] = None,
-    ):
-        """Print a concise summary to console."""
+    def _print_summary(self, decision: Optional[BaseModel], risk: Optional[BaseModel] = None):
+        """Print the manager's final decision to the console."""
         if not decision or not hasattr(decision, "entries_approved"):
             return
 
         console.print()
         console.print(Panel.fit(
             f"[bold]Manager Decision[/bold]\n"
-            f"Regime: {decision.regime_name} | Entries: {'APPROVED' if decision.entries_approved else 'BLOCKED'}",
+            f"Regime: {decision.regime_name} | "
+            f"Entries: {'APPROVED' if decision.entries_approved else 'BLOCKED'}",
             border_style="blue",
         ))
 
         if decision.buys:
             console.print(f"\n[bold]Buys ({len(decision.buys)}):[/bold]")
             for b in decision.buys:
-                price_str = f"@ ${b.price:.2f} " if b.price else ""
-                shares_str = f"x {b.shares} " if b.shares else ""
-                cost_str = f"(${b.cost:,.0f}) " if b.cost else ""
-                score_str = f"| Score: {b.score:.0f}" if b.score else ""
-                console.print(f"  [cyan]{b.ticker}[/cyan] {price_str}{shares_str}{cost_str}{score_str}")
+                parts = [f"[cyan]{b.ticker}[/cyan]"]
+                if b.price:
+                    parts.append(f"@ ${b.price:.2f}")
+                if b.shares:
+                    parts.append(f"x {b.shares}")
+                if b.cost:
+                    parts.append(f"(${b.cost:,.0f})")
+                if b.score:
+                    parts.append(f"| Score: {b.score:.0f}")
+                console.print(f"  {' '.join(parts)}")
 
         if decision.sells:
             console.print(f"\n[bold]Exits ({len(decision.sells)}):[/bold]")
             for s in decision.sells:
                 color = "green" if (s.pnl_pct or 0) >= 0 else "red"
-                price_str = f"@ ${s.price:.2f} " if s.price else ""
-                pnl_str = f"| P&L: {s.pnl_pct:+.1f}% " if s.pnl_pct is not None else ""
-                console.print(
-                    f"  [{color}]{s.ticker}[/{color}] {price_str}{pnl_str}| {s.reason} ({s.urgency})"
-                )
+                parts = [f"[{color}]{s.ticker}[/{color}]"]
+                if s.price:
+                    parts.append(f"@ ${s.price:.2f}")
+                if s.pnl_pct is not None:
+                    parts.append(f"| P&L: {s.pnl_pct:+.1f}%")
+                parts.append(f"| {s.reason} ({s.urgency})")
+                console.print(f"  {' '.join(parts)}")
 
         if decision.alerts:
-            console.print(f"\n[bold red]Alerts:[/bold red]")
+            console.print("\n[bold red]Alerts:[/bold red]")
             for alert in decision.alerts:
                 console.print(f"  - {alert}")
 
         if decision.reasoning:
-            console.print(f"\n[dim]Reasoning: {decision.reasoning[:200]}...[/dim]"
-                          if len(decision.reasoning) > 200 else
-                          f"\n[dim]Reasoning: {decision.reasoning}[/dim]")
+            text = decision.reasoning
+            if len(text) > 200:
+                text = text[:200] + "..."
+            console.print(f"\n[dim]Reasoning: {text}[/dim]")
+
         console.print()

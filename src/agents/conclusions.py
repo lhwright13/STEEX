@@ -201,3 +201,59 @@ class ReportConclusion(BaseModel):
     report_path: Optional[str] = Field(default=None)
     summary: str = Field(description="Brief summary of the day's activity")
     meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
+
+
+# ---------------------------------------------------------------------------
+# Learning pipeline conclusions
+# ---------------------------------------------------------------------------
+
+
+class PromptEvolutionRecommendation(BaseModel):
+    """A data-backed recommendation to evolve an agent's prompt."""
+
+    agent_name: str = Field(description="Agent whose prompt should be updated")
+    suggestion: str = Field(description="The specific prompt change to make")
+    rationale: str = Field(description="Evidence from trade data backing this change")
+    priority: str = Field(
+        default="medium",
+        description="Priority: high, medium, or low",
+    )
+
+
+class LearningConclusion(BaseModel):
+    """Output from the LearningAgent."""
+
+    trades_analyzed: int = Field(default=0)
+    win_rate: Optional[float] = Field(default=None)
+    signals_degrading: List[str] = Field(default_factory=list)
+    weight_changes_proposed: Dict[str, float] = Field(default_factory=dict)
+    oos_validated: bool = Field(default=False)
+    config_changes_applied: bool = Field(default=False)
+    prompt_evolution_recommendations: List[PromptEvolutionRecommendation] = Field(
+        default_factory=list,
+    )
+    agent_insights_used: List[str] = Field(default_factory=list)
+    gaps_flagged: List[str] = Field(default_factory=list)
+    gaps_resolved: List[str] = Field(default_factory=list)
+    reasoning: str = Field(description="Learning findings and recommendations")
+    meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
+
+
+class LearningManagerDecision(BaseModel):
+    """Synthesized decision from the LearningManager."""
+
+    config_changes_approved: bool = Field(default=False)
+    prompt_evolutions_approved: List[str] = Field(
+        default_factory=list,
+        description="Agent names whose prompt evolution is approved",
+    )
+    prompt_evolutions_rejected: List[str] = Field(
+        default_factory=list,
+        description="Agent names whose prompt evolution is rejected",
+    )
+    escalations: List[str] = Field(
+        default_factory=list,
+        description="Items that need human review",
+    )
+    reasoning: str = Field(description="Manager's review rationale")
+    meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")

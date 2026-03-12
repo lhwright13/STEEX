@@ -105,18 +105,22 @@ class SignalResearcher:
             if df.empty:
                 continue
 
+            # Strip timezone to avoid tz-naive/aware comparison issues
+            if df.index.tz is not None:
+                df = df.copy()
+                df.index = df.index.tz_localize(None)
+
             idx = df.index
-            if idx.tz is not None:
-                idx = idx.tz_localize(None)
+            compare_date = pd.Timestamp(date).tz_localize(None) if hasattr(pd.Timestamp(date), 'tz') else pd.Timestamp(date)
 
             # Find entry price (on signal date)
-            entry_mask = idx <= date
+            entry_mask = idx <= compare_date
             if not entry_mask.any():
                 continue
             entry_price = df.loc[idx[entry_mask][-1], "Close"]
 
             # Find forward price
-            future_mask = idx > date
+            future_mask = idx > compare_date
             future_dates = idx[future_mask]
             if len(future_dates) < fwd_days:
                 continue

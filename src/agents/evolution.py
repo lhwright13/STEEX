@@ -275,6 +275,48 @@ class PromptEvolver:
         self.apply_rewrite(agent_name, current_prompt, new_prompt)
         return True
 
+    def evolve_agent_with_rationale(
+        self,
+        agent_name: str,
+        current_prompt: str,
+        suggestion: str,
+        rationale: str,
+        claude_bin: Optional[str] = None,
+    ) -> bool:
+        """Evolve an agent's prompt with a data-backed rationale.
+
+        Like evolve_agent but uses a single targeted suggestion with trade
+        data context instead of collecting from pending recommendations.
+        All existing safety checks (phrase preservation, rate limiting) apply.
+
+        Args:
+            agent_name: Agent whose prompt to evolve
+            current_prompt: Current prompt text
+            suggestion: The specific prompt change to make
+            rationale: Evidence from trade data backing this change
+            claude_bin: Path to claude CLI binary
+
+        Returns:
+            True if a prompt was rewritten and applied
+        """
+        if not self.can_rewrite(agent_name):
+            logger.warning(
+                "Skipping rationale-based rewrite for %s - already rewritten this week",
+                agent_name,
+            )
+            return False
+
+        # Build a data-enriched suggestion
+        enriched = f"{suggestion} (Based on trade analysis: {rationale})"
+        new_prompt = self.rewrite_prompt(
+            agent_name, current_prompt, [enriched], claude_bin
+        )
+        if new_prompt is None:
+            return False
+
+        self.apply_rewrite(agent_name, current_prompt, new_prompt)
+        return True
+
     def _safety_check(self, old_prompt: str, new_prompt: str) -> bool:
         """Verify safety-critical content is preserved in the rewritten prompt."""
         old_lower = old_prompt.lower()

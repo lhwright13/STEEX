@@ -36,6 +36,7 @@ class AgentConfig:
     max_turns: int = 15
     needs_tools: bool = True
     allowed_tools: List[str] = field(default_factory=list)
+    external_servers: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -77,6 +78,7 @@ class AgentRegistry:
                 max_turns=cfg.get("max_turns", 15),
                 needs_tools=cfg.get("needs_tools", True),
                 allowed_tools=cfg.get("allowed_tools", []),
+                external_servers=cfg.get("external_servers", []),
             )
 
         for name, cfg in data.get("modes", {}).items():

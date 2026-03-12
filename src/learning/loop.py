@@ -254,6 +254,7 @@ class LearningLoop:
         try:
             from ..backtest.walkforward import WalkForwardBacktester
             from ..research.signal_tester import SignalResearcher
+            from ..data.universe import Universe
 
             lookback_months = getattr(
                 self.settings, "learning_feature_lookback_months", 6
@@ -268,8 +269,12 @@ class LearningLoop:
             )
 
             backtester = WalkForwardBacktester(settings=self.settings)
+            universe = Universe().get_sp500()
+            price_cache = backtester.prefetch_data(universe, start, end)
+
             _, features = backtester.generate_historical_signals(
                 start=start, end=end,
+                price_cache=price_cache, universe=universe,
             )
 
             if not features:
@@ -280,7 +285,7 @@ class LearningLoop:
                 return {"error": "No features generated"}
 
             researcher = SignalResearcher(settings=self.settings)
-            report = researcher.run_full_analysis(features)
+            report = researcher.run_full_analysis(features, price_cache=price_cache)
 
             result = {
                 "hypotheses": [

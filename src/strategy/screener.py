@@ -250,10 +250,10 @@ class StockScreener:
             momentum_1m = data.get("momentum_1m", 0)
             percentile = data.get("percentile", 0)
 
-            # Check all momentum conditions (stricter 1-month filter)
+            # Check momentum conditions
             if (
                 momentum_6m >= self.settings.momentum_min_return
-                and momentum_1m >= 0.05  # Require at least 5% recent momentum
+                and momentum_1m >= self.settings.short_momentum_min_return
                 and (not self.settings.overextension_filter_enabled or percentile <= self.settings.overextension_percentile)
             ):
                 # Check MA alignment
@@ -265,7 +265,12 @@ class StockScreener:
                 data["above_ma_50"] = alignment["above_short_ma"]
                 data["above_ma_200"] = alignment["above_long_ma"]
 
-                if alignment["aligned"]:
+                if self.settings.require_dual_ma:
+                    ma_ok = alignment["aligned"]
+                else:
+                    ma_ok = alignment["above_short_ma"]
+
+                if ma_ok:
                     passed.append(ticker)
 
         return passed, momentum_data
@@ -302,7 +307,7 @@ class StockScreener:
                     verbose=False,
                 )
             except Exception:
-                logger.debug("Insider scan failed for stage 3, using empty transactions", exc_info=True)
+                logger.warning("Insider scan failed for stage 3, using empty transactions", exc_info=True)
                 all_transactions = []
 
         # Group transactions by ticker

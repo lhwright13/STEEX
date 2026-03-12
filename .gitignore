@@ -170,6 +170,9 @@ Thumbs.db
 *.pem
 *.key
 
+# Presentations
+*.pptx
+
 # STEEX data files
 /data/
 positions.json

@@ -127,6 +127,17 @@ class WalkForwardBacktester:
         """
         settings = settings or self.settings
 
+        # Disable non-historical data sources during backtesting to avoid
+        # lookahead bias (sentiment/fundamental APIs return current data, not
+        # historical) and to prevent API rate-limit failures from filtering
+        # out all candidates.
+        bt_overrides = settings.model_dump()
+        bt_overrides["sentiment_enabled"] = False
+        bt_overrides["fundamental_enabled"] = False
+        bt_overrides["options_enabled"] = False
+        bt_overrides["pysr_enabled"] = False
+        bt_settings = Settings(**bt_overrides)
+
         # Create historical price provider for this date
         hist_provider = HistoricalPriceProvider(reference_date, price_cache)
         momentum = MomentumCalculator(hist_provider)
@@ -134,12 +145,12 @@ class WalkForwardBacktester:
 
         # Build screener with historical provider injected
         screener = StockScreener(
-            settings=settings,
+            settings=bt_settings,
             price_provider=hist_provider,
             momentum_calc=momentum,
             technical=technical,
         )
-        ranker = StockRanker(settings)
+        ranker = StockRanker(bt_settings)
 
         # Run pipeline
         try:

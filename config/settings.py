@@ -44,7 +44,10 @@ class Settings(BaseSettings):
         default=21, description="1 month lookback for short-term momentum"
     )
     momentum_min_return: float = Field(
-        default=0.15, description="Minimum 6-month return (15%)"
+        default=0.05, description="Minimum 6-month return (5%)"
+    )
+    short_momentum_min_return: float = Field(
+        default=0.00, description="Minimum 1-month return (0%)"
     )
     overextension_percentile: float = Field(
         default=0.95, description="Top 5% excluded as overextended"
@@ -56,6 +59,9 @@ class Settings(BaseSettings):
     # Moving averages
     ma_short: int = Field(default=50, description="Short-term moving average period")
     ma_long: int = Field(default=200, description="Long-term moving average period")
+    require_dual_ma: bool = Field(
+        default=False, description="Require price above both MAs (false = only short MA)"
+    )
 
     # Insider trading parameters
     insider_lookback_days: int = Field(
@@ -450,6 +456,17 @@ class Settings(BaseSettings):
     )
     agent_fallback_deterministic: bool = Field(
         default=True, description="Fall back to QuantManager if agent fails"
+    )
+
+    # External MCP servers (supplement STEEX tools with third-party data)
+    mcp_alpaca_enabled: bool = Field(
+        default=True, description="Enable Alpaca MCP for real-time quotes and order management"
+    )
+    mcp_polygon_enabled: bool = Field(
+        default=False, description="Enable Polygon/Massive MCP for aggregates, news, options flow"
+    )
+    mcp_alphavantage_enabled: bool = Field(
+        default=True, description="Enable Alpha Vantage MCP for technical indicators and economic data"
     )
 
     # Agent trace settings

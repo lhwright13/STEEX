@@ -1,6 +1,10 @@
 # STEEX Agent Registry
 # Declarative definitions of agents and mode sequences.
 # Adding a new agent: add entry here, create prompt file, add conclusion model.
+#
+# external_servers: list of external MCP server names this agent can access.
+# Available: alpaca (real-time quotes, orders), polygon (aggregates, news),
+#            alphavantage (technical indicators, economic data)
 
 agents:
   data:
@@ -13,6 +17,7 @@ agents:
       - prefetch_data
       - refresh_data
       - check_data_health
+    external_servers: [alpaca]
 
   risk:
     prompt: "risk"
@@ -26,6 +31,7 @@ agents:
       - get_exit_signals
       - get_positions
       - get_account
+    external_servers: [alpaca]
 
   analysis:
     prompt: "analysis"
@@ -36,6 +42,7 @@ agents:
       - run_screening
       - rank_candidates
       - construct_portfolio
+    external_servers: [alpaca, alphavantage, polygon]
 
   manager:
     prompt: "manager"
@@ -55,6 +62,7 @@ agents:
       - execute_exits
       - get_positions
       - get_account
+    external_servers: [alpaca]
 
   research:
     prompt: "research"
@@ -63,8 +71,8 @@ agents:
     needs_tools: true
     allowed_tools:
       - run_postmortem
-      - run_learning_loop
       - get_trade_history
+    external_servers: [alphavantage, polygon]
 
   report:
     prompt: "report"
@@ -74,6 +82,34 @@ agents:
     allowed_tools:
       - generate_report
       - get_trade_history
+    external_servers: [polygon]
+
+  learning_agent:
+    prompt: "learning"
+    conclusion: "LearningConclusion"
+    max_turns: 25
+    needs_tools: true
+    allowed_tools:
+      - get_trade_history
+      - run_postmortem
+      - check_alpha_decay
+      - run_signal_research
+      - validate_oos
+      - propose_config_changes
+      - apply_config_changes
+      - get_learning_journal
+      - get_learning_gaps
+      - get_pending_recommendations
+      - get_config_change_history
+      - get_current_weights
+      - cross_reference_findings
+    external_servers: [alphavantage]
+
+  learning_manager:
+    prompt: "learning_manager"
+    conclusion: "LearningManagerDecision"
+    max_turns: 3
+    needs_tools: false
 
 modes:
   screen:
@@ -109,8 +145,8 @@ modes:
     fallback: post_market
 
   learning:
-    sub_agents: [research]
-    manager: manager
-    critical_agents: [research]
-    post_actions: [report]
+    sub_agents: [learning_agent]
+    manager: learning_manager
+    critical_agents: [learning_agent]
+    post_actions: [evolve_prompts, report]
     fallback: learning

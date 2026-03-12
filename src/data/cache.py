@@ -130,6 +130,24 @@ class DBCache:
             "db_path": self._db_path,
         }
 
+    def find_by_prefix(self, prefix: str) -> Optional[Any]:
+        """Return the first valid (non-expired) cached value whose key starts with prefix."""
+        now = time.time()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT value, fetched_at, ttl_seconds FROM cache "
+                "WHERE key LIKE ? AND (? - fetched_at) <= ttl_seconds "
+                "LIMIT 1",
+                (prefix + "%", now),
+            ).fetchall()
+
+        for blob, _fetched_at, _ttl in rows:
+            try:
+                return pickle.loads(blob)
+            except Exception:
+                continue
+        return None
+
     def close(self) -> None:
         """Close the database connection."""
         with self._lock:

@@ -26,10 +26,12 @@ from ..portfolio.tracker import TradeTracker
 from ..portfolio.risk import RiskManager
 from ..strategy.signals import ExitReason, ExitSignal, SignalGenerator
 from ..strategy.screener import (
+    INSIDER_CACHE_FILE,
     ScreeningPipelineResult,
     ScreeningResult,
     StockScreener,
 )
+from ..sec.models import InsiderTransaction
 from ..strategy.ranking import RankedStock, StockRanker
 from ..regime.detector import RegimeDetector, MacroRegime
 
@@ -232,6 +234,71 @@ class QuantManager:
     # DataAgent
     # -------------------------------------------------------------------------
 
+    def _save_insider_cache(self, transactions: List[InsiderTransaction]) -> None:
+        """Save fetched insider transactions to cache file.
+
+        Merges with existing cache, grouped by filing_date. Prunes entries
+        older than 90 days.
+        """
+        cache_path = INSIDER_CACHE_FILE
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Load existing cache
+        existing: Dict = {"dates": {}}
+        if cache_path.exists():
+            try:
+                with open(cache_path) as f:
+                    existing = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                existing = {"dates": {}}
+
+        dates = existing.get("dates", {})
+
+        # Convert transactions to cache format, grouped by filing_date
+        for tx in transactions:
+            date_key = tx.filing_date or tx.transaction_date
+            if not date_key:
+                continue
+            if date_key not in dates:
+                dates[date_key] = []
+
+            entry = {
+                "ticker": tx.ticker,
+                "company_name": tx.company_name,
+                "insider_name": tx.insider_name,
+                "is_director": tx.is_director,
+                "is_officer": tx.is_officer,
+                "is_ten_percent_owner": tx.is_ten_percent_owner,
+                "role": tx.officer_title,
+                "transaction_date": tx.transaction_date,
+                "transaction_code": tx.transaction_code,
+                "shares": tx.shares,
+                "price_per_share": tx.price_per_share,
+                "total_value": tx.total_value,
+                "filing_date": tx.filing_date,
+            }
+
+            # Avoid duplicates: check by ticker + insider + date + shares
+            is_dup = any(
+                e.get("ticker") == tx.ticker
+                and e.get("insider_name") == tx.insider_name
+                and e.get("transaction_date") == tx.transaction_date
+                and e.get("shares") == tx.shares
+                for e in dates[date_key]
+            )
+            if not is_dup:
+                dates[date_key].append(entry)
+
+        # Prune dates older than 90 days
+        cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+        dates = {d: txs for d, txs in dates.items() if d >= cutoff}
+
+        existing["dates"] = dates
+        existing["last_updated"] = datetime.now().isoformat()
+
+        with open(cache_path, "w") as f:
+            json.dump(existing, f, indent=2)
+
     def refresh_data(self) -> Dict:
         """Fetch fresh insider filings and VIX data."""
         self._log("data", "Starting data refresh")
@@ -243,8 +310,9 @@ class QuantManager:
 
             scanner = InsiderScanner()
             with console.status("Fetching insider filings..."):
-                transactions = scanner.scan(days_back=7, max_filings=200, verbose=False)
+                transactions = scanner.scan(days_back=30, max_filings=200, verbose=False)
             purchases = [t for t in transactions if t.is_purchase]
+            self._save_insider_cache(transactions)
             status["insider"] = {
                 "total": len(transactions),
                 "purchases": len(purchases),
@@ -284,18 +352,22 @@ class QuantManager:
         issues = []
 
         # Check insider cache
-        cache_dir = Path(self.settings.data_dir) / "sec"
-        if cache_dir.exists():
-            cache_files = list(cache_dir.glob("*.json"))
-            if cache_files:
-                newest = max(cache_files, key=lambda f: f.stat().st_mtime)
-                age_hours = (datetime.now().timestamp() - newest.stat().st_mtime) / 3600
-                if age_hours > 24:
-                    issues.append(f"Insider cache is {age_hours:.0f}h old")
-            else:
-                issues.append("No insider cache files found")
+        if INSIDER_CACHE_FILE.exists():
+            try:
+                with open(INSIDER_CACHE_FILE) as f:
+                    cache = json.load(f)
+                last_updated = cache.get("last_updated")
+                if last_updated:
+                    updated_dt = datetime.fromisoformat(last_updated)
+                    age_hours = (datetime.now() - updated_dt).total_seconds() / 3600
+                    if age_hours > 24:
+                        issues.append(f"Insider cache is {age_hours:.0f}h old")
+                else:
+                    issues.append("Insider cache missing last_updated timestamp")
+            except (json.JSONDecodeError, IOError):
+                issues.append("Insider cache file is corrupted")
         else:
-            issues.append("No insider cache directory")
+            issues.append("No insider cache file")
 
         # Check VIX
         try:
