@@ -5,7 +5,10 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from typing import Optional
 
-from utils.http import SecClient, SEC_BASE_URL
+try:
+    from utils.http import SecClient, SEC_BASE_URL
+except ImportError:
+    from ..utils.http import SecClient, SEC_BASE_URL
 from .models import Filing
 from .parsers.daily_index import parse_daily_index
 
