@@ -105,3 +105,134 @@ class TestCheckTimeExit:
         entry_date = datetime.now() - timedelta(days=5)
         signal = signal_gen.check_time_exit("AAPL", 100.0, entry_date)
         assert signal is None
+
+
+class TestDeadMoneyExit:
+    """Tests for dead money exit signal."""
+
+    def test_dead_money_triggers_when_below_entry_long_enough(self, signal_gen):
+        """Position below entry for longer than dead_money_days should trigger."""
+        signal_gen.settings.dead_money_enabled = True
+        signal_gen.settings.dead_money_days = 10
+        # Price below entry
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=95.0)
+
+        entry_date = datetime.now() - timedelta(days=21)  # ~15 trading days
+        signal = signal_gen.check_dead_money("AAPL", entry_price=100.0, entry_date=entry_date)
+
+        assert signal is not None
+        assert signal.reason == ExitReason.DEAD_MONEY
+        assert signal.urgency == "next_session"
+        assert signal.gain_pct < 0
+
+    def test_dead_money_no_trigger_when_above_entry(self, signal_gen):
+        """Position above entry price should not trigger dead money."""
+        signal_gen.settings.dead_money_enabled = True
+        signal_gen.settings.dead_money_days = 10
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=105.0)
+
+        entry_date = datetime.now() - timedelta(days=21)
+        signal = signal_gen.check_dead_money("AAPL", entry_price=100.0, entry_date=entry_date)
+        assert signal is None
+
+    def test_dead_money_no_trigger_when_too_recent(self, signal_gen):
+        """Position held for fewer than dead_money_days should not trigger."""
+        signal_gen.settings.dead_money_enabled = True
+        signal_gen.settings.dead_money_days = 10
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=95.0)
+
+        entry_date = datetime.now() - timedelta(days=5)  # ~3-4 trading days
+        signal = signal_gen.check_dead_money("AAPL", entry_price=100.0, entry_date=entry_date)
+        assert signal is None
+
+    def test_dead_money_disabled_returns_none(self, signal_gen):
+        """When dead_money_enabled is False, should always return None."""
+        signal_gen.settings.dead_money_enabled = False
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=95.0)
+
+        entry_date = datetime.now() - timedelta(days=60)
+        signal = signal_gen.check_dead_money("AAPL", entry_price=100.0, entry_date=entry_date)
+        assert signal is None
+
+
+class TestVixSpikeExit:
+    """Tests for VIX spike exit signal specifics."""
+
+    def test_vix_above_exit_level_triggers(self, signal_gen):
+        """VIX above vix_exit_level should trigger immediate exit."""
+        signal_gen.settings.vix_exit_level = 40
+        signal_gen.vix.get_current = MagicMock(return_value=42.0)
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=110.0)
+
+        signal = signal_gen.check_vix_exit("AAPL", entry_price=100.0)
+
+        assert signal is not None
+        assert signal.reason == ExitReason.VIX_SPIKE
+        assert signal.urgency == "immediate"
+        assert signal.gain_pct == pytest.approx(0.10)
+
+    def test_vix_at_exact_exit_level_no_trigger(self, signal_gen):
+        """VIX exactly at the exit level should NOT trigger (must be >)."""
+        signal_gen.settings.vix_exit_level = 40
+        signal_gen.vix.get_current = MagicMock(return_value=40.0)
+
+        signal = signal_gen.check_vix_exit("AAPL", entry_price=100.0)
+        assert signal is None
+
+    def test_vix_spike_with_loss(self, signal_gen):
+        """VIX spike exit should correctly report negative gain_pct."""
+        signal_gen.settings.vix_exit_level = 40
+        signal_gen.vix.get_current = MagicMock(return_value=50.0)
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=90.0)
+
+        signal = signal_gen.check_vix_exit("AAPL", entry_price=100.0)
+
+        assert signal is not None
+        assert signal.gain_pct == pytest.approx(-0.10)
+
+
+class TestMaxHoldExit:
+    """Tests for max hold time exit signal."""
+
+    def test_max_hold_triggers_at_threshold(self, signal_gen):
+        """Position held beyond max_hold_days trading days should trigger."""
+        signal_gen.settings.max_hold_days = 60
+        # 90 calendar days ~ 64 trading days (90 * 5/7)
+        entry_date = datetime.now() - timedelta(days=90)
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=120.0)
+
+        signal = signal_gen.check_time_exit("AAPL", entry_price=100.0, entry_date=entry_date)
+
+        assert signal is not None
+        assert signal.reason == ExitReason.MAX_HOLD_TIME
+        assert signal.urgency == "next_session"
+
+    def test_max_hold_no_trigger_below_threshold(self, signal_gen):
+        """Position held fewer than max_hold_days should not trigger."""
+        signal_gen.settings.max_hold_days = 60
+        # 14 calendar days ~ 10 trading days
+        entry_date = datetime.now() - timedelta(days=14)
+
+        signal = signal_gen.check_time_exit("AAPL", entry_price=100.0, entry_date=entry_date)
+        assert signal is None
+
+    def test_max_hold_reports_gain_correctly(self, signal_gen):
+        """Max hold exit should correctly report the gain percentage."""
+        signal_gen.settings.max_hold_days = 60
+        entry_date = datetime.now() - timedelta(days=90)
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=130.0)
+
+        signal = signal_gen.check_time_exit("AAPL", entry_price=100.0, entry_date=entry_date)
+
+        assert signal is not None
+        assert signal.gain_pct == pytest.approx(0.30)
+        assert signal.current_price == 130.0
+
+    def test_max_hold_price_unavailable(self, signal_gen):
+        """Max hold should return None when price is unavailable."""
+        signal_gen.settings.max_hold_days = 60
+        entry_date = datetime.now() - timedelta(days=90)
+        signal_gen.price_provider.get_latest_price = MagicMock(return_value=None)
+
+        signal = signal_gen.check_time_exit("AAPL", entry_price=100.0, entry_date=entry_date)
+        assert signal is None

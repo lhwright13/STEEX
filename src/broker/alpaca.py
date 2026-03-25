@@ -9,13 +9,16 @@ from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, OrderStatus, OrderType, TimeInForce, QueryOrderStatus
 from alpaca.trading.requests import (
+    ClosePositionRequest,
     GetCalendarRequest,
     GetOrdersRequest,
     LimitOrderRequest,
+    MarketOrderRequest,
     StopOrderRequest,
+    TrailingStopOrderRequest,
 )
 
-from .base import AccountInfo, Broker, BrokerPosition, OrderResult
+from .base import AccountConfig, AccountInfo, AssetInfo, Broker, BrokerPosition, OrderResult
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +233,288 @@ class AlpacaBroker(Broker):
             return []
 
     # -----------------------------------------------------------------
+    # Market orders
+    # -----------------------------------------------------------------
+
+    def buy_market(self, ticker: str, qty: int) -> OrderResult:
+        """Place a market buy order and poll for fill."""
+        return self._place_market_order(ticker, qty, OrderSide.BUY)
+
+    def sell_market(self, ticker: str, qty: int) -> OrderResult:
+        """Place a market sell order and poll for fill."""
+        return self._place_market_order(ticker, qty, OrderSide.SELL)
+
+    # -----------------------------------------------------------------
+    # Single position lookup
+    # -----------------------------------------------------------------
+
+    def get_position(self, ticker: str) -> Optional[BrokerPosition]:
+        """Get a single position by ticker. Returns None if not held."""
+        try:
+            p = self.client.get_open_position(ticker)
+            return BrokerPosition(
+                ticker=p.symbol,
+                qty=float(p.qty),
+                avg_price=float(p.avg_entry_price),
+                market_value=float(p.market_value),
+                unrealized_pnl=float(p.unrealized_pl),
+            )
+        except APIError as e:
+            if "position does not exist" in str(e).lower() or "404" in str(e):
+                return None
+            logger.error("Failed to get position for %s: %s", ticker, e)
+            raise
+
+    # -----------------------------------------------------------------
+    # Account configuration
+    # -----------------------------------------------------------------
+
+    def get_account_config(self) -> AccountConfig:
+        """Get account configuration (PDT flag, shorting, etc.)."""
+        try:
+            cfg = self.client.get_account_configurations()
+            return AccountConfig(
+                pdt_check=str(getattr(cfg, "pdt_check", "")),
+                trade_confirm_email=str(getattr(cfg, "trade_confirm_email", "")),
+                no_shorting=bool(getattr(cfg, "no_shorting", False)),
+                suspend_trade=bool(getattr(cfg, "suspend_trade", False)),
+            )
+        except APIError as e:
+            logger.error("Failed to get account config: %s", e)
+            raise
+
+    # -----------------------------------------------------------------
+    # Order history
+    # -----------------------------------------------------------------
+
+    def get_order_history(
+        self,
+        status: Optional[str] = None,
+        after: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict]:
+        """Get historical orders."""
+        try:
+            request_params = {}
+            if status:
+                request_params["status"] = QueryOrderStatus(status)
+            if limit:
+                request_params["limit"] = limit
+
+            request = GetOrdersRequest(**request_params)
+            orders = self.client.get_orders(filter=request)
+            return [
+                {
+                    "order_id": str(o.id),
+                    "ticker": o.symbol,
+                    "side": o.side.value if o.side else None,
+                    "type": o.order_type.value if o.order_type else None,
+                    "status": o.status.value if o.status else None,
+                    "qty": float(o.qty) if o.qty else 0,
+                    "filled_qty": float(o.filled_qty) if o.filled_qty else 0,
+                    "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else 0,
+                    "submitted_at": o.submitted_at.isoformat() if o.submitted_at else None,
+                    "filled_at": o.filled_at.isoformat() if o.filled_at else None,
+                }
+                for o in orders
+            ]
+        except APIError as e:
+            logger.error("Failed to get order history: %s", e)
+            return []
+
+    # -----------------------------------------------------------------
+    # Trailing stop orders
+    # -----------------------------------------------------------------
+
+    def place_trailing_stop_order(
+        self, ticker: str, qty: int, trail_percent: float
+    ) -> OrderResult:
+        """Place a GTC trailing stop sell order."""
+        order_data = TrailingStopOrderRequest(
+            symbol=ticker,
+            qty=qty,
+            side=OrderSide.SELL,
+            time_in_force=TimeInForce.GTC,
+            trail_percent=round(trail_percent, 2),
+        )
+        try:
+            order = self.client.submit_order(order_data)
+            order_id = str(order.id)
+            logger.info(
+                "Trailing stop placed: %s %d shares trail %.1f%% (id=%s)",
+                ticker, qty, trail_percent, order_id,
+            )
+            return OrderResult(order_id=order_id, status="accepted")
+        except APIError as e:
+            logger.error("Trailing stop failed for %s: %s", ticker, e)
+            return OrderResult(status="failed", error=str(e))
+
+    # -----------------------------------------------------------------
+    # Bracket orders (entry + stop-loss + take-profit)
+    # -----------------------------------------------------------------
+
+    def place_bracket_order(
+        self,
+        ticker: str,
+        qty: int,
+        limit_price: float,
+        stop_price: float,
+        take_profit_price: float,
+    ) -> OrderResult:
+        """Place a bracket order (OTO: entry + stop-loss + take-profit)."""
+        from alpaca.trading.requests import TakeProfitRequest, StopLossRequest
+        from alpaca.trading.enums import OrderClass
+
+        order_data = LimitOrderRequest(
+            symbol=ticker,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY,
+            limit_price=round(limit_price, 2),
+            order_class=OrderClass.BRACKET,
+            take_profit=TakeProfitRequest(limit_price=round(take_profit_price, 2)),
+            stop_loss=StopLossRequest(stop_price=round(stop_price, 2)),
+        )
+        try:
+            order = self.client.submit_order(order_data)
+            order_id = str(order.id)
+            logger.info(
+                "Bracket order placed: %s %d shares limit=$%.2f stop=$%.2f tp=$%.2f (id=%s)",
+                ticker, qty, limit_price, stop_price, take_profit_price, order_id,
+            )
+            return OrderResult(order_id=order_id, status="accepted")
+        except APIError as e:
+            logger.error("Bracket order failed for %s: %s", ticker, e)
+            return OrderResult(status="failed", error=str(e))
+
+    # -----------------------------------------------------------------
+    # Position close
+    # -----------------------------------------------------------------
+
+    def close_position(self, ticker: str) -> OrderResult:
+        """Close an entire position using Alpaca's native close endpoint."""
+        try:
+            order = self.client.close_position(ticker)
+            order_id = str(order.id) if hasattr(order, "id") else ""
+            logger.info("Close position submitted for %s (id=%s)", ticker, order_id)
+            return OrderResult(order_id=order_id, status="accepted")
+        except APIError as e:
+            logger.error("Failed to close position %s: %s", ticker, e)
+            return OrderResult(status="failed", error=str(e))
+
+    def close_all_positions(self) -> List[OrderResult]:
+        """Emergency liquidation — close all positions."""
+        try:
+            responses = self.client.close_all_positions(cancel_orders=True)
+            results = []
+            for resp in responses:
+                if hasattr(resp, "body") and hasattr(resp.body, "id"):
+                    results.append(OrderResult(
+                        order_id=str(resp.body.id),
+                        status="accepted",
+                    ))
+                elif hasattr(resp, "id"):
+                    results.append(OrderResult(
+                        order_id=str(resp.id),
+                        status="accepted",
+                    ))
+                else:
+                    results.append(OrderResult(status="accepted"))
+            logger.info("Close-all submitted: %d positions", len(results))
+            return results
+        except APIError as e:
+            logger.error("Failed to close all positions: %s", e)
+            return [OrderResult(status="failed", error=str(e))]
+
+    # -----------------------------------------------------------------
+    # Asset info
+    # -----------------------------------------------------------------
+
+    def get_asset(self, ticker: str) -> Optional[AssetInfo]:
+        """Get asset metadata for pre-order checks."""
+        try:
+            asset = self.client.get_asset(ticker)
+            return AssetInfo(
+                ticker=asset.symbol,
+                tradable=bool(asset.tradable),
+                fractionable=bool(asset.fractionable),
+                shortable=bool(asset.shortable),
+                asset_class=str(asset.asset_class) if asset.asset_class else "",
+                exchange=str(asset.exchange) if asset.exchange else "",
+                status=str(asset.status) if asset.status else "",
+            )
+        except APIError as e:
+            logger.error("Failed to get asset %s: %s", ticker, e)
+            return None
+
+    # -----------------------------------------------------------------
+
+    def _place_market_order(
+        self, ticker: str, qty: int, side: OrderSide
+    ) -> OrderResult:
+        """Place a market order and wait for fill."""
+        order_data = MarketOrderRequest(
+            symbol=ticker,
+            qty=qty,
+            side=side,
+            time_in_force=TimeInForce.DAY,
+        )
+
+        try:
+            order = self.client.submit_order(order_data)
+        except APIError as e:
+            logger.error("Market order submission failed for %s: %s", ticker, e)
+            return OrderResult(status="failed", error=str(e))
+
+        order_id = str(order.id)
+        logger.info(
+            "Market %s order submitted: %s %d shares (id=%s)",
+            side.value, ticker, qty, order_id,
+        )
+
+        # Poll for fill
+        elapsed = 0.0
+        while elapsed < FILL_TIMEOUT:
+            time.sleep(FILL_POLL_INTERVAL)
+            elapsed += FILL_POLL_INTERVAL
+
+            try:
+                order = self.client.get_order_by_id(order_id)
+            except APIError:
+                continue
+
+            if order.status == OrderStatus.FILLED:
+                filled_price = float(order.filled_avg_price)
+                filled_qty = float(order.filled_qty)
+                logger.info(
+                    "Market order filled: %s %d x %s @ $%.2f",
+                    ticker, int(filled_qty), side.value, filled_price,
+                )
+                return OrderResult(
+                    order_id=order_id,
+                    filled_qty=filled_qty,
+                    filled_price=filled_price,
+                    status="filled",
+                )
+
+            if order.status in (
+                OrderStatus.CANCELED,
+                OrderStatus.EXPIRED,
+                OrderStatus.REJECTED,
+            ):
+                return OrderResult(
+                    order_id=order_id,
+                    status=order.status.value,
+                    error=f"Order {order.status.value}",
+                )
+
+        logger.warning("Market order %s timed out after %.0fs", order_id, FILL_TIMEOUT)
+        self.cancel_order(order_id)
+        return OrderResult(
+            order_id=order_id,
+            status="cancelled",
+            error=f"Fill timeout ({FILL_TIMEOUT:.0f}s)",
+        )
 
     def _place_order(
         self, ticker: str, qty: int, limit_price: float, side: OrderSide

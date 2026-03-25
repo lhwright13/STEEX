@@ -26,6 +26,29 @@ class AccountInfo:
 
 
 @dataclass
+class AssetInfo:
+    """Basic asset metadata for pre-order checks."""
+
+    ticker: str = ""
+    tradable: bool = False
+    fractionable: bool = False
+    shortable: bool = False
+    asset_class: str = ""
+    exchange: str = ""
+    status: str = ""
+
+
+@dataclass
+class AccountConfig:
+    """Broker account configuration flags."""
+
+    pdt_check: str = ""
+    trade_confirm_email: str = ""
+    no_shorting: bool = False
+    suspend_trade: bool = False
+
+
+@dataclass
 class BrokerPosition:
     """A position as reported by the broker."""
 
@@ -39,15 +62,37 @@ class BrokerPosition:
 class Broker(ABC):
     """Abstract broker interface."""
 
+    # -----------------------------------------------------------------
+    # Limit orders (original)
+    # -----------------------------------------------------------------
+
     @abstractmethod
     def buy(self, ticker: str, qty: int, limit_price: float) -> OrderResult:
-        """Place a buy order."""
+        """Place a limit buy order."""
         ...
 
     @abstractmethod
     def sell(self, ticker: str, qty: int, limit_price: float) -> OrderResult:
-        """Place a sell order."""
+        """Place a limit sell order."""
         ...
+
+    # -----------------------------------------------------------------
+    # Market orders
+    # -----------------------------------------------------------------
+
+    @abstractmethod
+    def buy_market(self, ticker: str, qty: int) -> OrderResult:
+        """Place a market buy order."""
+        ...
+
+    @abstractmethod
+    def sell_market(self, ticker: str, qty: int) -> OrderResult:
+        """Place a market sell order."""
+        ...
+
+    # -----------------------------------------------------------------
+    # Account & positions
+    # -----------------------------------------------------------------
 
     @abstractmethod
     def get_account(self) -> AccountInfo:
@@ -60,15 +105,50 @@ class Broker(ABC):
         ...
 
     @abstractmethod
+    def get_position(self, ticker: str) -> Optional[BrokerPosition]:
+        """Get a single position by ticker. Returns None if not held."""
+        ...
+
+    @abstractmethod
+    def get_account_config(self) -> AccountConfig:
+        """Get account configuration (PDT flag, shorting status, etc.)."""
+        ...
+
+    # -----------------------------------------------------------------
+    # Order management
+    # -----------------------------------------------------------------
+
+    @abstractmethod
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an order by ID. Returns True if cancelled."""
         ...
+
+    @abstractmethod
+    def get_order_history(
+        self,
+        status: Optional[str] = None,
+        after: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict]:
+        """Get historical orders. status: 'closed', 'all', etc."""
+        ...
+
+    # -----------------------------------------------------------------
+    # Stop orders
+    # -----------------------------------------------------------------
 
     @abstractmethod
     def place_stop_order(
         self, ticker: str, qty: int, stop_price: float
     ) -> OrderResult:
         """Place a GTC stop sell order as a server-side safety net."""
+        ...
+
+    @abstractmethod
+    def place_trailing_stop_order(
+        self, ticker: str, qty: int, trail_percent: float
+    ) -> OrderResult:
+        """Place a GTC trailing stop sell order."""
         ...
 
     @abstractmethod
@@ -92,6 +172,49 @@ class Broker(ABC):
     def get_all_stop_orders(self) -> List[Dict]:
         """List all open GTC stop orders for reconciliation."""
         ...
+
+    # -----------------------------------------------------------------
+    # Bracket orders
+    # -----------------------------------------------------------------
+
+    @abstractmethod
+    def place_bracket_order(
+        self,
+        ticker: str,
+        qty: int,
+        limit_price: float,
+        stop_price: float,
+        take_profit_price: float,
+    ) -> OrderResult:
+        """Place a bracket order (entry + stop-loss + take-profit)."""
+        ...
+
+    # -----------------------------------------------------------------
+    # Position close
+    # -----------------------------------------------------------------
+
+    @abstractmethod
+    def close_position(self, ticker: str) -> OrderResult:
+        """Close an entire position using Alpaca's native close endpoint."""
+        ...
+
+    @abstractmethod
+    def close_all_positions(self) -> List[OrderResult]:
+        """Emergency liquidation — close all positions."""
+        ...
+
+    # -----------------------------------------------------------------
+    # Asset info
+    # -----------------------------------------------------------------
+
+    @abstractmethod
+    def get_asset(self, ticker: str) -> Optional[AssetInfo]:
+        """Get asset metadata (tradability, fractionability, etc.)."""
+        ...
+
+    # -----------------------------------------------------------------
+    # Market clock and calendar
+    # -----------------------------------------------------------------
 
     @abstractmethod
     def get_clock(self) -> Dict:
