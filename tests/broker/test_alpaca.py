@@ -232,8 +232,16 @@ class TestSell:
 # A3: place_stop_order() tests
 # ---------------------------------------------------------------------------
 
+def _mock_position_above_stop(mock_client, current_price: float) -> None:
+    """Configure mock_client.get_open_position to return a position at current_price."""
+    pos = MagicMock()
+    pos.current_price = str(current_price)
+    mock_client.get_open_position.return_value = pos
+
+
 class TestPlaceStopOrder:
     def test_stop_order_accepted(self, broker, mock_client):
+        _mock_position_above_stop(mock_client, 145.00)  # price above stop
         order = _make_order(order_id="stop-001", status=OrderStatus.ACCEPTED)
         mock_client.submit_order.return_value = order
 
@@ -248,6 +256,7 @@ class TestPlaceStopOrder:
         assert call_args.stop_price == 135.00
 
     def test_stop_order_price_rounded(self, broker, mock_client):
+        _mock_position_above_stop(mock_client, 145.00)
         order = _make_order(order_id="stop-002", status=OrderStatus.ACCEPTED)
         mock_client.submit_order.return_value = order
 
@@ -257,6 +266,7 @@ class TestPlaceStopOrder:
         assert call_args.stop_price == 135.68
 
     def test_stop_order_api_error(self, broker, mock_client):
+        _mock_position_above_stop(mock_client, 145.00)
         mock_client.submit_order.side_effect = APIError({"message": "invalid stop"})
 
         result = broker.place_stop_order("AAPL", 10, 135.00)
@@ -266,12 +276,56 @@ class TestPlaceStopOrder:
 
     def test_stop_order_does_not_poll(self, broker, mock_client):
         """Stop orders are fire-and-forget — no fill polling."""
+        _mock_position_above_stop(mock_client, 145.00)
         order = _make_order(order_id="stop-003", status=OrderStatus.ACCEPTED)
         mock_client.submit_order.return_value = order
 
         broker.place_stop_order("AAPL", 10, 135.00)
 
         mock_client.get_order_by_id.assert_not_called()
+
+    def test_stop_order_falls_back_to_market_when_price_below_stop(self, broker, mock_client):
+        """When current price <= stop price, submit market sell immediately."""
+        # Price has already fallen below the intended stop level
+        _mock_position_above_stop(mock_client, 120.00)  # below stop of 135
+
+        market_order = _make_order(order_id="mkt-001", status=OrderStatus.NEW)
+        filled = _make_order(
+            order_id="mkt-001", status=OrderStatus.FILLED,
+            filled_avg_price=119.50, filled_qty=10,
+        )
+        mock_client.submit_order.return_value = market_order
+        mock_client.get_order_by_id.return_value = filled
+
+        with patch("src.broker.alpaca.time.sleep"):
+            result = broker.place_stop_order("AAPL", 10, 135.00)
+
+        assert result.status == "filled"
+        call_args = mock_client.submit_order.call_args[0][0]
+        # Should be a market order, not a stop order
+        from alpaca.trading.requests import MarketOrderRequest
+        assert isinstance(call_args, MarketOrderRequest)
+
+    def test_stop_order_falls_back_to_market_on_rejection(self, broker, mock_client):
+        """If Alpaca rejects stop due to price movement between check and submit, fall back."""
+        _mock_position_above_stop(mock_client, 145.00)  # price appeared OK
+
+        market_order = _make_order(order_id="mkt-002", status=OrderStatus.NEW)
+        filled = _make_order(
+            order_id="mkt-002", status=OrderStatus.FILLED,
+            filled_avg_price=134.50, filled_qty=10,
+        )
+        # First submit (stop order) is rejected, second (market) succeeds
+        mock_client.submit_order.side_effect = [
+            APIError({"message": "stop price must be below current price"}),
+            market_order,
+        ]
+        mock_client.get_order_by_id.return_value = filled
+
+        with patch("src.broker.alpaca.time.sleep"):
+            result = broker.place_stop_order("AAPL", 10, 135.00)
+
+        assert result.status == "filled"
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +335,7 @@ class TestPlaceStopOrder:
 class TestUpdateStopOrder:
     def test_cancel_and_replace(self, broker, mock_client):
         """Update cancels existing stop, then places a new one."""
+        _mock_position_above_stop(mock_client, 150.00)  # price above new stop of 140
         existing_stop = _make_order(
             order_id="old-stop",
             order_type=OrderType.STOP,
@@ -304,6 +359,7 @@ class TestUpdateStopOrder:
 
     def test_update_when_no_existing_stop(self, broker, mock_client):
         """If no existing stop, just places a new one."""
+        _mock_position_above_stop(mock_client, 150.00)  # price above new stop of 140
         mock_client.get_orders.return_value = []  # no stops found
         new_stop = _make_order(order_id="new-stop", status=OrderStatus.ACCEPTED)
         mock_client.submit_order.return_value = new_stop

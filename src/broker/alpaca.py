@@ -22,8 +22,9 @@ from .base import AccountConfig, AccountInfo, AssetInfo, Broker, BrokerPosition,
 
 logger = logging.getLogger(__name__)
 
-FILL_POLL_INTERVAL = 1.0  # seconds between fill checks
-FILL_TIMEOUT = 30.0  # max seconds to wait for fill
+FILL_POLL_INTERVAL = 2.0  # seconds between fill checks
+FILL_TIMEOUT = 300.0  # max seconds to wait for fill (5 min)
+SELL_LIMIT_FALLBACK_SECS = 60.0  # escalate sell limit to market after this many seconds
 
 
 class AlpacaBroker(Broker):
@@ -111,13 +112,35 @@ class AlpacaBroker(Broker):
     def place_stop_order(
         self, ticker: str, qty: int, stop_price: float
     ) -> OrderResult:
-        """Place a GTC stop sell order. Does not poll for fill."""
+        """Place a GTC stop sell order.
+
+        If the current market price is already at or below stop_price, Alpaca
+        would reject the stop order.  In that case we submit a market sell
+        immediately instead.
+        """
+        stop_price = round(stop_price, 2)
+
+        # Check current price to avoid a rejected stop order
+        try:
+            position = self.client.get_open_position(ticker)
+            current_price = float(position.current_price)
+        except APIError:
+            current_price = None
+
+        if current_price is not None and current_price <= stop_price:
+            logger.warning(
+                "Current price $%.2f is at or below stop $%.2f for %s — "
+                "submitting market sell instead of stop order",
+                current_price, stop_price, ticker,
+            )
+            return self._place_market_order(ticker, qty, OrderSide.SELL)
+
         order_data = StopOrderRequest(
             symbol=ticker,
             qty=qty,
             side=OrderSide.SELL,
             time_in_force=TimeInForce.GTC,
-            stop_price=round(stop_price, 2),
+            stop_price=stop_price,
         )
         try:
             order = self.client.submit_order(order_data)
@@ -131,8 +154,17 @@ class AlpacaBroker(Broker):
                 status="accepted",
             )
         except APIError as e:
+            error_str = str(e)
+            # If Alpaca still rejects it (e.g. price moved between check and submit),
+            # fall back to market sell
+            if "stop price must be below" in error_str.lower() or "invalid stop price" in error_str.lower():
+                logger.warning(
+                    "Stop order rejected for %s (%s) — falling back to market sell",
+                    ticker, error_str,
+                )
+                return self._place_market_order(ticker, qty, OrderSide.SELL)
             logger.error("Stop order failed for %s: %s", ticker, e)
-            return OrderResult(status="failed", error=str(e))
+            return OrderResult(status="failed", error=error_str)
 
     def cancel_stop_for_ticker(self, ticker: str) -> bool:
         """Cancel the active GTC stop order for a ticker."""
@@ -543,11 +575,31 @@ class AlpacaBroker(Broker):
             side.value, ticker, qty, side.value, limit_price, order_id,
         )
 
-        # Poll for fill
+        # Poll for fill; escalate sell limit -> market if it stalls
         elapsed = 0.0
+        escalated = False
         while elapsed < FILL_TIMEOUT:
             time.sleep(FILL_POLL_INTERVAL)
             elapsed += FILL_POLL_INTERVAL
+
+            # Escalate a stalled sell limit order to a market order
+            if (
+                not escalated
+                and side == OrderSide.SELL
+                and elapsed >= SELL_LIMIT_FALLBACK_SECS
+            ):
+                logger.warning(
+                    "Sell limit order %s for %s not filled after %.0fs — "
+                    "cancelling and re-submitting as market order",
+                    order_id, ticker, elapsed,
+                )
+                self.cancel_order(order_id)
+                escalated = True
+                market_result = self._place_market_order(ticker, qty, OrderSide.SELL)
+                logger.info(
+                    "Market sell escalation result for %s: %s", ticker, market_result.status
+                )
+                return market_result
 
             try:
                 order = self.client.get_order_by_id(order_id)
