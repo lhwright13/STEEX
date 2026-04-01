@@ -957,8 +957,8 @@ class QuantManager:
                     self.broker.cancel_stop_for_ticker(item["ticker"])
 
                 if self.broker:
-                    result = self.broker.sell(
-                        item["ticker"], position.shares, exit_price
+                    result = self.broker.sell_market(
+                        item["ticker"], position.shares
                     )
                     if result.status == "filled":
                         # Track execution quality

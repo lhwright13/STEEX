@@ -13,6 +13,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+@pytest.fixture(autouse=True)
+def reset_db_cache():
+    from src.data.base import DataProvider
+    original = DataProvider._db_cache
+    DataProvider._db_cache = None
+    yield
+    DataProvider._db_cache = original
+
+
 @pytest.fixture
 def sample_ohlcv_data():
     """Generate sample OHLCV data for testing."""

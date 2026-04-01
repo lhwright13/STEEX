@@ -59,6 +59,7 @@ class DBCache:
         # immediately raising "database is locked".
         conn.execute(f"PRAGMA busy_timeout={_SQLITE_TIMEOUT * 1000}")
         conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA wal_autocheckpoint=1000")
         return conn
 
     def _execute_with_retry(self, fn):
