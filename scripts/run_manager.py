@@ -27,6 +27,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
+# Disable yfinance's internal SQLite tz cache to avoid "unable to open database
+# file" errors when multiple threads hit ~/Library/Caches/py-yfinance/tkr-tz.db.
+# STEEX has its own L2 cache (data/cache.db) so this is redundant.
+import tempfile, yfinance as yf
+yf.set_tz_cache_location(tempfile.mkdtemp(prefix="yf_tz_"))
+
 from config.settings import get_settings
 from src.strategy.manager import QuantManager
 

@@ -196,7 +196,7 @@ class PriceProvider(DataProvider):
                     start=start,
                     end=end,
                     progress=False,
-                    threads=True,
+                    threads=False,
                     auto_adjust=False,
                 )
             else:
@@ -205,25 +205,24 @@ class PriceProvider(DataProvider):
                     uncached,
                     period=period,
                     progress=False,
-                    threads=True,
+                    threads=False,
                     auto_adjust=False,
                 )
 
-            if not data.empty:
-                # yfinance >= 1.2 always returns MultiIndex columns (Price, Ticker)
-                # Flatten by extracting each ticker via xs()
+            if data is not None and not data.empty:
                 for ticker in uncached:
                     try:
                         if isinstance(data.columns, pd.MultiIndex):
                             ticker_data = data.xs(ticker, axis=1, level=1)
                         else:
                             ticker_data = data
-                        if not ticker_data.empty:
+                        if ticker_data is not None and not ticker_data.empty:
+                            ticker_data = ticker_data.copy()
                             ticker_data.columns = [c.replace(" ", "_") for c in ticker_data.columns]
                             results[ticker] = ticker_data
                             cache_key = self._get_cache_key(ticker, start, end, days)
                             self._set_cache(cache_key, ticker_data)
-                    except (KeyError, ValueError):
+                    except (KeyError, ValueError, TypeError):
                         continue
 
         except Exception:

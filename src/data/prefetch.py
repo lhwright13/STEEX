@@ -1,13 +1,17 @@
-"""Async data prefetcher that warms caches before pipeline execution.
+"""Data prefetcher that warms caches before pipeline execution.
 
-Fetches all needed data using batch APIs and ThreadPoolExecutor,
-then stores results in the existing L1/L2 cache. When the pipeline
-runs, every provider call hits warm cache.
+Fetches all needed data sequentially in small batches, then stores
+results in the existing L1/L2 cache. When the pipeline runs, every
+provider call hits warm cache.
+
+NOTE: An earlier version used ThreadPoolExecutor for concurrent fetches.
+This caused DNS thread exhaustion, SQLite locking, and NoneType crashes
+at scale (500 tickers). Sequential fetching with threads=False is slower
+but actually works.
 """
 
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -66,20 +70,20 @@ class DataPrefetcher:
         self.universe = universe or Universe()
 
     def prefetch_all(self, tickers: List[str]) -> PrefetchReport:
-        """Run all prefetch jobs. Call before run_pipeline().
+        """Run all prefetch jobs sequentially. Call before run_pipeline().
 
-        Phases:
-        1. Price data (batch yf.download, then store per-ticker in cache)
-        2. Earnings calendar (threaded per-ticker)
-        3. Sentiment (threaded per-ticker, respecting rate limits)
-        4. Fundamentals (threaded per-ticker)
+        Phases (sequential to avoid thread/DNS exhaustion):
+        1. Price data (batch yf.download in small chunks, threads=False)
+        2. Earnings calendar (sequential per-ticker)
+        3. Sentiment (sequential per-ticker, respects rate limits)
+        4. Fundamentals (sequential per-ticker)
         """
         report = PrefetchReport()
         start = time.time()
 
         logger.info("Prefetching data for %d tickers", len(tickers))
 
-        # Phase 1: Prices (batch download, then cache per-ticker)
+        # Phase 1: Prices
         try:
             report.prices_fetched = self._prefetch_prices(
                 tickers, days=self.settings.prefetch_price_days
@@ -89,34 +93,29 @@ class DataPrefetcher:
             logger.error(msg)
             report.errors.append(msg)
 
-        # Phases 2-4 run concurrently via thread pools
-        # Each phase uses its own pool to respect different rate limits
-        futures = {}
+        # Phase 2: Earnings
+        try:
+            report.earnings_fetched = self._prefetch_earnings(tickers)
+        except Exception as e:
+            msg = f"Earnings prefetch failed: {e}"
+            logger.error(msg)
+            report.errors.append(msg)
 
-        with ThreadPoolExecutor(max_workers=3) as phase_pool:
-            futures["earnings"] = phase_pool.submit(
-                self._prefetch_earnings, tickers
-            )
-            futures["sentiment"] = phase_pool.submit(
-                self._prefetch_sentiment, tickers
-            )
-            futures["fundamentals"] = phase_pool.submit(
-                self._prefetch_fundamentals, tickers
-            )
+        # Phase 3: Sentiment
+        try:
+            report.sentiment_fetched = self._prefetch_sentiment(tickers)
+        except Exception as e:
+            msg = f"Sentiment prefetch failed: {e}"
+            logger.error(msg)
+            report.errors.append(msg)
 
-            for name, future in futures.items():
-                try:
-                    count = future.result()
-                    if name == "earnings":
-                        report.earnings_fetched = count
-                    elif name == "sentiment":
-                        report.sentiment_fetched = count
-                    elif name == "fundamentals":
-                        report.fundamentals_fetched = count
-                except Exception as e:
-                    msg = f"{name} prefetch failed: {e}"
-                    logger.error(msg)
-                    report.errors.append(msg)
+        # Phase 4: Fundamentals
+        try:
+            report.fundamentals_fetched = self._prefetch_fundamentals(tickers)
+        except Exception as e:
+            msg = f"Fundamentals prefetch failed: {e}"
+            logger.error(msg)
+            report.errors.append(msg)
 
         report.duration_seconds = round(time.time() - start, 1)
         logger.info(
@@ -132,17 +131,15 @@ class DataPrefetcher:
         return report
 
     def _prefetch_prices(self, tickers: List[str], days: int = 320) -> int:
-        """Batch-download price data via yf.download, then store per-ticker in cache.
+        """Batch-download price data via yf.download in small chunks.
 
-        A single yf.download call for 320 calendar days covers every downstream
-        lookback (5d, 21d, 126d, 200d, 320d). The batch result is split per-ticker
-        and stored using PriceProvider's cache so get_ohlcv() hits warm cache.
+        Uses threads=False to avoid DNS thread exhaustion. Batches of 20
+        tickers keep each yf.download call manageable.
         """
         if not tickers:
             return 0
 
-        # Use PriceProvider's batch method which now caches per-ticker results
-        batch_size = 100
+        batch_size = 20
         total_fetched = 0
 
         for i in range(0, len(tickers), batch_size):
@@ -156,97 +153,59 @@ class DataPrefetcher:
         return total_fetched
 
     def _prefetch_earnings(self, tickers: List[str]) -> int:
-        """Fetch earnings dates per-ticker using a thread pool.
-
-        Uses the configured number of workers (default 20).
-        Each call goes through EarningsCalendar which handles its own caching.
-        """
+        """Fetch earnings dates sequentially per-ticker."""
         if not tickers:
             return 0
 
         fetched = 0
-        max_workers = self.settings.prefetch_earnings_workers
-
-        def _fetch_one(ticker):
+        for ticker in tickers:
             try:
                 self.earnings_calendar.get_next_earnings(ticker)
-                return True
+                fetched += 1
             except Exception:
-                return False
-
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            results = pool.map(_fetch_one, tickers)
-            fetched = sum(1 for r in results if r)
+                continue
 
         return fetched
 
     def _prefetch_sentiment(self, tickers: List[str]) -> int:
-        """Fetch sentiment per-ticker using a thread pool.
+        """Fetch sentiment sequentially per-ticker.
 
-        Uses fewer workers (default 5) to respect Finnhub's 60 req/min rate limit.
         Skips tickers already in cache.
         """
         if not tickers or not self.settings.sentiment_enabled:
             return 0
 
         fetched = 0
-        max_workers = self.settings.prefetch_sentiment_workers
-
-        # Only prefetch tickers not already in cache
-        uncached = []
-        for t in tickers:
-            cache_key = f"sentiment:{t}"
-            if not self.sentiment_provider._is_cache_valid(cache_key):
-                uncached.append(t)
-
-        if not uncached:
-            return 0
-
-        def _fetch_one(ticker):
+        for ticker in tickers:
+            cache_key = f"sentiment:{ticker}"
+            if self.sentiment_provider._is_cache_valid(cache_key):
+                continue
             try:
                 self.sentiment_provider.get_sentiment(ticker)
-                return True
+                fetched += 1
             except Exception:
-                return False
-
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            results = pool.map(_fetch_one, uncached)
-            fetched = sum(1 for r in results if r)
+                continue
 
         return fetched
 
     def _prefetch_fundamentals(self, tickers: List[str]) -> int:
-        """Fetch fundamental data per-ticker using a thread pool.
+        """Fetch fundamental data sequentially per-ticker.
 
-        Uses the configured number of workers (default 10).
         Skips tickers already in cache.
         """
         if not tickers or not self.settings.fundamental_enabled:
             return 0
 
         fetched = 0
-        max_workers = self.settings.prefetch_fundamentals_workers
-
-        # Only prefetch tickers not already in cache
-        uncached = []
-        for t in tickers:
-            cache_key = f"fundamentals:{t}"
-            if not self.fundamentals_provider._is_cache_valid(cache_key):
-                uncached.append(t)
-
-        if not uncached:
-            return 0
-
-        def _fetch_one(ticker):
+        for ticker in tickers:
+            cache_key = f"fundamentals:{ticker}"
+            if self.fundamentals_provider._is_cache_valid(cache_key):
+                continue
             try:
                 self.fundamentals_provider.get_fundamentals(ticker)
-                return True
+                fetched += 1
             except Exception:
-                return False
-
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            results = pool.map(_fetch_one, uncached)
-            fetched = sum(1 for r in results if r)
+                continue
 
         return fetched
 
