@@ -1,3 +1,6 @@
+import os
+import secrets
+
 from flask import Flask
 from markupsafe import Markup
 from pathlib import Path
@@ -64,7 +67,7 @@ def create_app():
         template_folder=str(Path(__file__).parent / "templates"),
         static_folder=str(Path(__file__).parent / "static"),
     )
-    app.config["SECRET_KEY"] = "steex-dashboard-dev"
+    app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 
     app.jinja_env.filters["duration"] = _duration_human
     app.jinja_env.filters["ts"] = _ts_short

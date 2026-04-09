@@ -196,3 +196,6 @@ scheduler/locks/
 # Backtest results
 backtest_results/
 results/
+
+# Claude Code
+.claude/

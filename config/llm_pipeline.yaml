@@ -1,0 +1,73 @@
+# STEEX LLM Training Pipeline Configuration
+# Chains across free GPU platforms for near-continuous fine-tuning
+
+hub:
+  model_repo: "YOUR_USERNAME/steex-lfm2-market"      # LoRA checkpoints
+  dataset_repo: "YOUR_USERNAME/steex-training-data"   # Training data
+  private: true
+
+training:
+  model_name: "LiquidAI/LFM2.5-1.2B-Base"
+  total_epochs: 5
+  target_steps: 3000            # Approximate total steps across all sessions
+  save_steps: 25                # Frequent saves for crash resilience
+  learning_rate: 2e-4           # Initial LR for first epoch
+  continued_learning_rate: 1e-4 # LR for resumed training
+  lora_r: 16
+  lora_alpha: 32
+  max_seq_length: 4096
+
+platforms:
+  modal:
+    enabled: true
+    gpu: "A100"
+    monthly_budget: 30          # $30 free credits
+    max_session_hours: 4
+    priority: 1                 # Use first (best GPU for hard gradients)
+    phase: "early"
+
+  colab:
+    enabled: true
+    gpu: "T4"
+    weekly_hours: 25            # Conservative for free tier
+    max_session_hours: 6
+    priority: 2
+    phase: "any"
+
+  kaggle:
+    enabled: true
+    gpu: "T4"
+    weekly_hours: 30
+    max_session_hours: 9
+    priority: 3
+    phase: "any"
+
+  sagemaker:
+    enabled: true
+    gpu: "T4"
+    daily_hours: 4
+    max_session_hours: 4
+    priority: 4
+    phase: "late"
+
+  lightning:
+    enabled: true
+    gpu: "A10G"
+    monthly_hours: 22
+    max_session_hours: 4
+    priority: 5
+    phase: "late"
+
+validation:
+  max_loss_spike: 0.50          # 50% spike = reject checkpoint
+  convergence_window: 10        # Checkpoints to check
+  convergence_threshold: 0.01   # <1% improvement = converged
+
+export:
+  quantization: "q4_k_m"
+  ollama_model_name: "steex-market"
+  auto_export_on_convergence: true
+
+orchestrator:
+  poll_interval_minutes: 15
+  notify_method: "macos"

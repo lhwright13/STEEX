@@ -1,267 +1,244 @@
 # STEEX
 
-Safe Trading Environment for Experimental Xyz
+**Systematic Trading with Execution and Exit Excellence**
 
-An agent-based automated trading system that screens S&P 500 stocks using momentum, insider trading, sentiment, fundamentals, and options signals, then executes trades through Alpaca Markets.
+An automated trading system that screens the S&P 500 daily for momentum-driven entries, manages positions with adaptive trailing stops, and continuously optimizes its own parameters through a self-learning loop. Executes through Alpaca Markets with server-side crash protection, and optionally delegates decisions to Claude AI agents backed by a fine-tuned local LLM.
+
+> For the full strategy breakdown with code references, see [STRATEGY.md](STRATEGY.md).
+
+---
 
 ## Architecture
 
 STEEX supports two execution modes:
 
-**Deterministic mode** (default) - QuantManager calls pipeline stages directly in Python. Fast, predictable, no external dependencies beyond market data APIs.
+**Deterministic mode** (default) -- QuantManager runs a 5-stage screening pipeline, composite ranking, regime-aware position sizing, and adaptive trailing stops. Fast, predictable, no external dependencies beyond market data APIs.
 
-**Agent mode** (`--agent` flag) - An Orchestrator launches Claude AI sub-agents via the claude CLI. Each agent reasons independently with access to trading tools via an MCP server, then a ManagerAgent synthesizes their conclusions into a final decision. Falls back to deterministic mode on failure.
+**Agent mode** (`--agent` flag) -- An Orchestrator launches Claude AI sub-agents via the claude CLI. Each agent reasons independently with access to trading tools via an MCP server, then a ManagerAgent synthesizes their conclusions into a final decision. Falls back to deterministic mode on failure.
 
 ```
 Deterministic:                     Agent Mode:
 QuantManager                       Orchestrator (registry-driven)
     |                                  |
-    +-- screening pipeline             +-- DataAgent (claude CLI + MCP tools)
-    +-- ranking                        +-- RiskAgent (claude CLI + MCP tools)
-    +-- risk/stops                     +-- AnalysisAgent (claude CLI + MCP tools)
-    +-- execution                      +-- ManagerAgent (no tools, synthesizes)
-    +-- reporting                      +-- ExecutionAgent (claude CLI + MCP tools)
-                                       +-- ResearchAgent (claude CLI + MCP tools)
-                                       +-- ReportAgent (claude CLI + MCP tools)
+    +-- 5-stage screening              +-- DataAgent (claude CLI + MCP tools)
+    +-- composite ranking              +-- RiskAgent (claude CLI + MCP tools)
+    +-- regime detection               +-- AnalysisAgent (claude CLI + MCP tools)
+    +-- risk / trailing stops          +-- ManagerAgent (synthesizes conclusions)
+    +-- execution via Alpaca           +-- ExecutionAgent (claude CLI + MCP tools)
+    +-- reporting                      +-- ReportAgent (claude CLI + MCP tools)
 ```
 
-Agent definitions and mode sequences live in `config/agents.yaml`. Adding a new agent requires no code changes to the orchestrator - just a config entry, prompt file, and Pydantic conclusion model.
+Agent definitions live in `config/agents.yaml` -- adding a new agent requires no code changes to the orchestrator.
 
-Each agent is documented in `agents/claude_*.md`.
+---
+
+## Daily Schedule
+
+The system breaks the trading day into discrete phases, each run via cron:
+
+| Time (ET) | Mode | What It Does |
+|-----------|------|-------------|
+| 7:00 AM | **Heartbeat** | Health check: API connectivity, broker sync, market calendar |
+| 8:15 AM | **Screen** | 5-stage pipeline filters S&P 500 down to 2-5 ranked candidates |
+| 9:45 AM | **Enter** | Executes buy orders after the opening auction settles |
+| 11:00 AM | **Monitor** | Midday risk check: trailing stops, VIX spikes, exit signals |
+| 1:30 PM | **Monitor** | Afternoon risk check (same logic, fresh prices) |
+| 3:45 PM | **Stop Sync** | Updates trailing stops and syncs server-side GTC stops to Alpaca |
+| 4:30 PM | **Post-Market** | End-of-day exits, post-mortem analysis, daily report |
+| 6:00 PM Fri | **Learning** | Weekly self-optimization: decay analysis, weight tuning, OOS validation |
+
+All modes are gated by the Alpaca market calendar -- no runs on holidays, no entries when the market is closed. Server-side GTC stops on Alpaca protect positions even if the host machine sleeps or crashes.
+
+---
+
+## Screening Pipeline
+
+```
+S&P 500 (~503 stocks)
+    |  Stage 1: Universe filter (price > $5, volume > 500K, no earnings within 5 days)
+    v
+  ~400
+    |  Stage 2: Momentum (6M return > 5%, 1M > 0%, above 50-day MA)
+    v
+  ~100
+    |  Stage 3: Insider enrichment (SEC Form 4 cluster buy scoring)
+    v
+  ~100 (soft scoring, no filtering)
+    |  Stage 4: Sentiment (Finnhub + VADER NLP + GDELT geopolitical, min 30/100)
+    v
+   ~60
+    |  Stage 5: Fundamentals (P/E < 50, ROE > 5%, debt/equity < 2.0)
+    v
+   ~10 candidates -> Composite ranking -> Top 2 entries
+```
+
+### Scoring Weights
+
+| Factor | Weight | Source |
+|--------|--------|--------|
+| Momentum | 30% | 6-month return percentile |
+| Insider | 25% | SEC Form 4 cluster buy score |
+| Volume | 15% | Volume surge percentile |
+| Sentiment | 15% | Combined stock + geopolitical NLP |
+| Fundamental | 10% | P/E, ROE, debt/equity composite |
+| Options | 5% | Put/call ratio, IV rank |
+
+---
+
+## Risk Management
+
+### Regime Detection
+
+A 4-factor model governs position sizing and entry permission:
+
+| Factor | Weight | Source |
+|--------|--------|--------|
+| VIX | 40% | CBOE VIX index |
+| Yield Curve | 20% | 10Y-2Y Treasury spread |
+| Market Breadth | 20% | % of S&P 500 above 200-day MA |
+| Dollar Strength | 20% | DXY trend direction |
+
+| Regime | Sizing | Entries |
+|--------|--------|---------|
+| Risk On (score < 40) | 1.0x | Yes |
+| Cautious (40-60) | 0.5x | Yes |
+| Risk Off (60-80) | 0.25x | Yes |
+| Crisis (>= 80) | 0.0x | No |
+
+### Exit Rules
+
+| Condition | Urgency | Default |
+|-----------|---------|---------|
+| Stop loss | Immediate | -10% from entry |
+| Trailing stop | Immediate | -12% to -15% from high (tiered by gain) |
+| VIX spike (> 40) | Immediate | Exit 50% of positions |
+| Below 50-day MA | End of day | Auto-exit at post_market |
+| Max hold time | Next session | 30 trading days |
+
+### Position Limits
+
+| Limit | Value |
+|-------|-------|
+| Position size | 3-6% (ATR volatility-adjusted) |
+| Max positions | 10 concurrent |
+| Max single position | 20% of portfolio |
+| Max sector exposure | 30% of portfolio |
+
+---
+
+## Self-Learning Loop
+
+A weekly optimization cycle (Fridays 6:00 PM ET) that:
+
+1. **Post-mortem** -- analyzes recent trades, categorizes losses (whipsaw, dead money, gap down)
+2. **Alpha decay** -- monitors signal health, detects degrading factors
+3. **Signal research** -- tests factor importance, proposes optimized weights
+4. **OOS validation** -- 2-fold walk-forward backtest (requires Sharpe > 0, win rate > 50%)
+5. **Apply** -- writes validated changes to config with safety bounds (max 10% change/cycle, auto-normalized to sum to 1.0)
+6. **Gap flagging** -- flags unresolvable issues for human review
+
+Changes are never applied during market hours. Full audit trail in `data/learning/`.
+
+---
 
 ## Data Sources
 
 | Data | Source | Purpose |
 |------|--------|---------|
 | Prices / OHLCV | Yahoo Finance | Screening, P&L, indicators |
-| Insider trades (Form 4) | SEC EDGAR | Core buy signal |
-| VIX | Yahoo Finance | Regime detection, risk management |
-| Sentiment | Finnhub + VADER NLP | Stock-specific and macro sentiment |
-| Fundamentals | Yahoo Finance | P/E, ROE, debt/equity quality filter |
-| Options flow | Yahoo Finance | Put/call ratio, IV rank signal |
-| Geopolitical | GDELT Project | Macro/sector sentiment impact |
-| S&P 500 list | Wikipedia | Universe definition |
-| Execution + Positions | Alpaca Markets | Source of truth for holdings and orders |
+| Insider Trades (Form 4) | SEC EDGAR | Core buy signal |
+| VIX | Yahoo Finance | Regime detection, risk |
+| Sentiment | Finnhub + VADER NLP | Stock-specific sentiment |
+| Geopolitical | GDELT Project | Macro/sector sentiment |
+| Fundamentals | Yahoo Finance | P/E, ROE, debt/equity quality |
+| Options Flow | Yahoo Finance | Put/call ratio, IV rank |
+| Earnings Calendar | Yahoo Finance | Blackout avoidance |
+| Execution + Holdings | Alpaca Markets | Source of truth |
+
+---
 
 ## Quick Start
 
+### Prerequisites
+
+- Python 3.10+
+- macOS (for cron scheduler; pipeline works on any OS)
+- Alpaca Markets account (paper trading is free)
+- Claude Code CLI (optional, for `--agent` mode only)
+
+### Setup
+
 ```bash
-# Create and activate virtual environment
 python -m venv venv
 source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 pip install -e .
 
-# Set Alpaca API keys (required)
+# Required: Alpaca API keys
 export ALPACA_API_KEY="your-key"
 export ALPACA_SECRET_KEY="your-secret"
 
-# Dry run to preview what the system would do
-python scripts/run_manager.py pre_market --paper --dry-run
+# Optional: sentiment API keys
+export FINNHUB_API_KEY="your-key"
+export ALPHA_VANTAGE_API_KEY="your-key"
+```
+
+### Running
+
+```bash
+# Preview what the system would do (no orders)
+venv/bin/python scripts/run_manager.py screen --paper --dry-run
 
 # Paper trading with confirmation prompts
-python scripts/run_manager.py pre_market --paper
+venv/bin/python scripts/run_manager.py screen --paper
+venv/bin/python scripts/run_manager.py enter --paper
 
-# Auto-confirm all entries
-python scripts/run_manager.py pre_market --paper --yes
+# Auto-confirm entries
+venv/bin/python scripts/run_manager.py enter --paper --yes
 
-# Agent mode (requires claude CLI installed)
-python scripts/run_manager.py screen --paper --agent
-python scripts/run_manager.py screen --paper --dry-run --agent
+# Agent mode (requires claude CLI)
+venv/bin/python scripts/run_manager.py screen --paper --agent
 ```
 
-## Pipeline Modes
+### Pipeline Modes
 
-| Mode | Command | What It Does |
+| Mode | Command | Description |
 |------|---------|-------------|
-| screen | `python scripts/run_manager.py screen` | Pre-open: data refresh, screening, ranking (saves results, NO entries) |
-| enter | `python scripts/run_manager.py enter` | Post-open: load screen results, execute entries, place server-side stops |
-| monitor | `python scripts/run_manager.py monitor` | Midday risk check: stops, VIX, exits only |
-| stop_sync | `python scripts/run_manager.py stop_sync` | Pre-close: update trailing stops, sync server-side stops on Alpaca |
-| post_market | `python scripts/run_manager.py post_market` | EOD wrap-up: final exits, post-mortem, daily report |
-| learning | `python scripts/run_manager.py learning` | Self-learning loop: signal research, parameter optimization |
-| pre_market | `python scripts/run_manager.py pre_market` | Legacy combined mode (screen + enter in one pass) |
-| train | `python scripts/run_manager.py train` | PySR symbolic regression walk-forward training |
+| `screen` | `run_manager.py screen` | Pre-open: data refresh, 5-stage screening, ranking |
+| `enter` | `run_manager.py enter` | Post-open: load screen results, execute entries, place stops |
+| `monitor` | `run_manager.py monitor` | Midday: risk check, trailing stops, exit signals |
+| `stop_sync` | `run_manager.py stop_sync` | Pre-close: sync trailing stops to Alpaca GTC orders |
+| `post_market` | `run_manager.py post_market` | EOD: final exits, post-mortem, daily report |
+| `learning` | `run_learning.py` | Weekly: signal research, parameter optimization |
 
-## Screening Pipeline
+| Flag | Description |
+|------|-------------|
+| `--paper` | Paper trading via Alpaca |
+| `--live` | Real money via Alpaca |
+| `--dry-run` | Preview only, no orders |
+| `--yes` | Auto-confirm entries |
+| `--agent` | Use Claude AI agents instead of deterministic pipeline |
 
-```
-S&P 500 (~503 stocks)
-    |  Stage 1: Universe filter (price > $5, volume > 500K, no earnings blackout)
-    v
-  ~480
-    |  Stage 2: Momentum (6M return > 15%, 1M > 5%, above 50/200 MA)
-    v
-  ~100
-    |  Stage 3: Insider enrichment (SEC Form 4 cluster buys)
-    v
-   ~20
-    |  Stage 4: Sentiment (Finnhub + VADER NLP + geopolitical)
-    v
-   ~15
-    |  Stage 5: Fundamentals (P/E < 50, ROE > 5%, debt/equity < 2)
-    v
-   ~8 candidates -> Composite scoring -> Top 2 entries
-```
-
-## Scoring Weights
-
-| Factor | Weight | Source |
-|--------|--------|--------|
-| Momentum | 30% | 6-month return percentile |
-| Insider | 25% | Cluster buy score from SEC Form 4 |
-| Volume | 15% | Volume surge percentile |
-| Sentiment | 15% | Finnhub + VADER + geopolitical |
-| Fundamental | 10% | P/E, ROE, debt/equity composite |
-| Options | 5% | Put/call ratio signal |
-
-PySR symbolic regression adds a 10% bonus weight when a trained model is available (disabled by default).
-
-## Position Management
-
-| Parameter | Value |
-|-----------|-------|
-| Position size | 3-6% (volatility-adjusted via ATR) |
-| Max positions | 10 |
-| Max single position | 20% |
-| Max sector exposure | 30% |
-| Min cash reserve | 10% |
-| Daily entries | 2 max |
-
-## Exit Rules
-
-| Condition | Urgency | Default |
-|-----------|---------|---------|
-| Stop loss | Immediate | -10% from entry |
-| Trailing stop | Immediate | -12%/-15%/-15% from high (at +10%/+20%/+30%) |
-| VIX spike (>40) | Immediate | Exit 50% of positions |
-| Below 50-day MA | End of day | Auto-exit at post_market |
-| Max hold time | Next session | 30 trading days |
-| VIX elevated (>30) | Ongoing | Tighten stops to 5% |
-
-## Broker Integration
-
-Alpaca Markets is the **source of truth** for all holdings and account data. On every pipeline run:
-
-1. Positions sync from Alpaca (local-only positions are removed, broker-only positions are added)
-2. Portfolio value and cash come from `broker.get_account()`, not config
-3. Orders execute through Alpaca as DAY limit orders
-4. If broker init fails, the pipeline halts (no silent simulation fallback)
-5. Every entry gets a GTC stop sell order on Alpaca as a crash-proof safety net
-6. If a server-side stop fills while the system is offline, the next broker sync detects it and records the trade
-7. Market calendar gating via `get_clock()`/`get_calendar()` prevents runs on holidays
-
-## Automated Scheduling
-
-The `scheduler/` directory provides cron-based automation that runs Python scripts directly. A market calendar gate (`scripts/market_gate.py`) skips runs on holidays and ensures modes that need the market open only run during trading hours.
-
-| Mode | Schedule (ET) | Description |
-|------|--------------|-------------|
-| heartbeat | 7:00 AM weekdays | API health, account check, stop reconciliation |
-| screen | 8:15 AM weekdays | Data refresh, screening, ranking (no entries) |
-| enter | 9:45 AM weekdays | Load screen results, execute entries, place stops |
-| monitor | 11:00 AM weekdays | Risk check, stops, exits |
-| monitor | 1:30 PM weekdays | Risk check, stops, exits |
-| stop_sync | 3:45 PM weekdays | Update trailing stops, sync server-side stops |
-| post_market | 4:30 PM weekdays | EOD wrap-up, post-mortem, report |
-| learning | 6:00 PM Fridays | Weekly parameter optimization |
-| heartbeat | 10:00 AM Sundays | Weekend health check |
+### Scheduler
 
 ```bash
 scheduler/install.sh          # Install cron schedule
 scheduler/install.sh --show   # Preview cron entries
 scheduler/uninstall.sh        # Remove cron schedule
-scheduler/run.sh screen       # Manual run
+scheduler/run.sh screen       # Manual run of a specific mode
 ```
 
-See `scheduler/README.md` for details.
+### Tests
 
-## Project Structure
+```bash
+venv/bin/python -m pytest tests/
+```
 
-```
-STEEX/
-  agents/                      # Agent role documentation
-    claude_manager.md          # Orchestrator - sequences all agents
-    claude_data_agent.md       # Data fetching and validation
-    claude_analysis_agent.md   # Screening and ranking pipeline
-    claude_risk_agent.md       # Risk monitoring, stops, VIX, drawdown
-    claude_execution_agent.md  # Trade entry/exit execution via Alpaca
-    claude_report_agent.md     # Report compilation and logging
-  config/
-    config.yaml                # All tunable parameters
-    settings.py                # Pydantic settings with YAML + env override
-    agents.yaml                # Agent definitions and mode sequences (registry)
-  src/
-    strategy/
-      manager.py               # QuantManager - deterministic orchestrator
-      screener.py              # 5-stage screening pipeline
-      ranking.py               # Composite scoring and ranking
-      signals.py               # Exit signal generator
-    agents/
-      orchestrator.py          # Agent mode orchestrator (registry-driven)
-      mcp_server.py            # MCP server exposing QuantManager tools
-      registry.py              # Config-driven agent/mode loader
-      conclusions.py           # Pydantic models for agent output
-      trace.py                 # Audit trail (AgentTrace, AgentSession)
-      evolution.py             # Prompt self-improvement system
-      prompts/                 # System prompts for each agent role
-    broker/
-      base.py                  # Abstract broker interface
-      alpaca.py                # Alpaca Markets implementation
-    data/
-      price.py                 # Yahoo Finance price/OHLCV
-      vix.py                   # VIX data provider
-      sentiment.py             # Finnhub + VADER sentiment
-      fundamentals.py          # Yahoo Finance fundamentals
-      options.py               # Yahoo Finance options data
-      geopolitical.py          # GDELT geopolitical sentiment
-      universe.py              # S&P 500 universe
-      calendar.py              # Earnings calendar
-      base.py                  # DataProvider ABC with cache
-      cache.py                 # SQLite persistent cache (L2)
-    portfolio/
-      positions.py             # Position tracking (synced from broker)
-      tracker.py               # Trade history with strategy metadata
-      risk.py                  # Risk manager (stops, drawdown, sectors)
-    sec/
-      client.py                # SEC EDGAR API client
-      scanners/insider.py      # Form 4 insider scanner
-    indicators/
-      momentum.py              # Momentum calculations
-      technical.py             # MA, ATR, trend alignment
-    ml/
-      trainer.py               # PySR walk-forward training
-      predictor.py             # PySR model inference
-      features.py              # Feature engineering
-      dataset.py               # Training dataset builder
-    learning/
-      journal.py               # Learning loop knowledge persistence
-    backtest/                  # Historical backtesting engine
-  scripts/
-    run_manager.py             # CLI entry point (deterministic + --agent mode)
-    market_gate.py             # Market calendar gate (skips holidays/closed)
-    health_check.py            # Heartbeat / health check
-    run_learning.py            # Learning loop CLI
-  scheduler/
-    config.yaml                # Scheduler settings
-    run.sh                     # Main entry - parses config, market gate, runs pipeline
-    install.sh                 # Install cron schedule (dynamic mode discovery)
-    uninstall.sh               # Remove cron schedule
-  dashboard/                   # Web dashboard
-  data/
-    reports/                   # Daily report JSONs
-    agents/sessions/           # Agent trace logs (auto-pruned after 30 days)
-    agents/prompts/            # Disk prompt overrides (evolved by agents)
-    agents/recommendations.json # Agent self-improvement suggestions
-    learning/                  # Learning loop journals and gaps
-    cache.db                   # SQLite persistent cache
-```
+---
 
 ## Configuration
 
-All parameters are in `config/config.yaml` with environment variable overrides (prefix `STEEX_`):
+All parameters live in `config/config.yaml` with Pydantic validation in `config/settings.py`. Any setting can be overridden with the `STEEX_` prefix:
 
 ```bash
 export STEEX_INITIAL_STOP_PCT=0.08
@@ -270,15 +247,95 @@ export STEEX_MAX_POSITIONS=15
 
 Priority: init settings > environment variables > YAML config > defaults.
 
-API keys are environment variables only - never in config files:
-- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` (required)
-- `FINNHUB_API_KEY` (optional, for sentiment)
-- `ALPHA_VANTAGE_API_KEY` (optional, sentiment fallback)
+API keys are environment variables only -- never in config files.
 
-## Requirements
+---
 
-- Python 3.10+
-- macOS (for cron scheduler; pipeline works on any OS)
-- Alpaca Markets paper trading account
-- Internet connection for market data APIs
-- Claude Code CLI (optional, for `--agent` mode only)
+## Project Structure
+
+```
+STEEX/
+  config/
+    config.yaml              # All tunable parameters
+    settings.py              # Pydantic settings with YAML + env override
+    agents.yaml              # Agent definitions and mode sequences
+  src/
+    strategy/
+      manager.py             # QuantManager - deterministic orchestrator
+      screener.py            # 5-stage screening pipeline
+      ranking.py             # Composite scoring and ranking
+      signals.py             # Exit signal generator
+    agents/
+      orchestrator.py        # Agent mode orchestrator (registry-driven)
+      mcp_server.py          # FastMCP server exposing ~20 QuantManager tools
+      registry.py            # Config-driven agent/mode loader
+      conclusions.py         # Pydantic models for structured agent output
+      evolution.py           # Prompt self-improvement with safety constraints
+    broker/
+      alpaca.py              # Alpaca Markets implementation
+    data/
+      price.py               # Yahoo Finance OHLCV
+      sentiment.py           # Finnhub + VADER NLP sentiment
+      fundamentals.py        # Yahoo Finance fundamentals
+      options.py             # Options chain analysis
+      geopolitical.py        # GDELT geopolitical sentiment
+      universe.py            # S&P 500 universe
+    portfolio/
+      construction.py        # Correlation constraints, risk-parity weighting
+      risk.py                # Trailing stops, drawdown, VIX exits
+    regime/
+      detector.py            # Multi-factor regime detection
+    sec/
+      scanners/insider.py    # SEC EDGAR Form 4 scanner
+    learning/
+      loop.py                # Self-learning orchestrator
+      config_writer.py       # Safe config updates with audit trail
+    backtest/
+      walkforward.py         # Walk-forward backtesting (no lookahead bias)
+      engine.py              # Backtest simulation engine
+    llm/
+      pipeline.py            # LLM training pipeline controller
+      train.py               # LoRA fine-tuning with Unsloth
+      inference.py           # Local inference (Ollama, llama.cpp, MLX)
+      hub_relay.py           # HF Hub checkpoint relay
+  scripts/
+    run_manager.py           # CLI entry point
+    run_learning.py          # Learning loop CLI
+    health_check.py          # Heartbeat health check
+    build_llm_dataset.py     # Build LLM training data from STEEX data
+    run_training_pipeline.py # LLM training pipeline CLI
+  scheduler/
+    config.yaml              # Cron schedule settings
+    run.sh                   # Entry point with market gating
+    install.sh / uninstall.sh
+  dashboard/                 # Flask web dashboard
+  notebooks/                 # Training notebooks (Colab, Kaggle)
+  tests/                     # 376+ tests
+  STRATEGY.md                # Full strategy document with code references
+  TODO.md                    # Development roadmap
+```
+
+---
+
+## Troubleshooting
+
+### "Broker is required but failed to initialize"
+Alpaca API keys are not set. Add `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` to your shell profile.
+
+### "No candidates found"
+Normal -- the strategy is selective. Check if the market is in "crisis" regime (VIX > 35 blocks entries). Run with `--dry-run` to see the screening funnel.
+
+### "Fill timeout" on broker orders
+The market is closed. Alpaca DAY limit orders need the market open to fill (9:30 AM - 4:00 PM ET).
+
+### Cron not firing
+Mac was likely asleep. Keep it awake during market hours. Check Full Disk Access for `/usr/sbin/cron` in System Settings. Verify with `crontab -l`.
+
+### Stale local positions
+The broker sync at the start of each run auto-corrects -- removing local-only positions and adding broker-only ones. Alpaca is always the source of truth.
+
+---
+
+## Disclaimer
+
+This project is for educational and research purposes. Past performance of similar strategies does not guarantee future results. All trading involves risk of loss. Always paper trade before committing real capital.
