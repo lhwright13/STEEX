@@ -309,10 +309,8 @@ STEEX/
     run.sh                   # Entry point with market gating
     install.sh / uninstall.sh
   dashboard/                 # Flask web dashboard
-  notebooks/                 # Training notebooks (Colab, Kaggle)
   tests/                     # 376+ tests
   STRATEGY.md                # Full strategy document with code references
-  TODO.md                    # Development roadmap
 ```
 
 ---
@@ -339,3 +337,9 @@ The broker sync at the start of each run auto-corrects -- removing local-only po
 ## Disclaimer
 
 This project is for educational and research purposes. Past performance of similar strategies does not guarantee future results. All trading involves risk of loss. Always paper trade before committing real capital.
+
+---
+
+## License
+
+Released under the MIT License. See [LICENSE](LICENSE) for full terms, including the trading and financial disclaimer. The authors accept no liability for any losses, damages, or consequences resulting from use of this software.
