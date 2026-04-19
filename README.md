@@ -2,7 +2,7 @@
 
 **Systematic Trading with Execution and Exit Excellence**
 
-An automated trading system that screens the S&P 500 daily for momentum-driven entries, manages positions with adaptive trailing stops, and continuously optimizes its own parameters through a self-learning loop. Executes through Alpaca Markets with server-side crash protection, and optionally delegates decisions to Claude AI agents backed by a fine-tuned local LLM.
+An automated trading system that screens the S&P 500 daily for momentum-driven entries, manages positions with adaptive trailing stops, and continuously optimizes its own parameters through a self-learning loop. Executes through Alpaca Markets with server-side crash protection, and optionally delegates decisions to Claude AI agents via the Claude CLI.
 
 > For the full strategy breakdown with code references, see [STRATEGY.md](STRATEGY.md).
 
@@ -293,17 +293,10 @@ STEEX/
     backtest/
       walkforward.py         # Walk-forward backtesting (no lookahead bias)
       engine.py              # Backtest simulation engine
-    llm/
-      pipeline.py            # LLM training pipeline controller
-      train.py               # LoRA fine-tuning with Unsloth
-      inference.py           # Local inference (Ollama, llama.cpp, MLX)
-      hub_relay.py           # HF Hub checkpoint relay
   scripts/
     run_manager.py           # CLI entry point
     run_learning.py          # Learning loop CLI
     health_check.py          # Heartbeat health check
-    build_llm_dataset.py     # Build LLM training data from STEEX data
-    run_training_pipeline.py # LLM training pipeline CLI
   scheduler/
     config.yaml              # Cron schedule settings
     run.sh                   # Entry point with market gating

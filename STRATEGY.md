@@ -2,7 +2,7 @@
 
 **Systematic Trading with Execution and Exit Excellence**
 
-A fully automated, multi-agent trading system that screens the S&P 500 daily for momentum-driven entries, manages positions with adaptive trailing stops, and continuously optimizes its own parameters through a self-learning loop. The system runs on a Mac via cron, executes through Alpaca, and optionally delegates decisions to Claude AI agents backed by a fine-tuned local LLM.
+A fully automated, multi-agent trading system that screens the S&P 500 daily for momentum-driven entries, manages positions with adaptive trailing stops, and continuously optimizes its own parameters through a self-learning loop. The system runs on a Mac via cron, executes through Alpaca, and optionally delegates decisions to Claude AI agents via the Claude CLI.
 
 ---
 
@@ -78,9 +78,8 @@ Every phase is gated by the Alpaca market calendar -- no runs on holidays, no en
 8. [Portfolio Construction](#8-portfolio-construction)
 9. [Self-Learning Loop](#9-self-learning-loop)
 10. [Agent System (Claude AI)](#10-agent-system-claude-ai)
-11. [LLM Fine-Tuning Pipeline](#11-llm-fine-tuning-pipeline)
-12. [Future Work](#future-work)
-13. [Expected Outcomes](#expected-outcomes)
+11. [Future Work](#future-work)
+12. [Expected Outcomes](#expected-outcomes)
 
 ---
 
@@ -596,58 +595,6 @@ Orchestrator
 - `src/agents/evolution.py:PromptEvolver` (line 40) -- prompt self-improvement with safety constraints (max 1 rewrite/week/agent)
 - `src/agents/mcp_server.py` -- FastMCP stdio server exposing ~20 QuantManager tools
 - `config/agents.yaml` -- declarative agent definitions and mode sequences
-
----
-
-## 11. LLM Fine-Tuning Pipeline
-
-Trains a local LFM2.5-1.2B language model on STEEX trading data to enhance agent decision-making. Uses free GPU platforms with HF Hub as a checkpoint relay for cross-platform training continuity.
-
-### Training Data
-
-| Type | Input | Output |
-|------|-------|--------|
-| Screening analysis | Signal data (momentum, insider, sentiment, etc.) | Buy/pass recommendation with reasoning |
-| Trade post-mortem | Completed trade (entry, exit, P&L) | Loss categorization and lessons |
-| Regime assessment | VIX, breadth, yield data | Regime classification and action plan |
-
-### Cross-Platform Relay
-
-```
-Session 1: Colab (T4, 12h free/week)
-  -> checkpoint uploaded to HF Hub
-    -> Session 2: Kaggle (T4x2, 30h free/week)
-      -> checkpoint uploaded to HF Hub
-        -> Session 3: Modal (A100, ~$30/month free credits)
-          -> ...continues until convergence
-```
-
-**Platform limits:**
-
-| Platform | GPU | Free Tier |
-|----------|-----|-----------|
-| Colab | T4 16GB | 12h/session, ~40h/week |
-| Kaggle | T4 x2 | 12h/session, 30h/week |
-| Lightning AI | T4 | 4h/session, 22h/month |
-| Modal | Various (up to A100) | ~$30/month credits |
-
-### Validation & Export
-
-- **Loss spike detection:** abort if loss jumps > 20% in a single step (overfitting signal)
-- **Convergence detection:** training complete if loss plateaus for 50 steps
-- **Export:** best checkpoint quantized to GGUF (Q4_K_M) and registered with Ollama for local Apple Silicon inference
-
-**Code references:**
-- `src/llm/pipeline.py:TrainingPipeline` (line 49) -- controller: dispatch to platforms, monitor progress, validate checkpoints, export
-- `src/llm/pipeline.py:TrainingPipeline.dispatch()` (line 254) -- selects best available platform by quota/GPU tier
-- `src/llm/pipeline.py:TrainingPipeline.run_check()` (line 152) -- single poll cycle (called by cron every 15 min)
-- `src/llm/pipeline.py:TrainingPipeline.export_best()` (line 332) -- GGUF export + Ollama registration
-- `src/llm/train.py:train()` (line 257) -- LoRA fine-tuning with Unsloth (2x faster, 50% less memory)
-- `src/llm/train.py:CrashSafeCallback` (line 176) -- pushes checkpoints to Hub during training for crash resilience
-- `src/llm/hub_relay.py:HubRelay` (line 17) -- HF Hub checkpoint relay (upload, download, sync, hash-based dedup)
-- `src/llm/dataset_builder.py:LLMDatasetBuilder` -- converts STEEX trading data to chat-format training examples
-- `src/llm/inference.py:LFMInference` (line 36) -- local inference engine (Ollama, llama.cpp, MLX backends)
-- `src/llm/checkpoint_validator.py:CheckpointValidator` -- loss spike and convergence detection
 
 ---
 
