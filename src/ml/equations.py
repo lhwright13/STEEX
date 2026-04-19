@@ -95,27 +95,10 @@ def equation_to_python(
         except Exception:
             pass
 
-    # Fallback: use eval-based approach with safety restrictions
-    def predict_fallback(features: Dict[str, float]) -> float:
-        try:
-            local_vars = {}
-            # Support both named variables and x0-style
-            for i, name in enumerate(feature_names):
-                val = features.get(name, 0.0)
-                local_vars[name] = val
-                local_vars[f"x{i}"] = val
-            local_vars["abs"] = abs
-            local_vars["sqrt"] = np.sqrt
-            local_vars["log"] = np.log
-            local_vars["square"] = lambda x: x ** 2
-            result = eval(expr_str, {"__builtins__": {}}, local_vars)
-            if np.isnan(result) or np.isinf(result):
-                return 0.0
-            return float(result)
-        except Exception:
-            return 0.0
+    def predict_unavailable(features: Dict[str, float]) -> float:
+        return 0.0
 
-    return predict_fallback
+    return predict_unavailable
 
 
 def extract_feature_importance(

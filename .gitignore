@@ -199,3 +199,4 @@ results/
 
 # Claude Code
 .claude/
+.playwright-mcp/
