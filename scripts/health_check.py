@@ -12,11 +12,8 @@ Checks:
 
 import json
 import os
-import sys
 from datetime import date, datetime
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.settings import get_settings
 

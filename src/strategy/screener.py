@@ -58,11 +58,6 @@ class ScreeningResult:
     options_score: Optional[float] = None  # 0-100 options sentiment score
     put_call_ratio: Optional[float] = None
     iv_rank: Optional[float] = None
-    # PySR symbolic regression data
-    pysr_score: Optional[float] = None
-    pysr_predicted_return: Optional[float] = None
-    pysr_equation: Optional[str] = None
-    pysr_confidence: Optional[float] = None
 
 
 @dataclass
@@ -96,7 +91,6 @@ class StockScreener:
         geopolitical_provider: Optional[GeopoliticalSentimentProvider] = None,
         fundamentals_provider: Optional[FundamentalsProvider] = None,
         options_provider: Optional[OptionsProvider] = None,
-        pysr_predictor=None,
     ):
         """Initialize screener with dependencies.
 
@@ -112,7 +106,6 @@ class StockScreener:
             geopolitical_provider: Geopolitical/macro sentiment provider
             fundamentals_provider: Fundamental analysis provider
             options_provider: Options intelligence provider
-            pysr_predictor: PySR predictor instance (optional)
         """
         self.settings = settings or get_settings()
         self.universe = universe or Universe()
@@ -125,7 +118,6 @@ class StockScreener:
         self.geopolitical_provider = geopolitical_provider or GeopoliticalSentimentProvider()
         self.fundamentals_provider = fundamentals_provider or FundamentalsProvider()
         self.options_provider = options_provider or OptionsProvider()
-        self.pysr_predictor = pysr_predictor
 
     def _load_cached_insider_transactions(
         self, days_back: int = 30
@@ -647,21 +639,6 @@ class StockScreener:
                     # Options data is enrichment, not critical
                     logger.debug("Options data fetch failed for %s, using neutral score", ticker, exc_info=True)
                     all_results[ticker].options_score = 50.0
-
-        # PySR enrichment (if enabled and available)
-        if stage_5 and self.settings.pysr_enabled and self.pysr_predictor:
-            if self.pysr_predictor.is_available():
-                try:
-                    predictions = self.pysr_predictor.predict_batch(stage_5)
-                    scores = self.pysr_predictor.compute_pysr_score(predictions)
-                    for ticker in stage_5:
-                        if ticker in predictions:
-                            all_results[ticker].pysr_score = scores.get(ticker, 50.0)
-                            all_results[ticker].pysr_predicted_return = predictions[ticker].predicted_return_21d
-                            all_results[ticker].pysr_equation = predictions[ticker].equation_used
-                            all_results[ticker].pysr_confidence = predictions[ticker].confidence
-                except Exception:
-                    logger.debug("PySR prediction failed for batch, skipping enrichment", exc_info=True)
 
         # Final candidates
         final_candidates = [all_results[t] for t in stage_5]

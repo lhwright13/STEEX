@@ -20,7 +20,6 @@ class RankedStock:
     sentiment_score: float
     fundamental_score: float
     options_score: float
-    pysr_score: float
     rank: int
     screening_result: ScreeningResult
 
@@ -93,7 +92,6 @@ class StockRanker:
         sentiment_score: float,
         fundamental_score: float = 50.0,
         options_score: float = 50.0,
-        pysr_score: float = 50.0,
     ) -> float:
         """Calculate weighted composite score.
 
@@ -104,7 +102,6 @@ class StockRanker:
             sentiment_score: Sentiment component (0-100)
             fundamental_score: Fundamental component (0-100)
             options_score: Options sentiment component (0-100)
-            pysr_score: PySR symbolic regression component (0-100)
 
         Returns:
             Composite score (0-100)
@@ -116,7 +113,6 @@ class StockRanker:
             + self.settings.weight_sentiment * sentiment_score
             + self.settings.weight_fundamental * fundamental_score
             + self.settings.weight_options * options_score
-            + self.settings.weight_pysr * pysr_score
         )
 
     def rank_stocks(
@@ -141,7 +137,6 @@ class StockRanker:
         sentiment_scores = self._extract_scores(results, "sentiment_score")
         fundamental_scores = self._extract_scores(results, "fundamental_score")
         options_scores = self._extract_scores(results, "options_score")
-        pysr_scores = self._extract_scores(results, "pysr_score")
 
         # Calculate composite scores
         ranked = []
@@ -153,10 +148,9 @@ class StockRanker:
             s_score = sentiment_scores.get(ticker, 50)
             f_score = fundamental_scores.get(ticker, 50)
             o_score = options_scores.get(ticker, 50)
-            p_score = pysr_scores.get(ticker, 50)
 
             composite = self.calculate_composite_score(
-                m_score, i_score, v_score, s_score, f_score, o_score, p_score
+                m_score, i_score, v_score, s_score, f_score, o_score
             )
 
             ranked.append(
@@ -169,7 +163,6 @@ class StockRanker:
                     sentiment_score=s_score,
                     fundamental_score=f_score,
                     options_score=o_score,
-                    pysr_score=p_score,
                     rank=0,  # Will be set after sorting
                     screening_result=r,
                 )
@@ -259,10 +252,6 @@ class StockRanker:
             if sr.options_score >= 70:
                 reasons.append(f"Bullish options flow ({sr.options_score:.0f})")
 
-        # Add PySR-based reasons
-        if sr.pysr_score is not None and sr.pysr_score >= 70:
-            reasons.append(f"PySR alpha signal ({sr.pysr_score:.0f})")
-
         return {
             "ticker": pick.ticker,
             "rank": pick.rank,
@@ -274,7 +263,6 @@ class StockRanker:
             "fundamental_score": sr.fundamental_score,
             "pe_ratio": sr.pe_ratio,
             "options_score": sr.options_score,
-            "pysr_score": sr.pysr_score,
             "sector": sr.sector or "unknown",
             "reasons": reasons,
         }

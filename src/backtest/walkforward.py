@@ -135,7 +135,6 @@ class WalkForwardBacktester:
         bt_overrides["sentiment_enabled"] = False
         bt_overrides["fundamental_enabled"] = False
         bt_overrides["options_enabled"] = False
-        bt_overrides["pysr_enabled"] = False
         bt_settings = Settings(**bt_overrides)
 
         # Create historical price provider for this date
@@ -188,7 +187,6 @@ class WalkForwardBacktester:
                 "sentiment_score": stock.sentiment_score,
                 "fundamental_score": stock.fundamental_score,
                 "options_score": stock.options_score,
-                "pysr_score": stock.pysr_score,
             }
             features.append(feature)
 

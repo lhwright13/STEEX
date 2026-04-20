@@ -215,47 +215,6 @@ class Settings(BaseSettings):
         default=3600, description="Options data cache TTL in seconds (1 hour)"
     )
 
-    # PySR symbolic regression parameters
-    pysr_enabled: bool = Field(
-        default=True, description="Enable PySR symbolic regression scoring"
-    )
-    pysr_model_dir: str = Field(
-        default="data/ml/models", description="Directory for trained PySR models"
-    )
-    pysr_dataset_dir: str = Field(
-        default="data/ml/datasets", description="Directory for training datasets"
-    )
-    pysr_niterations: int = Field(
-        default=40, description="PySR number of iterations"
-    )
-    pysr_max_complexity: int = Field(
-        default=25, description="Maximum equation complexity in PySR search"
-    )
-    pysr_max_selected_complexity: int = Field(
-        default=20, description="Maximum complexity for selected equation"
-    )
-    pysr_populations: int = Field(
-        default=15, description="Number of populations in PySR"
-    )
-    pysr_parsimony: float = Field(
-        default=0.0032, description="Parsimony coefficient (prefer simpler equations)"
-    )
-    pysr_timeout: int = Field(
-        default=3600, description="PySR training timeout in seconds"
-    )
-    pysr_train_months: int = Field(
-        default=12, description="Training window in months for walk-forward"
-    )
-    pysr_val_months: int = Field(
-        default=1, description="Validation window in months for walk-forward"
-    )
-    pysr_walk_forward_folds: int = Field(
-        default=6, description="Number of walk-forward folds"
-    )
-    weight_pysr: float = Field(
-        default=0.10, description="PySR score weight in composite scoring"
-    )
-
     # Walk-Forward Backtest
     walkforward_train_months: int = Field(
         default=6, description="Walk-forward training window in months"

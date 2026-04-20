@@ -14,10 +14,6 @@ Usage:
 import argparse
 import json
 import logging
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rich.console import Console
 from rich.panel import Panel

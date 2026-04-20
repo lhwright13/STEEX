@@ -133,7 +133,6 @@ class AlphaDecayMonitor:
             "sentiment_score",
             "fundamental_score",
             "options_score",
-            "pysr_score",
         ]
 
         health_results = []

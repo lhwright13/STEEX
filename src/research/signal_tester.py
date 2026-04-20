@@ -24,7 +24,6 @@ SIGNAL_COLUMNS = [
     "sentiment_score",
     "fundamental_score",
     "options_score",
-    "pysr_score",
 ]
 
 

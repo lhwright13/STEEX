@@ -23,7 +23,6 @@ def _make_ranked(ticker: str, score: float = 80.0) -> RankedStock:
         sentiment_score=50.0,
         fundamental_score=50.0,
         options_score=50.0,
-        pysr_score=0.0,
         rank=1,
         screening_result=MagicMock(),
     )

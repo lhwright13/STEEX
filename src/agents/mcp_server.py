@@ -13,20 +13,13 @@ Usage (via claude CLI MCP config, not directly):
 import argparse
 import json
 import logging
-import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-# Ensure project root is on path
-_project_root = str(Path(__file__).parent.parent.parent)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
-
-# Load .env so broker credentials are available even if parent didn't propagate them
-from dotenv import load_dotenv  # noqa: E402
-load_dotenv(Path(_project_root) / ".env")
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 # Redirect rich console output to stderr BEFORE importing QuantManager,
 # since MCP uses stdout for the JSON-RPC protocol.

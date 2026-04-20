@@ -25,7 +25,6 @@ PARAM_BOUNDS: Dict[str, Tuple[float, float, float, str]] = {
     "weight_sentiment":   (0.00, 0.30, 0.10, "frequent"),
     "weight_fundamental": (0.00, 0.30, 0.10, "frequent"),
     "weight_options":     (0.00, 0.20, 0.10, "frequent"),
-    "weight_pysr":        (0.00, 0.30, 0.10, "frequent"),
     # Exit parameters (rare - monthly, requires walk-forward)
     "initial_stop_pct":   (0.05, 0.20, 0.03, "rare"),
     "max_hold_days":      (10,   90,   10,    "rare"),

@@ -25,7 +25,6 @@ class TestStockRanker:
             sentiment_score=50,
             fundamental_score=50,
             options_score=50,
-            pysr_score=50,
         )
 
         expected = (
@@ -35,7 +34,6 @@ class TestStockRanker:
             + test_settings.weight_sentiment * 50
             + test_settings.weight_fundamental * 50
             + test_settings.weight_options * 50
-            + test_settings.weight_pysr * 50
         )
         assert score == pytest.approx(expected)
 
@@ -120,7 +118,6 @@ class TestStockRanker:
             sentiment_score=50,
             fundamental_score=50,
             options_score=50,
-            pysr_score=50,
             rank=1,
             screening_result=result,
         )

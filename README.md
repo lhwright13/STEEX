@@ -171,8 +171,7 @@ Changes are never applied during market hours. Full audit trail in `data/learnin
 ```bash
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+pip install -e ".[dev]"
 
 # Required: Alpaca API keys
 export ALPACA_API_KEY="your-key"

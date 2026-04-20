@@ -7,9 +7,7 @@ validated changes to config with a full audit trail.
 """
 
 import logging
-import re
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from config.settings import Settings, get_settings
@@ -178,9 +176,6 @@ class LearningLoop:
                     f"Applied {apply_result.get('count', 0)} parameter changes",
                     details=apply_result,
                 )
-                # Keep CLAUDE.md in sync with actual parameters
-                if apply_result.get("applied"):
-                    self._update_claude_md()
             results["phases_run"].append("apply")
 
         # Phase 6: Gap Identification
@@ -491,71 +486,3 @@ class LearningLoop:
 
         return gaps
 
-    def _update_claude_md(self) -> bool:
-        """Update the 'What Has Been Learned' section in CLAUDE.md.
-
-        Reads current values from config and rewrites the section so
-        CLAUDE.md stays in sync with actual strategy parameters.
-
-        Returns:
-            True if the file was updated successfully
-        """
-        claude_md = Path(__file__).parent.parent.parent / "CLAUDE.md"
-        if not claude_md.exists():
-            logger.warning("CLAUDE.md not found at %s", claude_md)
-            return False
-
-        try:
-            settings = get_settings()
-            text = claude_md.read_text()
-
-            # Build the updated section content
-            weights_line = (
-                f"- Scoring weights: "
-                f"momentum ({settings.weight_momentum:.2f}), "
-                f"insider ({settings.weight_insider:.2f}), "
-                f"volume ({settings.weight_volume:.2f}), "
-                f"sentiment ({settings.weight_sentiment:.2f}), "
-                f"fundamental ({settings.weight_fundamental:.2f}), "
-                f"options ({settings.weight_options:.2f})"
-            )
-
-            trail = settings.trailing_stops
-            trail_10 = trail.get(0.10, settings.trail_stop_10) if isinstance(trail, dict) else settings.trail_stop_10
-            trail_20 = trail.get(0.20, settings.trail_stop_20) if isinstance(trail, dict) else settings.trail_stop_20
-            trail_30 = trail.get(0.30, settings.trail_stop_30) if isinstance(trail, dict) else settings.trail_stop_30
-
-            stops_line = (
-                f"- Stops: {settings.initial_stop_pct:.0%} initial, "
-                f"trailing at {trail_10:.0%}/{trail_20:.0%}/{trail_30:.0%} "
-                f"for 10%/20%/30% gains"
-            )
-            hold_line = f"- Hold period: {settings.max_hold_days} days max"
-            updated = f"- Last updated by learning loop: {datetime.now().strftime('%Y-%m-%d')}"
-
-            new_section = (
-                "## What Has Been Learned\n"
-                "\n"
-                "*This section is updated by the learning loop.*\n"
-                "\n"
-                f"{weights_line}\n"
-                f"{stops_line}\n"
-                f"{hold_line}\n"
-                f"{updated}\n"
-            )
-
-            # Replace the section between "## What Has Been Learned" and the next "##"
-            pattern = r"## What Has Been Learned\n.*?(?=\n## )"
-            new_text = re.sub(pattern, new_section, text, flags=re.DOTALL)
-
-            if new_text == text:
-                logger.warning("Could not find 'What Has Been Learned' section to update")
-                return False
-
-            claude_md.write_text(new_text)
-            logger.info("Updated CLAUDE.md 'What Has Been Learned' section")
-            return True
-
-        except Exception as e:
-            logger.error("Failed to update CLAUDE.md: %s", e)
-            return False

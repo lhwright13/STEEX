@@ -112,23 +112,6 @@ options_bearish_pc_threshold: 1.0  # Put/call ratio above this is bearish
 options_cache_ttl: 3600          # Cache TTL in seconds (1 hour)
 
 # -----------------------------------------------------------------------------
-# PySR Symbolic Regression (disabled by default)
-# -----------------------------------------------------------------------------
-pysr_enabled: false              # Enable PySR scoring in pipeline (requires trained model)
-pysr_model_dir: "data/ml/models" # Directory for trained models
-pysr_dataset_dir: "data/ml/datasets"  # Directory for training datasets
-pysr_niterations: 40             # PySR search iterations
-pysr_max_complexity: 25          # Max equation complexity in search
-pysr_max_selected_complexity: 20 # Max complexity for selected equation
-pysr_populations: 15             # PySR population count
-pysr_parsimony: 0.0032           # Prefer simpler equations
-pysr_timeout: 3600               # Training timeout in seconds
-pysr_train_months: 12            # Walk-forward training window
-pysr_val_months: 1               # Walk-forward validation window
-pysr_walk_forward_folds: 6       # Number of walk-forward folds
-weight_pysr: 0.10                # PySR weight in composite scoring
-
-# -----------------------------------------------------------------------------
 # Walk-Forward Backtest
 # -----------------------------------------------------------------------------
 walkforward_train_months: 6        # Training window in months

@@ -1,16 +1,10 @@
 """Shared test fixtures."""
 
-import sys
 from datetime import datetime, timedelta
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 @pytest.fixture(autouse=True)

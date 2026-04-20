@@ -150,7 +150,6 @@ class TestScreeningPipeline:
             sentiment_score=72.0,
             fundamental_score=65.0,
             options_score=50.0,
-            pysr_score=0.0,
             rank=1,
             screening_result=sr,
         )]

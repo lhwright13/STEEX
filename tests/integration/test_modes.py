@@ -173,7 +173,6 @@ def _make_ranked(screening_result, rank=1, score=78.5):
         sentiment_score=72.0,
         fundamental_score=65.0,
         options_score=50.0,
-        pysr_score=0.0,
         rank=rank,
         screening_result=screening_result,
     )
