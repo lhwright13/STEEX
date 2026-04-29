@@ -12,8 +12,12 @@ Checks:
 
 import json
 import os
+import sys
 from datetime import date, datetime
 from pathlib import Path
+
+# Ensure project root is on sys.path so this script runs via direct invocation.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import get_settings
 

@@ -10,8 +10,12 @@ Usage:
 """
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Ensure project root is on sys.path so this script runs via direct invocation.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dashboard.db import DashboardDB
 

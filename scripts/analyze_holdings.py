@@ -12,8 +12,14 @@ Usage:
 import argparse
 import json
 import logging
+import sys
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
+
+# Ensure project root is on sys.path so `python scripts/analyze_holdings.py`
+# can resolve `src.*` and `config.*` packages without relying on cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import pandas as pd
@@ -32,55 +38,23 @@ from src.regime.detector import RegimeDetector
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Holdings extracted from Robinhood screenshots (2026-03-19)
-# ---------------------------------------------------------------------------
-HOLDINGS = {
-    # Ticker: (shares, last_price)
-    "VOO":   (7.77, 603.66),
-    "GLD":   (10.06, 419.69),
-    "GOOGL": (7.67, 304.18),
-    "QQQ":   (3.73, 589.02),
-    "HAL":   (53.31, 37.00),
-    "VGT":   (2.48, 716.00),
-    "AMAT":  (5.00, 353.13),
-    "AMZN":  (8.42, 207.02),
-    "IREN":  (42.56, 39.97),
-    "IBKR":  (23.16, 67.29),
-    "AAPL":  (5.69, 249.10),
-    "GE":    (4.74, 286.66),
-    "META":  (2.08, 605.33),
-    "UBER":  (15.96, 75.51),
-    "AVGO":  (3.80, 316.70),
-    "MSFT":  (3.05, 388.90),
-    "RKLB":  (None, 71.16),   # Shares partially visible
-    "VGK":   (13.06, 81.14),
-    "KTOS":  (11.90, 88.38),
-    "AVAV":  (4.99, 206.56),
-    "LHX":   (2.78, 357.30),
-    "LMT":   (1.53, 627.10),
-    "OXY":   (14.47, 60.07),
-    "NEM":   (8.19, 97.13),
-    "TEM":   (15.74, 48.34),
-    "PANW":  (None, 168.04),  # Shares partially visible
-    "MU":    (1.41, 438.65),
-    "AMD":   (2.82, 198.73),
-    "UNH":   (1.98, 282.50),
-    "TSM":   (1.66, 332.82),
-    "RTX":   (2.67, 197.89),
-    "CVCO":  (1.10, 468.24),
-    "JOBY":  (52.44, 9.53),
-    "INTC":  (9.79, 45.32),
-    "PLTR":  (None, None),    # Partially visible
-    "LLY":   (0.462534, 918.24),
-    "CRM":   (2.11, 194.55),
-    "AXP":   (1.32, 293.42),
-    "BAC":   (7.19, 46.57),
-    "EL":    (2.29, 85.31),
-    "IOVA":  (34.97, 3.78),
-    "BA":    (0.578690, 198.02),
-    "JPM":   (0.198080, 284.98),
-}
+def load_holdings(path: Path) -> dict:
+    """Load holdings from a JSON file.
+
+    Expected schema: {"TICKER": {"shares": <float|null>, "price": <float|null>}, ...}
+    """
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Holdings file not found: {path}\n"
+            "See examples/holdings.example.json for the expected format."
+        )
+    raw = json.loads(path.read_text())
+    holdings = {}
+    for ticker, entry in raw.items():
+        shares = entry.get("shares")
+        price = entry.get("price")
+        holdings[ticker.upper()] = (shares, price)
+    return holdings
 
 
 def compute_position_values(holdings: dict) -> dict:
@@ -218,7 +192,17 @@ def format_score(val, na="N/A"):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze current holdings")
+    parser = argparse.ArgumentParser(description="Analyze a portfolio through STEEX screening tools.")
+    parser.add_argument(
+        "holdings_file",
+        type=Path,
+        help="Path to JSON file with holdings. See examples/holdings.example.json.",
+    )
+    parser.add_argument(
+        "--etfs",
+        default="VOO,QQQ,VGT,GLD,VGK,SPY,IWM,DIA",
+        help="Comma-separated ETF tickers to exclude from stock screening (default: common ETFs).",
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
@@ -227,20 +211,20 @@ def main():
         logging.getLogger().setLevel(logging.INFO)
 
     settings = get_settings()
+    holdings = load_holdings(args.holdings_file)
 
     # --- Position values ---
-    values = compute_position_values(HOLDINGS)
+    values = compute_position_values(holdings)
     total_value = sum(values.values())
-    tickers_with_values = [t for t in HOLDINGS if t in values]
-    # Only analyze individual stocks (exclude ETFs for screening)
-    etfs = {"VOO", "QQQ", "VGT", "GLD", "VGK"}
+    tickers_with_values = [t for t in holdings if t in values]
+    etfs = {t.strip().upper() for t in args.etfs.split(",") if t.strip()}
     stock_tickers = [t for t in tickers_with_values if t not in etfs]
 
     print()
     print_separator()
     print("  STEEX HOLDINGS ANALYSIS")
     print(f"  Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print(f"  Holdings: {len(HOLDINGS)} positions")
+    print(f"  Holdings: {len(holdings)} positions")
     print(f"  Portfolio Value (visible): ${total_value:,.2f}")
     print_separator()
 
@@ -266,7 +250,7 @@ def main():
     print("-" * 50)
     print(f"  {'Ticker':<8} {'Shares':>8} {'Price':>10} {'Value':>12} {'Weight':>8}")
     print(f"  {'------':<8} {'------':>8} {'-----':>10} {'-----':>12} {'------':>8}")
-    for ticker, (shares, price) in sorted(HOLDINGS.items(), key=lambda x: -(values.get(x[0], 0))):
+    for ticker, (shares, price) in sorted(holdings.items(), key=lambda x: -(values.get(x[0], 0))):
         val = values.get(ticker, 0)
         pct = val / total_value * 100 if total_value else 0
         sh_str = f"{shares:.2f}" if shares is not None else "???"

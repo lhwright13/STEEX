@@ -512,34 +512,3 @@ class BacktestEngine:
                     pass
 
         return exits
-
-    def run_with_screener(
-        self,
-        start_date: datetime,
-        end_date: datetime,
-        starting_capital: float = 10000,
-    ) -> BacktestResult:
-        """Run backtest using the full screener pipeline.
-
-        This is a simplified version that generates signals from historical
-        insider data. For more accurate results, use pre-generated signals.
-
-        Args:
-            start_date: Backtest start date
-            end_date: Backtest end date
-            starting_capital: Starting portfolio value
-
-        Returns:
-            BacktestResult
-        """
-        # This would require historical insider data
-        # For now, return empty result
-        return BacktestResult(
-            start_date=start_date,
-            end_date=end_date,
-            starting_capital=starting_capital,
-            ending_capital=starting_capital,
-            trades=[],
-            equity_curve=pd.DataFrame(),
-            metrics={},
-        )

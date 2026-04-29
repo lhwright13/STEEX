@@ -1,0 +1,8 @@
+{
+  "AAPL":  {"shares": 10.0, "price": 250.00},
+  "MSFT":  {"shares":  5.0, "price": 390.00},
+  "GOOGL": {"shares":  8.0, "price": 305.00},
+  "VOO":   {"shares": 12.0, "price": 605.00},
+  "TSLA":  {"shares":  3.5, "price": 220.00},
+  "PARTIAL_EXAMPLE": {"shares": null, "price": 100.00}
+}

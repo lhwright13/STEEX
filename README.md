@@ -121,7 +121,7 @@ A 4-factor model governs position sizing and entry permission:
 |-------|-------|
 | Position size | 3-6% (ATR volatility-adjusted) |
 | Max positions | 10 concurrent |
-| Max single position | 20% of portfolio |
+| Max single position | 10% of portfolio |
 | Max sector exposure | 30% of portfolio |
 
 ---
@@ -266,7 +266,7 @@ STEEX/
       signals.py             # Exit signal generator
     agents/
       orchestrator.py        # Agent mode orchestrator (registry-driven)
-      mcp_server.py          # FastMCP server exposing ~20 QuantManager tools
+      mcp_server.py          # FastMCP server exposing ~30 QuantManager tools
       registry.py            # Config-driven agent/mode loader
       conclusions.py         # Pydantic models for structured agent output
       evolution.py           # Prompt self-improvement with safety constraints

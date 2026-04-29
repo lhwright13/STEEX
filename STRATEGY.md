@@ -98,8 +98,8 @@ A lightweight health check that validates system readiness before the trading da
 
 **Code references:**
 - `scripts/health_check.py` -- entry point
-- `src/strategy/manager.py:QuantManager._sync_broker()` (line ~159) -- broker position reconciliation
-- `src/broker/alpaca.py:get_all_stop_orders()` (line 209) -- stop order audit
+- `src/strategy/manager.py:QuantManager._sync_broker()` -- broker position reconciliation
+- `src/broker/alpaca.py:get_all_stop_orders()` -- stop order audit
 
 **Output:** `data/heartbeat.json` with per-check status (OK/WARN/ERROR)
 
@@ -124,10 +124,10 @@ Removes illiquid and low-priced stocks that would produce unreliable signals or 
 | Earnings blackout | Exclude if earnings within 5 days | `earnings_blackout_days` |
 
 **Code references:**
-- `src/strategy/screener.py:StockScreener.stage_1_universe_filter()` (line 186) -- main filter logic
-- `src/data/universe.py:Universe.get_sp500()` (line 37) -- S&P 500 list from Wikipedia with fallback to hardcoded list
+- `src/strategy/screener.py:StockScreener.stage_1_universe_filter()` -- main filter logic
+- `src/data/universe.py:Universe.get_sp500()` -- S&P 500 list from Wikipedia with fallback to hardcoded list
 - `src/data/universe.py:Universe.filter_by_price_volume()` -- price/volume gate
-- `src/data/calendar.py:EarningsCalendar.filter_earnings_blackout()` (line 78) -- earnings date check via yfinance
+- `src/data/calendar.py:EarningsCalendar.filter_earnings_blackout()` -- earnings date check via yfinance
 
 **Typical output:** ~500 -> ~400 tickers
 
@@ -144,8 +144,8 @@ Selects stocks in confirmed uptrends with positive multi-timeframe momentum.
 | Overextension filter | Exclude top 5th percentile | `overextension_percentile` (disabled) |
 
 **Code references:**
-- `src/strategy/screener.py:StockScreener.stage_2_momentum_filter()` (line 219) -- momentum filtering and MA alignment
-- `src/indicators/momentum.py:MomentumCalculator.get_momentum_percentiles()` (line 48) -- 126-day and 21-day return calculation with percentile ranking
+- `src/strategy/screener.py:StockScreener.stage_2_momentum_filter()` -- momentum filtering and MA alignment
+- `src/indicators/momentum.py:MomentumCalculator.get_momentum_percentiles()` -- 126-day and 21-day return calculation with percentile ranking
 - `src/indicators/technical.py:TechnicalIndicators.check_trend_alignment()` -- checks price vs 50-day and 200-day SMA
 
 **Data source:** Yahoo Finance OHLCV via yfinance (126 trading day lookback)
@@ -171,9 +171,9 @@ Enriches candidates with SEC Form 4 insider transaction data. This is a **soft s
 | Cluster bonus (3+ insiders) | +25 |
 
 **Code references:**
-- `src/strategy/screener.py:StockScreener.stage_3_insider_enrich()` (line 278) -- enrichment loop
-- `src/sec/scanners/insider.py:InsiderScanner.scan()` (line 20) -- fetches recent Form 4 filings from SEC EDGAR
-- `src/sec/scanners/signals.py:calculate_cluster_score()` (line 37) -- insider scoring formula (role-weighted, value-tiered)
+- `src/strategy/screener.py:StockScreener.stage_3_insider_enrich()` -- enrichment loop
+- `src/sec/scanners/insider.py:InsiderScanner.scan()` -- fetches recent Form 4 filings from SEC EDGAR
+- `src/sec/scanners/signals.py:calculate_cluster_score()` -- insider scoring formula (role-weighted, value-tiered)
 - `src/sec/parsers/form4.py` -- XML parser for SEC Form 4 filings
 
 **Data source:** SEC EDGAR (last 30 days, configurable via `insider_lookback_days`). Cached to `data/cache/historical_insiders.json`.
@@ -199,7 +199,7 @@ combined = (0.6 * stock_sentiment) + (0.4 * geopolitical_sentiment)
 **Sentiment labels:** < 35 Bearish, 35-45 Somewhat Bearish, 45-55 Neutral, 55-65 Somewhat Bullish, 65+ Bullish
 
 **Code references:**
-- `src/strategy/screener.py:StockScreener.stage_4_sentiment_filter()` (line 374) -- combined sentiment scoring and filtering
+- `src/strategy/screener.py:StockScreener.stage_4_sentiment_filter()` -- combined sentiment scoring and filtering
 - `src/data/sentiment.py:SentimentProvider.get_sentiment()` -- stock-specific NLP sentiment via Finnhub + VADER
 - `src/data/geopolitical.py:GeopoliticalSentimentProvider.get_macro_sentiment()` -- GDELT-based macro/sector sentiment
 
@@ -222,10 +222,10 @@ Quality gate that removes over-leveraged, overvalued, or unprofitable stocks.
 - Options flow sentiment: put/call ratios, IV rank, bullish/bearish score (0-100)
 
 **Code references:**
-- `src/strategy/screener.py:StockScreener.stage_5_fundamental_filter()` (line 468) -- fundamental filtering + enrichment
-- `src/data/fundamentals.py:FundamentalsProvider` (line 54) -- P/E, ROE, debt/equity, revenue growth, margins via yfinance (7-day cache)
+- `src/strategy/screener.py:StockScreener.stage_5_fundamental_filter()` -- fundamental filtering + enrichment
+- `src/data/fundamentals.py:FundamentalsProvider` -- P/E, ROE, debt/equity, revenue growth, margins via yfinance (7-day cache)
 - `src/indicators/technical.py:TechnicalIndicators.get_volume_surge_batch()` -- volume ratio analysis
-- `src/data/options.py:OptionsProvider.get_options_sentiment()` (line 91) -- options chain analysis (put/call, IV, max pain)
+- `src/data/options.py:OptionsProvider.get_options_sentiment()` -- options chain analysis (put/call, IV, max pain)
 
 **Typical output:** ~50-80 -> ~5-14 final candidates
 
@@ -243,8 +243,8 @@ Final candidates are ranked by a weighted composite score. The top N are selecte
 | Options Flow | 5% | Bullish/bearish sentiment |
 
 **Code references:**
-- `src/strategy/ranking.py:StockRanker.rank_stocks()` (line 122) -- weighted composite scoring, sorts by score descending
-- `config/settings.py` (lines 162-169) -- weight definitions with Pydantic validation
+- `src/strategy/ranking.py:StockRanker.rank_stocks()` -- weighted composite scoring, sorts by score descending
+- `config/settings.py` -- weight definitions with Pydantic validation
 
 **Output:** Ranked `RankedStock` objects with composite score, all component scores, and human-readable selection reasons. Saved to `data/screen_results/` for the entry mode to consume.
 
@@ -284,7 +284,7 @@ Base size from config (e.g., 4% of equity), adjusted by:
 | 3-6% | Medium volatility | 5% of portfolio |
 | > 6% | High volatility | 3% of portfolio |
 
-All sizes capped at `max_single_position_pct` (20%).
+All sizes capped at `max_single_position_pct` (10%).
 
 ### Entry Rules
 
@@ -297,11 +297,11 @@ All sizes capped at `max_single_position_pct` (20%).
 
 **Code references:**
 - `src/strategy/manager.py:QuantManager.run_enter()` -- entry mode orchestration
-- `src/strategy/manager.py:QuantManager._calculate_position_size_pct()` (line 640) -- regime multiplier + ATR volatility bucketing
+- `src/strategy/manager.py:QuantManager._calculate_position_size_pct()` -- regime multiplier + ATR volatility bucketing
 - `src/strategy/manager.py:QuantManager.generate_buy_list()` -- converts ranked candidates to buy orders
 - `src/strategy/manager.py:QuantManager.execute_entries()` -- order placement loop
-- `src/broker/alpaca.py:buy()` (line 60) -- limit buy order via Alpaca API
-- `src/broker/alpaca.py:place_stop_order()` (line 112) -- GTC stop-loss order (server-side crash protection). Falls back to market sell if stop price is already breached.
+- `src/broker/alpaca.py:buy()` -- limit buy order via Alpaca API
+- `src/broker/alpaca.py:place_stop_order()` -- GTC stop-loss order (server-side crash protection). Falls back to market sell if stop price is already breached.
 
 **Safety:** Every position gets a GTC stop order on Alpaca at `current_stop * (1 - server_stop_offset_pct)`, offset 0.5% below local stop to avoid noise triggers.
 
@@ -360,10 +360,10 @@ Stops only ratchet up, never down.
 | 25% | Exit all positions |
 
 **Code references:**
-- `src/strategy/manager.py:QuantManager.run_monitor()` (line ~1400) -- monitor mode orchestration
-- `src/strategy/manager.py:QuantManager.get_exit_signals()` (line 537) -- exit signal aggregation
-- `src/portfolio/risk.py:RiskManager.check_all_exits()` (line 71) -- evaluates all exit conditions (stop, VIX, MA, time, dead money) in priority order
-- `src/portfolio/risk.py:RiskManager.check_vix_risk()` (line 122) -- VIX spike detection and action routing
+- `src/strategy/manager.py:QuantManager.run_monitor()` -- monitor mode orchestration
+- `src/strategy/manager.py:QuantManager.get_exit_signals()` -- exit signal aggregation
+- `src/portfolio/risk.py:RiskManager.check_all_exits()` -- evaluates all exit conditions (stop, VIX, MA, time, dead money) in priority order
+- `src/portfolio/risk.py:RiskManager.check_vix_risk()` -- VIX spike detection and action routing
 - `src/strategy/manager.py:QuantManager.execute_exits()` -- sell order placement
 
 ---
@@ -382,10 +382,10 @@ Pre-close synchronization of trailing stops with the broker.
 **Why this matters:** The local trailing stop logic tracks intraday highs and adjusts stop levels throughout the day. The server-side GTC stop on Alpaca is a crash-proof safety net -- if the Mac dies overnight, Alpaca will still execute the stop. This mode ensures the two stay in sync before close.
 
 **Code references:**
-- `src/strategy/manager.py:QuantManager.run_stop_sync()` (line ~1745) -- stop sync orchestration
-- `src/portfolio/risk.py:RiskManager.update_stops()` (line 42) -- recalculates trailing stops per tier, returns dict of updated tickers
-- `src/broker/alpaca.py:update_stop_order()` (line 177) -- cancel-replace GTC stop at new price
-- `src/broker/alpaca.py:get_stop_order()` (line 184) -- query existing stop for a ticker
+- `src/strategy/manager.py:QuantManager.run_stop_sync()` -- stop sync orchestration
+- `src/portfolio/risk.py:RiskManager.update_stops()` -- recalculates trailing stops per tier, returns dict of updated tickers
+- `src/broker/alpaca.py:update_stop_order()` -- cancel-replace GTC stop at new price
+- `src/broker/alpaca.py:get_stop_order()` -- query existing stop for a ticker
 
 ---
 
@@ -409,7 +409,7 @@ End-of-day wrap-up: force exits, analyze performance, generate reports.
 - Generates parameter tuning recommendations
 
 **Code references:**
-- `src/strategy/manager.py:QuantManager.run_post_market()` (line ~1452) -- post-market orchestration
+- `src/strategy/manager.py:QuantManager.run_post_market()` -- post-market orchestration
 - `src/portfolio/postmortem.py:PostMortemAnalyzer.generate_report()` -- trade analysis engine
 
 **Output:** `data/reports/report_YYYYMMDD_HHMMSS.json` and `data/reports/latest.json`
@@ -443,12 +443,12 @@ A multi-factor regime model that governs position sizing, entry permission, and 
 - **Confidence score:** variance-weighted measure of how decisive the regime signal is (higher = more agreement among factors)
 
 **Code references:**
-- `src/regime/detector.py:RegimeDetector.detect_regime()` (line 170) -- weighted composite risk scoring -> MacroRegime
+- `src/regime/detector.py:RegimeDetector.detect_regime()` -- weighted composite risk scoring -> MacroRegime
 - `src/regime/detector.py:RegimeDetector._vix_risk_score()` -- VIX component (40% weight)
 - `src/regime/detector.py:RegimeDetector._yield_risk_score()` -- yield curve component (20% weight)
 - `src/regime/detector.py:RegimeDetector._breadth_risk_score()` -- market breadth component (20% weight)
 - `src/regime/detector.py:RegimeDetector._dollar_risk_score()` -- dollar strength component (20% weight)
-- `src/regime/detector.py:RegimeDetector.get_sector_rotation()` (line 137) -- cyclical vs defensive performance comparison
+- `src/regime/detector.py:RegimeDetector.get_sector_rotation()` -- cyclical vs defensive performance comparison
 
 ---
 
@@ -466,16 +466,16 @@ Builds diversified portfolios from ranked candidates using correlation constrain
 
 | Limit | Value |
 |-------|-------|
-| Max single position | 20% of portfolio |
+| Max single position | 10% of portfolio |
 | Max sector exposure | 30% of portfolio |
 | Max positions | 10 concurrent |
 | Min cash reserve | 10% of portfolio |
 
 **Code references:**
-- `src/portfolio/construction.py:PortfolioConstructor.select_portfolio()` (line 150) -- greedy selection with correlation and sector constraints
-- `src/portfolio/construction.py:PortfolioConstructor.compute_correlation_matrix()` (line 59) -- 90-day pairwise return correlations
-- `src/portfolio/construction.py:PortfolioConstructor.compute_volatilities()` (line 92) -- annualized volatility (daily std * sqrt(252))
-- `src/portfolio/construction.py:PortfolioConstructor.risk_parity_weights()` (line 119) -- inverse-variance weighting for equal risk contribution
+- `src/portfolio/construction.py:PortfolioConstructor.select_portfolio()` -- greedy selection with correlation and sector constraints
+- `src/portfolio/construction.py:PortfolioConstructor.compute_correlation_matrix()` -- 90-day pairwise return correlations
+- `src/portfolio/construction.py:PortfolioConstructor.compute_volatilities()` -- annualized volatility (daily std * sqrt(252))
+- `src/portfolio/construction.py:PortfolioConstructor.risk_parity_weights()` -- inverse-variance weighting for equal risk contribution
 
 ---
 
@@ -500,27 +500,27 @@ Phase 1: PostMortem (trade analysis, configurable lookback)
 
 Analyzes recent trades to identify loss patterns (whipsaw, dead money, gap down, regime miss). Requires minimum trade count before analysis is meaningful.
 
-**Code:** `src/learning/loop.py:LearningLoop._run_postmortem()` (line 194)
+**Code:** `src/learning/loop.py:LearningLoop._run_postmortem()`
 
 ### Phase 2: Alpha Decay
 
 Monitors signal performance over time. Triggers research if degrading signals detected or score-outcome correlation drops below 0.10.
 
-**Code:** `src/learning/loop.py:LearningLoop._run_alpha_decay()` (line 231)
+**Code:** `src/learning/loop.py:LearningLoop._run_alpha_decay()`
 
 ### Phase 3: Signal Research
 
 Generates feature matrix from historical signals using the walk-forward backtester, analyzes information coefficients and p-values per signal, identifies redundant signal pairs, and proposes optimized weights.
 
-**Code:** `src/learning/loop.py:LearningLoop._run_signal_research()` (line 252)
+**Code:** `src/learning/loop.py:LearningLoop._run_signal_research()`
 
 ### Phase 4: OOS Validation
 
 Runs 2-fold walk-forward backtest with proposed weights. Both folds must achieve Sharpe > 0 and win rate > 50% for changes to be applied.
 
-**Code:** `src/learning/loop.py:LearningLoop._run_oos_validation()` (line 325)
+**Code:** `src/learning/loop.py:LearningLoop._run_oos_validation()`
 
-**Backtester:** `src/backtest/walkforward.py:WalkForwardBacktester.run_walk_forward()` (line 248) -- replays the full screening pipeline historically using `HistoricalPriceProvider` truncated to each reference date (no lookahead bias). Disables sentiment, fundamental, and options sources during backtest to avoid stale data contamination.
+**Backtester:** `src/backtest/walkforward.py:WalkForwardBacktester.run_walk_forward()` -- replays the full screening pipeline historically using `HistoricalPriceProvider` truncated to each reference date (no lookahead bias). Disables sentiment, fundamental, and options sources during backtest to avoid stale data contamination.
 
 ### Phase 5: Apply Changes
 
@@ -534,15 +534,15 @@ Writes validated parameter changes to `config/config.yaml` with safety bounds.
 - Full audit trail in `data/learning/config_history.json`
 
 **Code:**
-- `src/learning/config_writer.py:ConfigWriter.propose_changes()` (line 57) -- validates against PARAM_BOUNDS, clamps per-cycle deltas
-- `src/learning/config_writer.py:ConfigWriter.apply_changes()` (line 159) -- writes to config.yaml with audit entry
-- `src/learning/config_writer.py:ConfigWriter._normalize_weights()` (line 224) -- ensures weights sum to 1.0
+- `src/learning/config_writer.py:ConfigWriter.propose_changes()` -- validates against PARAM_BOUNDS, clamps per-cycle deltas
+- `src/learning/config_writer.py:ConfigWriter.apply_changes()` -- writes to config.yaml with audit entry
+- `src/learning/config_writer.py:ConfigWriter._normalize_weights()` -- ensures weights sum to 1.0
 
 ### Phase 6: Gap Identification
 
 Flags unresolvable situations for human review: insufficient trade data, persistent signal degradation despite research, dominant loss categories, failed OOS validation.
 
-**Code:** `src/learning/loop.py:LearningLoop._identify_gaps()` (line 422)
+**Code:** `src/learning/loop.py:LearningLoop._identify_gaps()`
 
 **Output files:**
 - `data/learning/learning_journal.json` -- timestamped log of all learning actions
@@ -562,11 +562,10 @@ An alternative execution path where Claude AI agents make trading decisions inst
 Orchestrator
   |
   |-- Sub-Agents (run in sequence, each gets MCP tools)
-  |     |-- DataAgent:      data health, VIX, insider activity
-  |     |-- RiskAgent:      regime, portfolio risk, exit signals
-  |     |-- ScreeningAgent: candidate analysis and scoring
-  |     |-- TechnicalAgent: MA alignment, support/resistance, trend
-  |     |-- SentimentAgent: market narrative and impact
+  |     |-- DataAgent:     data health, VIX, insider activity
+  |     |-- RiskAgent:     regime, portfolio risk, exit signals
+  |     |-- AnalysisAgent: candidate screening, ranking, scoring
+  |     |-- ResearchAgent: hypothesis testing, alpha decay monitoring
   |
   |-- ManagerAgent (synthesizes sub-agent conclusions -> final decision)
   |     |-- entries_approved: bool
@@ -577,7 +576,7 @@ Orchestrator
   |-- ReportAgent (compiles session narrative)
 ```
 
-**MCP server** (`src/agents/mcp_server.py`) exposes ~20 QuantManager tools as a FastMCP stdio server. Agents call these tools to interact with the trading system: `run_screening()`, `get_regime()`, `assess_portfolio_risk()`, `execute_entries()`, `execute_exits()`, etc.
+**MCP server** (`src/agents/mcp_server.py`) exposes ~30 QuantManager tools as a FastMCP stdio server. Agents call these tools to interact with the trading system: `run_screening()`, `get_regime()`, `assess_portfolio_risk()`, `execute_entries()`, `execute_exits()`, etc.
 
 **Prompt resolution:** Disk override (`data/agents/prompts/{name}.md`) takes priority over code default (`src/agents/prompts/{name}.py`), allowing prompt evolution without code changes.
 
@@ -586,14 +585,14 @@ Orchestrator
 **Prompt evolution:** Agents include self-improvement metadata (`AgentMeta`) in their conclusions. The `PromptEvolver` collects suggestions and can rewrite prompts, with safety constraints that prevent removal of critical phrases (e.g., "source_of_truth", "GTC stop", "stop-loss").
 
 **Code references:**
-- `src/agents/orchestrator.py:Orchestrator.run_mode()` (line 407) -- mode entry point, routes to agent pipeline or deterministic fallback
-- `src/agents/orchestrator.py:Orchestrator._run_sub_agents()` (line 532) -- sequential sub-agent execution with prompt resolution
-- `src/agents/orchestrator.py:Orchestrator._run_manager()` (line 565) -- manager synthesis of sub-agent conclusions
-- `src/agents/orchestrator.py:Orchestrator._run_agent()` (line 205) -- core method: launches claude CLI with MCP config, parses JSON conclusion
-- `src/agents/registry.py:AgentRegistry` (line 56) -- YAML-driven agent definitions, prompt and conclusion type resolution
+- `src/agents/orchestrator.py:Orchestrator.run_mode()` -- mode entry point, routes to agent pipeline or deterministic fallback
+- `src/agents/orchestrator.py:Orchestrator._run_sub_agents()` -- sequential sub-agent execution with prompt resolution
+- `src/agents/orchestrator.py:Orchestrator._run_manager()` -- manager synthesis of sub-agent conclusions
+- `src/agents/orchestrator.py:Orchestrator._run_agent()` -- core method: launches claude CLI with MCP config, parses JSON conclusion
+- `src/agents/registry.py:AgentRegistry` -- YAML-driven agent definitions, prompt and conclusion type resolution
 - `src/agents/conclusions.py` -- Pydantic models for structured agent output (DataConclusion, RiskConclusion, ScreeningConclusion, ManagerDecision, etc.)
-- `src/agents/evolution.py:PromptEvolver` (line 40) -- prompt self-improvement with safety constraints (max 1 rewrite/week/agent)
-- `src/agents/mcp_server.py` -- FastMCP stdio server exposing ~20 QuantManager tools
+- `src/agents/evolution.py:PromptEvolver` -- prompt self-improvement with safety constraints (max 1 rewrite/week/agent)
+- `src/agents/mcp_server.py` -- FastMCP stdio server exposing ~30 QuantManager tools
 - `config/agents.yaml` -- declarative agent definitions and mode sequences
 
 ---
@@ -685,7 +684,7 @@ momentum_min_return: 0.15
 max_positions: 10
 position_size_pct: 0.04
 max_sector_pct: 0.30
-max_single_position_pct: 0.20
+max_single_position_pct: 0.10
 
 # Exits
 initial_stop_pct: 0.10

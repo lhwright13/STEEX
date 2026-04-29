@@ -18,6 +18,12 @@ Usage:
 """
 
 import argparse
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path so `python scripts/run_manager.py`
+# can resolve `src.*` and `config.*` packages without relying on cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 load_dotenv()
