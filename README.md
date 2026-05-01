@@ -173,13 +173,9 @@ python -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
 
-# Required: Alpaca API keys
-export ALPACA_API_KEY="your-key"
-export ALPACA_SECRET_KEY="your-secret"
-
-# Optional: sentiment API keys
-export FINNHUB_API_KEY="your-key"
-export ALPHA_VANTAGE_API_KEY="your-key"
+cp .env.example .env
+# Edit .env and fill in your Alpaca API keys (paper trading is free at alpaca.markets)
+# Optionally add Finnhub and Alpha Vantage keys for sentiment enrichment
 ```
 
 ### Running

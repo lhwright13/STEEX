@@ -183,6 +183,7 @@ trades.json
 
 # API credentials
 .env.*
+!.env.example
 secrets/
 
 # Log files
