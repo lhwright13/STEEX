@@ -13,10 +13,16 @@ Usage (via claude CLI MCP config, not directly):
 import argparse
 import json
 import logging
+import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+# av-mcp installs a conflicting top-level `src/` into site-packages and
+# Python's PathFinder wins over the editable-install finder.  Inserting the
+# project root first ensures STEEX's src/ is found before site-packages.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
@@ -561,9 +567,10 @@ def place_paper_order(ticker: str, dollar_amount: float, side: str) -> str:
     shares = int(dollar_amount // price)
     if shares < 1:
         return _safe_json({
-            "error": "dollar_amount too small for one share",
+            "error": f"minimum ${price:.2f} required for 1 share of {ticker} at ${price:.2f}",
             "ticker": ticker,
             "latest_price": price,
+            "minimum_dollar_amount": price,
         })
 
     if _dry_run:
