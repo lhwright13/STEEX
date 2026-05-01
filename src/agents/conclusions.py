@@ -203,6 +203,28 @@ class ReportConclusion(BaseModel):
     meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
 
 
+class TestTraderConclusion(BaseModel):
+    """Output from the TestTraderAgent (test_roundtrip mode).
+
+    Reports a paper-mode buy/sell roundtrip on a single ticker via the
+    place_paper_order MCP tool. Used to verify end-to-end agent -> MCP
+    -> broker plumbing without going through the screener pipeline.
+    """
+
+    ticker: str = Field(description="Ticker the roundtrip targeted")
+    requested_amount_usd: float = Field(description="Dollar amount requested for buy and sell legs")
+    buy_order_id: Optional[str] = Field(default=None, description="Order ID returned from buy leg")
+    buy_filled_price: Optional[float] = Field(default=None)
+    buy_filled_qty: Optional[float] = Field(default=None)
+    sell_order_id: Optional[str] = Field(default=None, description="Order ID returned from sell leg")
+    sell_filled_price: Optional[float] = Field(default=None)
+    sell_filled_qty: Optional[float] = Field(default=None)
+    final_status: str = Field(description="success, partial, or failed")
+    errors: List[str] = Field(default_factory=list)
+    reasoning: str = Field(description="Summary of what happened during the roundtrip")
+    meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
+
+
 # ---------------------------------------------------------------------------
 # Learning pipeline conclusions
 # ---------------------------------------------------------------------------

@@ -10,6 +10,8 @@ Usage:
     python scripts/run_manager.py learning           # Self-learning loop
     python scripts/run_manager.py pre_market         # Legacy combined (screen + enter)
     python scripts/run_manager.py full               # All three legacy modes
+    python scripts/run_manager.py test_roundtrip --paper --agent --ticker AAPL --amount 100
+                                                      # Verify agent->MCP->broker buy/sell roundtrip
     python scripts/run_manager.py --dry-run          # Show plan without executing
     python scripts/run_manager.py --yes              # Auto-confirm entries
     python scripts/run_manager.py --paper            # Enable broker (paper trading)
@@ -49,8 +51,20 @@ def main():
         choices=[
             "pre_market", "screen", "enter", "monitor",
             "stop_sync", "post_market", "learning", "full",
+            "test_roundtrip",
         ],
         help="Operating mode (default: pre_market)",
+    )
+    parser.add_argument(
+        "--ticker",
+        default="AAPL",
+        help="Ticker for test_roundtrip mode (default: AAPL)",
+    )
+    parser.add_argument(
+        "--amount",
+        type=float,
+        default=100.0,
+        help="Dollar amount for test_roundtrip mode (default: 100.0; capped at $1000)",
     )
     parser.add_argument(
         "--portfolio",
@@ -124,7 +138,10 @@ def main():
             auto_confirm=args.yes,
             verbose=args.verbose,
         )
-        orchestrator.run_mode(args.mode)
+        if args.mode == "test_roundtrip":
+            orchestrator.run_test_roundtrip(args.ticker, args.amount)
+        else:
+            orchestrator.run_mode(args.mode)
         return
 
     # Deterministic mode: use QuantManager directly
@@ -171,6 +188,13 @@ def main():
         manager.run_full_cycle(
             dry_run=args.dry_run,
             auto_confirm=args.yes,
+            verbose=args.verbose,
+        )
+    elif args.mode == "test_roundtrip":
+        manager.run_test_roundtrip(
+            ticker=args.ticker,
+            amount_usd=args.amount,
+            dry_run=args.dry_run,
             verbose=args.verbose,
         )
 

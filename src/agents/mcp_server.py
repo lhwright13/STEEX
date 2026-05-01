@@ -523,6 +523,76 @@ def execute_exits() -> str:
     })
 
 
+# ---- Test / Paper-only Direct Order Tool ---------------------------------
+
+PAPER_ORDER_MAX_USD = 1000.0
+
+
+@mcp.tool()
+def place_paper_order(ticker: str, dollar_amount: float, side: str) -> str:
+    """Place a single paper-mode market order for a specific ticker.
+
+    Constrained entry point for the test_roundtrip mode. Bypasses the
+    screener pipeline. Hard-gated to paper mode and capped at $1000 per
+    call so it cannot be misused. Skips server-side stop placement -
+    intended for short-lived test roundtrips, not production positions.
+
+    Args:
+        ticker: Stock symbol e.g. "AAPL".
+        dollar_amount: Notional size in USD; converted to whole shares
+            using latest price. Must be <= $1000.
+        side: "buy" or "sell".
+    """
+    mgr = _init_manager()
+
+    if mgr.broker is None:
+        return _safe_json({"error": "broker not initialized"})
+    if not getattr(mgr.broker, "paper", False):
+        return _safe_json({"error": "place_paper_order is paper-mode only"})
+    if side not in ("buy", "sell"):
+        return _safe_json({"error": f"side must be 'buy' or 'sell', got '{side}'"})
+    if dollar_amount <= 0 or dollar_amount > PAPER_ORDER_MAX_USD:
+        return _safe_json({"error": f"dollar_amount must be in (0, {PAPER_ORDER_MAX_USD}]"})
+
+    price = mgr.price_provider.get_latest_price(ticker)
+    if price is None or price <= 0:
+        return _safe_json({"error": f"no latest price for {ticker}"})
+
+    shares = int(dollar_amount // price)
+    if shares < 1:
+        return _safe_json({
+            "error": "dollar_amount too small for one share",
+            "ticker": ticker,
+            "latest_price": price,
+        })
+
+    if _dry_run:
+        return _safe_json({
+            "dry_run": True,
+            "ticker": ticker,
+            "side": side,
+            "shares": shares,
+            "intended_price": price,
+        })
+
+    if side == "buy":
+        result = mgr.broker.buy_market(ticker, shares)
+    else:
+        result = mgr.broker.sell_market(ticker, shares)
+
+    return _safe_json({
+        "ticker": ticker,
+        "side": side,
+        "shares": shares,
+        "intended_price": price,
+        "filled_price": result.filled_price,
+        "filled_qty": result.filled_qty,
+        "order_id": result.order_id,
+        "status": result.status,
+        "error": result.error,
+    })
+
+
 @mcp.tool()
 def load_screen_results() -> str:
     """Load saved screen results from the screen phase.

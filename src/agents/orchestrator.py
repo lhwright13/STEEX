@@ -411,6 +411,12 @@ class Orchestrator:
         if effective_mode in DETERMINISTIC_MODES:
             return self._run_deterministic(effective_mode)
 
+        if effective_mode == "test_roundtrip":
+            # test_roundtrip is parameterized; use defaults if invoked through
+            # the generic run_mode path. Callers with custom ticker/amount
+            # should call run_test_roundtrip directly.
+            return self.run_test_roundtrip("AAPL", 100.0)
+
         mode_config = self.registry.get_mode(effective_mode)
         if mode_config is None:
             logger.error("Unknown mode: %s", effective_mode)
@@ -424,6 +430,89 @@ class Orchestrator:
                 mode_config.fallback or effective_mode,
                 dry_run=self.dry_run, verbose=self.verbose,
             )
+
+    def run_test_roundtrip(self, ticker: str, amount_usd: float) -> Optional[Dict]:
+        """Run the test_trader agent against a single ticker/amount and return its conclusion.
+
+        Bypasses the manager-synthesis pipeline used by trading modes - this
+        is a self-contained verification of the agent -> MCP -> broker path.
+        Falls back to the deterministic QuantManager.run_test_roundtrip if
+        the agent fails.
+        """
+        mode = "test_roundtrip"
+        mode_config = self.registry.get_mode(mode)
+        if mode_config is None or not mode_config.sub_agents:
+            logger.error("test_roundtrip mode missing or has no sub_agents in agents.yaml")
+            return self._fallback_test_roundtrip(ticker, amount_usd)
+
+        agent_name = mode_config.sub_agents[0]
+        agent_config = self.registry.get_agent(agent_name)
+        if agent_config is None:
+            logger.error("test_trader agent missing from registry")
+            return self._fallback_test_roundtrip(ticker, amount_usd)
+
+        run_id = str(uuid.uuid4())[:8]
+        session = AgentSession(run_id=run_id, mode=mode)
+
+        console.print(Panel.fit(
+            f"[bold]Test Roundtrip (Agent Mode)[/bold]\n"
+            f"Ticker: {ticker}  Amount: ${amount_usd:.2f}  Paper: {self.paper}",
+            border_style="cyan",
+        ))
+
+        task_message = (
+            f"Run a paper-mode buy/sell roundtrip on {ticker} for "
+            f"${amount_usd:.2f}. Use place_paper_order for both legs. "
+            f"Do not change the ticker or amount. Dry run: {self.dry_run}."
+        )
+
+        try:
+            prompt = self.registry.resolve_prompt(agent_name, data_dir=self.settings.data_dir)
+            conclusion_type = self.registry.resolve_conclusion_type(agent_name)
+            result, trace = self._run_agent(
+                role="TestTraderAgent",
+                system_prompt=prompt,
+                task_message=task_message,
+                conclusion_type=conclusion_type,
+                max_turns=agent_config.max_turns,
+                needs_tools=agent_config.needs_tools,
+                allowed_tools=agent_config.allowed_tools,
+                external_servers=agent_config.external_servers,
+                mode=mode,
+                run_id=run_id,
+            )
+            session.add_trace(trace)
+        except FileNotFoundError as e:
+            console.print(f"[red]Agent mode unavailable: {e}[/red]")
+            session.fallback_used = True
+            self._finalize_session(session)
+            return self._fallback_test_roundtrip(ticker, amount_usd)
+
+        if result is None:
+            session.fallback_used = True
+            self._finalize_session(session)
+            self._cleanup()
+            return self._fallback_test_roundtrip(ticker, amount_usd)
+
+        report = {"mode": mode, "ticker": ticker, "amount_usd": amount_usd,
+                  "conclusion": result.model_dump()}
+        session.set_manager_decision(report)
+        self._save_report(report)
+        self._finalize_session(session)
+        self._cleanup()
+        return report
+
+    def _fallback_test_roundtrip(self, ticker: str, amount_usd: float) -> Optional[Dict]:
+        """Deterministic fallback for test_roundtrip - bypasses agents."""
+        from src.strategy.manager import QuantManager
+        try:
+            manager = QuantManager(settings=self.settings)
+        except RuntimeError:
+            self.settings.broker_enabled = False
+            manager = QuantManager(settings=self.settings)
+        return manager.run_test_roundtrip(
+            ticker=ticker, amount_usd=amount_usd, dry_run=self.dry_run,
+        )
 
     def _run_deterministic(self, mode: str) -> Optional[Dict]:
         """Run a mode through the deterministic QuantManager (no AI)."""

@@ -111,6 +111,17 @@ agents:
     max_turns: 3
     needs_tools: false
 
+  test_trader:
+    prompt: "test_trader"
+    conclusion: "TestTraderConclusion"
+    max_turns: 8
+    needs_tools: true
+    allowed_tools:
+      - place_paper_order
+      - get_positions
+      - get_account
+    external_servers: [alpaca]
+
 modes:
   screen:
     sub_agents: [data, risk, analysis]
@@ -150,3 +161,9 @@ modes:
     critical_agents: [learning_agent]
     post_actions: [evolve_prompts, report]
     fallback: learning
+
+  test_roundtrip:
+    sub_agents: [test_trader]
+    manager: ""             # no manager synthesis - the agent is self-contained
+    critical_agents: [test_trader]
+    fallback: test_roundtrip  # deterministic fallback in QuantManager

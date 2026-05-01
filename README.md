@@ -218,6 +218,24 @@ venv/bin/python scripts/run_manager.py screen --paper --agent
 | `--yes` | Auto-confirm entries |
 | `--agent` | Use Claude AI agents instead of deterministic pipeline |
 
+### Verifying agent buy/sell end-to-end
+
+The `test_roundtrip` mode spins up a single `test_trader` agent that buys a small
+paper-mode position via MCP and immediately sells it. Useful for verifying that
+orchestrator subprocess spawning, MCP tool routing, and Alpaca paper execution
+are all wired correctly without running the full screening pipeline.
+
+```bash
+# Agent mode (validates orchestrator -> claude CLI -> MCP -> broker)
+venv/bin/python scripts/run_manager.py test_roundtrip --paper --agent --ticker AAPL --amount 100
+
+# Deterministic fallback (validates broker plumbing only)
+venv/bin/python scripts/run_manager.py test_roundtrip --paper --ticker AAPL --amount 100
+```
+
+The `place_paper_order` MCP tool is hard-gated to paper mode and capped at $1000
+per call. Live mode and amounts above the cap are refused before any broker call.
+
 ### Scheduler
 
 ```bash

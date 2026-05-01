@@ -1821,6 +1821,96 @@ class QuantManager:
         console.print(f"\nReport saved: {filepath}")
         return report
 
+    def run_test_roundtrip(
+        self,
+        ticker: str = "AAPL",
+        amount_usd: float = 100.0,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> Dict:
+        """Deterministic fallback for the test_roundtrip mode.
+
+        Places a paper-mode market buy then a market sell on a single ticker
+        using the same hard gates as the place_paper_order MCP tool. Used
+        when the agent path is unavailable or fails.
+        """
+        from src.agents.mcp_server import PAPER_ORDER_MAX_USD
+
+        report: Dict = {
+            "mode": "test_roundtrip",
+            "ticker": ticker,
+            "amount_usd": amount_usd,
+            "errors": [],
+        }
+
+        console.print(Panel.fit(
+            f"[bold]Test Roundtrip (Deterministic)[/bold]\n"
+            f"Ticker: {ticker}  Amount: ${amount_usd:.2f}",
+            border_style="cyan",
+        ))
+
+        if self.broker is None:
+            report["errors"].append("broker not initialized")
+            report["final_status"] = "failed"
+            return report
+        if not getattr(self.broker, "paper", False):
+            report["errors"].append("test_roundtrip is paper-mode only")
+            report["final_status"] = "failed"
+            return report
+        if amount_usd <= 0 or amount_usd > PAPER_ORDER_MAX_USD:
+            report["errors"].append(f"amount_usd must be in (0, {PAPER_ORDER_MAX_USD}]")
+            report["final_status"] = "failed"
+            return report
+
+        price = self.price_provider.get_latest_price(ticker)
+        if price is None or price <= 0:
+            report["errors"].append(f"no latest price for {ticker}")
+            report["final_status"] = "failed"
+            return report
+
+        shares = int(amount_usd // price)
+        if shares < 1:
+            report["errors"].append("amount_usd too small for one share")
+            report["final_status"] = "failed"
+            return report
+
+        report["intended_price"] = price
+        report["shares"] = shares
+
+        if dry_run:
+            console.print(f"  [yellow]DRY RUN[/yellow] would buy then sell {shares} {ticker}")
+            report["final_status"] = "dry_run"
+            return report
+
+        # Buy leg
+        console.print(f"\n[bold]1. Buy {shares} {ticker} @ ~${price:.2f}[/bold]")
+        buy = self.broker.buy_market(ticker, shares)
+        report["buy"] = {
+            "order_id": buy.order_id, "filled_qty": buy.filled_qty,
+            "filled_price": buy.filled_price, "status": buy.status, "error": buy.error,
+        }
+        if buy.status != "filled":
+            report["errors"].append(f"buy failed: {buy.error}")
+            report["final_status"] = "failed"
+            return report
+        console.print(f"   Buy filled: {buy.filled_qty} @ ${buy.filled_price:.2f}")
+
+        # Sell leg
+        console.print(f"\n[bold]2. Sell {int(buy.filled_qty)} {ticker}[/bold]")
+        sell = self.broker.sell_market(ticker, int(buy.filled_qty))
+        report["sell"] = {
+            "order_id": sell.order_id, "filled_qty": sell.filled_qty,
+            "filled_price": sell.filled_price, "status": sell.status, "error": sell.error,
+        }
+        if sell.status != "filled":
+            report["errors"].append(f"sell failed: {sell.error} - position remains OPEN")
+            report["final_status"] = "partial"
+            return report
+        console.print(f"   Sell filled: {sell.filled_qty} @ ${sell.filled_price:.2f}")
+
+        report["final_status"] = "success"
+        return report
+
     def run_learning(self, dry_run: bool = False, verbose: bool = False) -> Optional[Dict]:
         """Run the self-learning loop for parameter optimization.
 
