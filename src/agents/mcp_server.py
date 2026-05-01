@@ -529,6 +529,47 @@ def execute_exits() -> str:
     })
 
 
+@mcp.tool()
+def get_order_status(order_id: str) -> str:
+    """Fetch current status and fill details for a specific order.
+
+    Use this to confirm fills after execute_entries, execute_exits, or
+    place_paper_order. More reliable than get_positions for verifying a
+    specific order, since position tracking may not update immediately.
+
+    Args:
+        order_id: The order UUID returned by a previous order tool call.
+    """
+    mgr = _init_manager()
+
+    if mgr.broker is None:
+        return _safe_json({"error": "broker not initialized"})
+
+    client = getattr(mgr.broker, "client", None)
+    if client is None:
+        return _safe_json({"error": "broker does not expose a queryable client"})
+
+    try:
+        order = client.get_order_by_id(order_id)
+    except Exception as e:
+        return _safe_json({"error": f"get_order_by_id failed: {e}", "order_id": order_id})
+
+    filled_qty = float(order.filled_qty) if order.filled_qty else 0.0
+    filled_price = float(order.filled_avg_price) if order.filled_avg_price else 0.0
+
+    return _safe_json({
+        "order_id": order_id,
+        "symbol": str(order.symbol),
+        "side": str(order.side.value) if hasattr(order.side, "value") else str(order.side),
+        "qty": float(order.qty) if order.qty else 0.0,
+        "status": str(order.status.value) if hasattr(order.status, "value") else str(order.status),
+        "filled_qty": filled_qty,
+        "filled_avg_price": filled_price,
+        "submitted_at": str(order.submitted_at) if order.submitted_at else None,
+        "filled_at": str(order.filled_at) if order.filled_at else None,
+    })
+
+
 # ---- Test / Paper-only Direct Order Tool ---------------------------------
 
 PAPER_ORDER_MAX_USD = 1000.0

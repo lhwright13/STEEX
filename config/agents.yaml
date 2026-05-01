@@ -60,6 +60,7 @@ agents:
       - load_screen_results
       - execute_entries
       - execute_exits
+      - get_order_status
       - get_positions
       - get_account
     external_servers: [alpaca]
@@ -118,6 +119,7 @@ agents:
     needs_tools: true
     allowed_tools:
       - place_paper_order
+      - get_order_status
       - get_positions
       - get_account
     external_servers: [alpaca]
