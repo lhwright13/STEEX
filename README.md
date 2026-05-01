@@ -227,10 +227,10 @@ are all wired correctly without running the full screening pipeline.
 
 ```bash
 # Agent mode (validates orchestrator -> claude CLI -> MCP -> broker)
-venv/bin/python scripts/run_manager.py test_roundtrip --paper --agent --ticker AAPL --amount 100
+venv/bin/python scripts/run_manager.py test_roundtrip --paper --agent --ticker AAPL
 
 # Deterministic fallback (validates broker plumbing only)
-venv/bin/python scripts/run_manager.py test_roundtrip --paper --ticker AAPL --amount 100
+venv/bin/python scripts/run_manager.py test_roundtrip --paper --ticker AAPL
 ```
 
 The `place_paper_order` MCP tool is hard-gated to paper mode and capped at $1000

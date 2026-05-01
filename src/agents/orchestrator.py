@@ -415,7 +415,7 @@ class Orchestrator:
             # test_roundtrip is parameterized; use defaults if invoked through
             # the generic run_mode path. Callers with custom ticker/amount
             # should call run_test_roundtrip directly.
-            return self.run_test_roundtrip("AAPL", 100.0)
+            return self.run_test_roundtrip("AAPL", 1000.0)
 
         mode_config = self.registry.get_mode(effective_mode)
         if mode_config is None:

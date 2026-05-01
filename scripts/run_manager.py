@@ -63,8 +63,8 @@ def main():
     parser.add_argument(
         "--amount",
         type=float,
-        default=100.0,
-        help="Dollar amount for test_roundtrip mode (default: 100.0; capped at $1000)",
+        default=1000.0,
+        help="Dollar amount for test_roundtrip mode (default: 1000.0; capped at $1000)",
     )
     parser.add_argument(
         "--portfolio",
