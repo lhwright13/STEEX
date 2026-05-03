@@ -642,12 +642,11 @@ class QuantManager:
     ) -> float:
         """Calculate position size as a fraction of portfolio value.
 
-        Applies regime multiplier, volatility adjustment, and
-        max_single_position_pct cap.
+        Applies volatility adjustment, then the regime sizing multiplier
+        exactly once, then caps at max_single_position_pct.
         """
-        base_pct = self.settings.position_size_pct * regime["sizing_multiplier"]
+        base_pct = self.settings.position_size_pct
 
-        # Volatility-adjusted sizing
         if self.settings.vol_sizing_enabled:
             atr_pct = self.technical.get_atr_percent(ticker)
             if atr_pct is not None:
@@ -657,10 +656,8 @@ class QuantManager:
                     base_pct = self.settings.vol_med_position_pct
                 else:
                     base_pct = self.settings.vol_high_position_pct
-                # Still apply regime multiplier on top
-                base_pct *= regime["sizing_multiplier"]
 
-        # Cap at max single position size
+        base_pct *= regime["sizing_multiplier"]
         return min(base_pct, self.settings.max_single_position_pct)
 
     def generate_buy_list(

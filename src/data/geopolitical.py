@@ -662,13 +662,111 @@ class GeopoliticalSentimentProvider(DataProvider):
             return "low"
 
 
-def get_ticker_sector(ticker: str) -> str:
-    """Convenience function to get sector for a ticker.
+# ---------------------------------------------------------------------------
+# Sector lookup cascade: SECTOR_MAPPING → DBCache → yfinance → "unknown"
+# ---------------------------------------------------------------------------
 
-    Args:
-        ticker: Stock ticker symbol
+_SECTOR_CACHE_TTL_POSITIVE = 30 * 86400  # 30 days for successful lookups
+_SECTOR_CACHE_TTL_NEGATIVE = 86400       # 1 day for "unknown" / failures
 
-    Returns:
-        Sector name or "unknown"
+# yfinance's sector labels mapped onto STEEX internal sector names so the
+# result can be compared directly against SECTOR_MAPPING values downstream.
+_YFINANCE_SECTOR_NORMALIZATION: Dict[str, str] = {
+    "Technology": "technology",
+    "Financial Services": "financials",
+    "Healthcare": "healthcare",
+    "Consumer Cyclical": "consumer_discretionary",
+    "Consumer Defensive": "consumer_staples",
+    "Industrials": "industrials",
+    "Communication Services": "communication",
+    "Energy": "energy",
+    "Basic Materials": "materials",
+    "Real Estate": "real_estate",
+    "Utilities": "utilities",
+}
+
+_sector_cache_instance: Optional[Any] = None
+_sector_cache_settings: Optional[Any] = None
+_sector_cache_initialized: bool = False
+
+
+def _get_sector_cache():
+    """Lazy singleton for the sector DBCache and settings reference."""
+    global _sector_cache_instance, _sector_cache_settings, _sector_cache_initialized
+    if _sector_cache_initialized:
+        return _sector_cache_instance, _sector_cache_settings
+    _sector_cache_initialized = True
+    try:
+        from config.settings import get_settings
+        from .cache import DBCache
+        _sector_cache_settings = get_settings()
+        _sector_cache_instance = DBCache(db_path=_sector_cache_settings.cache_db_path)
+    except Exception:
+        _sector_cache_instance = None
+        _sector_cache_settings = None
+    return _sector_cache_instance, _sector_cache_settings
+
+
+def _fetch_sector_yfinance(ticker: str) -> Optional[str]:
+    """Query yfinance for a ticker's sector and normalize the label.
+
+    Returns the STEEX-internal sector name on success, or None on any
+    failure (network error, rate limit, missing field) so the caller can
+    record a short-TTL negative cache entry.
     """
-    return SECTOR_MAPPING.get(ticker.upper(), "unknown")
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info
+        raw = info.get("sector") if isinstance(info, dict) else None
+        if not raw:
+            return None
+        return _YFINANCE_SECTOR_NORMALIZATION.get(raw, "unknown")
+    except Exception:
+        return None
+
+
+def get_ticker_sector(ticker: str) -> str:
+    """Return the STEEX-internal sector name for a ticker.
+
+    Resolution cascade:
+      1. Hardcoded SECTOR_MAPPING (hot path for mega-caps, no external calls).
+      2. DBCache lookup (`sector:<TICKER>`) — previously-resolved tickers.
+      3. yfinance fallback (gated by ``sector_lookup_yfinance_enabled``).
+      4. ``"unknown"`` with a short-TTL negative cache so we retry tomorrow.
+
+    Any failure inside the cascade returns ``"unknown"`` and never raises.
+    """
+    key = ticker.upper()
+
+    if key in SECTOR_MAPPING:
+        return SECTOR_MAPPING[key]
+
+    cache, settings = _get_sector_cache()
+
+    if cache is not None:
+        try:
+            hit = cache.get(f"sector:{key}")
+            if hit is not None:
+                return hit
+        except Exception:
+            pass
+
+    kill_switch_on = settings is None or getattr(
+        settings, "sector_lookup_yfinance_enabled", True
+    )
+    if kill_switch_on:
+        resolved = _fetch_sector_yfinance(ticker)
+        if resolved and resolved != "unknown":
+            if cache is not None:
+                try:
+                    cache.set(f"sector:{key}", resolved, _SECTOR_CACHE_TTL_POSITIVE)
+                except Exception:
+                    pass
+            return resolved
+
+    if cache is not None:
+        try:
+            cache.set(f"sector:{key}", "unknown", _SECTOR_CACHE_TTL_NEGATIVE)
+        except Exception:
+            pass
+    return "unknown"

@@ -38,11 +38,11 @@ min_history_days: 126            # Minimum trading history required (6 months)
 # Position Management
 # -----------------------------------------------------------------------------
 max_positions: 10                # Optimized: concentrated portfolio outperforms
-daily_picks: 2                   # Number of stocks to pick daily
+daily_picks: 8                   # Top-N handed to portfolio construction (unblocks funnel)
 position_size_pct: 0.04          # Base position size (4%)
-max_sector_pct: 0.30             # Maximum sector exposure (30%)
+max_sector_pct: 0.35             # Maximum sector exposure (small cushion after sector fix)
 max_single_position_pct: 0.10    # Maximum single position size (10%)
-min_cash_reserve_pct: 0.10       # Minimum cash reserve (10%)
+min_cash_reserve_pct: 0.05       # Minimum cash reserve (frees capital for 5th-6th entry)
 
 # -----------------------------------------------------------------------------
 # Volatility-Adjusted Position Sizing
@@ -93,6 +93,8 @@ weight_options: 0.05             # Options intelligence weight
 geopolitical_enabled: true       # Enable geopolitical/macro sentiment
 geopolitical_weight: 0.40        # Weight of geopolitical vs stock-specific sentiment
 sentiment_stock_weight: 0.60     # Weight of stock-specific sentiment
+sentiment_min_score: 40.0        # Min combined sentiment to pass stage 4 (cuts "Bearish" label, keeps "Somewhat Bearish"+)
+sector_lookup_yfinance_enabled: true  # Fall back to yfinance for sectors not in SECTOR_MAPPING (kill switch)
 
 # -----------------------------------------------------------------------------
 # Fundamental Analysis
@@ -122,7 +124,7 @@ walkforward_signal_interval: 7     # Days between signal generations
 # -----------------------------------------------------------------------------
 # Portfolio Construction
 # -----------------------------------------------------------------------------
-portfolio_max_pairwise_corr: 0.70  # Maximum pairwise correlation for diversification
+portfolio_max_pairwise_corr: 0.80  # Maximum pairwise correlation (S&P intra-sector pairs often exceed 0.70)
 portfolio_risk_parity_enabled: true # Enable risk-parity weighting
 portfolio_correlation_lookback: 60  # Lookback days for correlation matrix
 
@@ -234,8 +236,8 @@ learning_validation_test_months: 1   # OOS validation test window
 # -----------------------------------------------------------------------------
 manager_portfolio_value: 50000   # Total portfolio value for position sizing
 manager_report_dir: "data/reports"  # Directory for daily reports
-manager_max_daily_entries: 2     # Maximum new positions per day
-manager_min_score_entry: 55.0    # Minimum composite score for entry
+manager_max_daily_entries: 6     # Maximum new positions per day (unblocks execution cap)
+manager_min_score_entry: 47.0    # Minimum composite score for entry (lowered after pysr/funnel fix)
 manager_require_insider: false   # Require insider activity for entry
 
 # -----------------------------------------------------------------------------

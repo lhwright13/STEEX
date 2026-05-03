@@ -183,6 +183,10 @@ class Settings(BaseSettings):
     sentiment_stock_weight: float = Field(
         default=0.6, description="Weight of stock-specific sentiment"
     )
+    sector_lookup_yfinance_enabled: bool = Field(
+        default=True,
+        description="Fall back to yfinance for sectors not in SECTOR_MAPPING (kill switch)",
+    )
 
     # Fundamental analysis parameters
     fundamental_enabled: bool = Field(
