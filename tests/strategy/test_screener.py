@@ -46,8 +46,13 @@ class TestStockScreener:
         assert screener.settings == test_settings
 
     def test_stage_4_passthrough(self, test_settings):
-        """Test that stage 4 (sentiment) passes all tickers through."""
-        screener = StockScreener(settings=test_settings)
+        """Test that stage 4 (sentiment) passes all tickers through when disabled.
+
+        With sentiment_enabled=False the filter short-circuits to neutral
+        scores and returns the input list unchanged — no network calls.
+        """
+        settings = test_settings.model_copy(update={"sentiment_enabled": False})
+        screener = StockScreener(settings=settings)
 
         tickers = ["AAPL", "MSFT", "GOOGL"]
         result_tickers, sentiment_data = screener.stage_4_sentiment_filter(tickers)

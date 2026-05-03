@@ -241,6 +241,33 @@ scheduler/uninstall.sh        # Remove cron schedule
 scheduler/run.sh screen       # Manual run of a specific mode
 ```
 
+### Dashboard
+
+STEEX ships with a Flask web dashboard at `dashboard/` that visualizes everything the daily pipeline does. It reads from `data/dashboard.db` (populated by each pipeline run) plus the live JSON state files (`data/heartbeat.json`, `data/positions.json`).
+
+```bash
+# Start the dashboard on http://127.0.0.1:5000
+venv/bin/python -m flask --app dashboard.app:create_app run
+
+# Or use the wrapper script (forwards extra args to flask run)
+scripts/run_dashboard.sh
+scripts/run_dashboard.sh --host 0.0.0.0 --port 8080
+```
+
+Available views:
+
+| Path | Shows |
+|------|-------|
+| `/` | Overview: latest run, current regime, recent decisions, heartbeat |
+| `/runs` | History of all pipeline runs (screen / enter / monitor / etc.) with status |
+| `/runs/<id>` | Drill into a single run's trace, logs, and stage timings |
+| `/decisions` | Every buy/sell/skip decision the system has made, filterable |
+| `/screening/funnel` | Stage-by-stage funnel counts (universe → ranked → executed) |
+| `/risk/regime` | Current + historical regime detection (VIX, yield curve, breadth, dollar) |
+| `/status/current` | Live account snapshot: equity, cash, open positions, stops |
+
+Run the dashboard alongside cron — it's read-only, safe to leave running 24/7, and gives you a faster feedback loop than grepping `data/reports/*.json`. For remote access, put it behind a reverse proxy or bind to localhost only.
+
 ### Tests
 
 ```bash

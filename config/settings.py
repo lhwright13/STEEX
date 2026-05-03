@@ -370,6 +370,9 @@ class Settings(BaseSettings):
     server_stop_offset_pct: float = Field(
         default=0.005, description="Place server stop 0.5% below local stop (noise buffer)"
     )
+    buy_limit_buffer_pct: float = Field(
+        default=0.005, description="Buy limit price buffer above screen price (tolerates opening gaps)"
+    )
 
     # Data paths
     data_dir: str = Field(default="data", description="Directory for cached data")

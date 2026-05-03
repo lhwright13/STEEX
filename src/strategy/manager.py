@@ -847,7 +847,10 @@ class QuantManager:
             entry_shares = entry["shares"]
 
             if self.broker:
-                result = self.broker.buy(entry["ticker"], entry_shares, entry_price)
+                limit_price = round(
+                    entry_price * (1 + self.settings.buy_limit_buffer_pct), 2
+                )
+                result = self.broker.buy(entry["ticker"], entry_shares, limit_price)
                 if result.status == "filled":
                     # Track execution quality
                     if self.execution_quality_tracker is not None:
