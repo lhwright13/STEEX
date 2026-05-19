@@ -499,13 +499,16 @@ class WalkForwardBacktester:
         if vix_data.empty:
             return None
         try:
-            idx = vix_data.index
-            if idx.tz is not None:
-                idx = idx.tz_localize(None)
-            mask = idx <= date
+            # Normalize the index on the DataFrame itself; localizing only a
+            # detached copy leaves the .loc lookup below comparing a tz-naive
+            # label against a tz-aware index, which raises KeyError/TypeError.
+            vix_data = vix_data.copy()
+            if vix_data.index.tz is not None:
+                vix_data.index = vix_data.index.tz_localize(None)
+            mask = vix_data.index <= date
             if not mask.any():
                 return None
-            closest = idx[mask][-1]
-            return vix_data.loc[closest, "Close"]
+            closest = vix_data.index[mask][-1]
+            return float(vix_data.loc[closest, "Close"])
         except (KeyError, IndexError):
             return None

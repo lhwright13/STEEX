@@ -6,6 +6,7 @@ exited too early, and correlates entry scores with actual returns.
 """
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,8 @@ from config.settings import Settings, get_settings
 from ..data.price import PriceProvider
 from ..data.vix import VixProvider
 from .tracker import Trade, TradeTracker
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,6 +48,7 @@ class PostMortemReport:
     avg_missed_upside: float             # average upside missed after exit
     recommendations: List[str]
     patterns: List[Dict] = field(default_factory=list)
+    analysis_failures: List[Dict] = field(default_factory=list)
 
 
 class PostMortemAnalyzer:
@@ -76,13 +80,16 @@ class PostMortemAnalyzer:
         if vix_data.empty:
             return None
         try:
-            idx = vix_data.index
-            if idx.tz is not None:
-                idx = idx.tz_localize(None)
-            mask = idx <= date
+            # Normalize the index to tz-naive on the DataFrame itself, so the
+            # later .loc lookup doesn't mix tz-aware (index) and tz-naive
+            # (date) timestamps — that mismatch raises KeyError/TypeError.
+            vix_data = vix_data.copy()
+            if vix_data.index.tz is not None:
+                vix_data.index = vix_data.index.tz_localize(None)
+            mask = vix_data.index <= date
             if not mask.any():
-                return vix_data["Close"].iloc[0]
-            return vix_data.loc[idx[mask][-1], "Close"]
+                return float(vix_data["Close"].iloc[0])
+            return float(vix_data.loc[vix_data.index[mask][-1], "Close"])
         except (KeyError, IndexError):
             return None
 
@@ -111,19 +118,23 @@ class PostMortemAnalyzer:
         if df.empty:
             return None
 
-        idx = df.index
-        if idx.tz is not None:
-            idx = idx.tz_localize(None)
+        # Normalize the index to tz-naive on the DataFrame itself. Localizing
+        # only a detached copy of the index (the previous bug) left df.loc
+        # comparing tz-naive lookups against a tz-aware index, raising
+        # KeyError/TypeError on every call.
+        df = df.copy()
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
 
         # Get the Nth trading day after exit
-        future_dates = idx[idx > exit_date]
-        if len(future_dates) < days_after:
-            if not future_dates.empty:
-                return df.loc[future_dates[-1], "Close"]
+        future_dates = df.index[df.index > exit_date]
+        if future_dates.empty:
             return None
+        if len(future_dates) < days_after:
+            return float(df.loc[future_dates[-1], "Close"])
 
         target_date = future_dates[days_after - 1]
-        return df.loc[target_date, "Close"]
+        return float(df.loc[target_date, "Close"])
 
     def analyze_trade(self, trade: Trade) -> TradeAnalysis:
         """Analyze a single completed trade.
@@ -249,12 +260,37 @@ class PostMortemAnalyzer:
             )
 
         analyses = []
+        failures: List[Dict] = []
         for trade in trades:
             try:
-                analysis = self.analyze_trade(trade)
-                analyses.append(analysis)
-            except Exception:
-                continue
+                analyses.append(self.analyze_trade(trade))
+            except Exception as e:  # noqa: BLE001 - record it, don't swallow
+                failures.append({"ticker": trade.ticker, "error": repr(e)})
+                logger.warning(
+                    "postmortem: analyze_trade failed for %s: %r",
+                    trade.ticker, e,
+                )
+
+        # Trades existed in range but none could be analyzed. This is a
+        # failure, not a clean result — it must NOT reach
+        # _generate_recommendations, which would read zero losses as
+        # "excellent performance" and feed a false success to the
+        # learning loop.
+        if not analyses:
+            return PostMortemReport(
+                trades_analyzed=0,
+                analyses=[],
+                loss_breakdown={},
+                score_correlation=0.0,
+                avg_missed_upside=0.0,
+                recommendations=[
+                    f"ANALYSIS FAILED: {len(trades)} trade(s) in range but "
+                    f"none could be analyzed ({len(failures)} error(s)) - "
+                    f"postmortem produced NO valid verdict; do not feed to "
+                    f"the learning loop"
+                ],
+                analysis_failures=failures,
+            )
 
         # Aggregate loss breakdown
         loss_breakdown: Dict[str, int] = {}
@@ -302,6 +338,7 @@ class PostMortemAnalyzer:
             avg_missed_upside=avg_missed,
             recommendations=recommendations,
             patterns=patterns,
+            analysis_failures=failures,
         )
 
     def _generate_recommendations(
@@ -314,9 +351,20 @@ class PostMortemAnalyzer:
         """Generate actionable recommendations from analysis."""
         recs = []
 
+        # Guard: with no analyzed trades there is no verdict to give. Never
+        # report "excellent performance" off an empty analysis set.
+        if not analyses:
+            recs.append(
+                "ANALYSIS FAILED: no trades could be analyzed - no verdict"
+            )
+            return recs
+
         total_losses = sum(loss_breakdown.values())
         if total_losses == 0:
-            recs.append("No losing trades in period - excellent performance")
+            recs.append(
+                f"No losing trades across {len(analyses)} analyzed trade(s) "
+                f"- excellent performance"
+            )
             return recs
 
         # Bad signal check
@@ -395,6 +443,7 @@ class PostMortemAnalyzer:
             "avg_missed_upside": report.avg_missed_upside,
             "recommendations": report.recommendations,
             "patterns": report.patterns,
+            "analysis_failures": report.analysis_failures,
         }
 
         with open(filepath, "w") as f:
