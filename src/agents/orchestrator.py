@@ -266,9 +266,25 @@ class Orchestrator:
 
             if result.returncode != 0:
                 stderr_text = result.stderr or ""
-                logger.error("%s failed (rc=%d): %s", role, result.returncode, stderr_text[:500])
-                console.print(f"  [red]{role} failed[/red]")
-                trace.finish(success=False, error=f"exit code {result.returncode}")
+                stdout_text = result.stdout or ""
+                fail_dir = Path(self.settings.data_dir) / "agents" / "failures"
+                fail_dir.mkdir(parents=True, exist_ok=True)
+                fail_path = fail_dir / (
+                    f"{role}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    f"_rc{result.returncode}.log"
+                )
+                fail_path.write_text(
+                    f"=== STDERR ===\n{stderr_text}\n\n=== STDOUT ===\n{stdout_text}\n"
+                )
+                logger.error(
+                    "%s failed (rc=%d). stderr[:500]=%r stdout[:500]=%r (full: %s)",
+                    role, result.returncode, stderr_text[:500], stdout_text[:500], fail_path,
+                )
+                console.print(f"  [red]{role} failed[/red] (see {fail_path})")
+                trace.finish(
+                    success=False,
+                    error=f"exit code {result.returncode}: {fail_path}",
+                )
                 return None, trace
 
             # Parse CLI JSON envelope
