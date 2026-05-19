@@ -201,3 +201,9 @@ results/
 # Claude Code
 .claude/
 .playwright-mcp/
+
+# Local planning docs and diagrams (kept out of the public repo)
+diagrams/
+LANGGRAPH_PLAN.md
+NEGRISK_PLAN.md
+PREDICTION_STRATEGIES.md
