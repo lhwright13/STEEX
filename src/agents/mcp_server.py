@@ -17,7 +17,7 @@ import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 # av-mcp installs a conflicting top-level `src/` into site-packages and
 # Python's PathFinder wins over the editable-install finder.  Inserting the
@@ -481,18 +481,101 @@ def generate_sell_list() -> str:
 
 
 @mcp.tool()
+def size_buy_list() -> str:
+    """Populate price/shares/cost/stop for any unsized entries in the buy list.
+
+    The screen-phase buy list (loaded via load_screen_results) only carries
+    ticker/score/reasons — sizing is deferred to execution time so prices are
+    fresh. This tool fills price/shares/cost/stop for every entry whose
+    price is null, using the current quote, the saved regime's sizing
+    multiplier, and the broker's portfolio value/cash.
+
+    Skips (and removes) any entry that fails sizing (no quote, fractional
+    shares, or insufficient cash). Returns a summary of what was sized
+    vs skipped. Safe to call repeatedly.
+    """
+    global _buy_list
+    mgr = _init_manager()
+
+    if _buy_list is None:
+        return _safe_json({"error": "Call load_screen_results first"})
+
+    regime = _regime or {"sizing_multiplier": 1.0, "entries_allowed": True}
+    portfolio_value = mgr._get_portfolio_value()
+    cash = mgr._get_cash()
+
+    sized: List[Dict] = []
+    skipped: List[Dict] = []
+
+    for entry in _buy_list:
+        ticker = entry.get("ticker")
+        if entry.get("price") is not None and entry.get("shares") is not None:
+            sized.append(entry)
+            continue
+
+        price = mgr.price_provider.get_latest_price(ticker)
+        if price is None:
+            skipped.append({"ticker": ticker, "reason": "no quote"})
+            continue
+
+        size_pct = mgr._calculate_position_size_pct(ticker, regime)
+        target_value = portfolio_value * size_pct
+        shares = int(target_value / price)
+        if shares < 1:
+            skipped.append({"ticker": ticker, "reason": "size < 1 share"})
+            continue
+
+        cost = round(price * shares, 2)
+        if cost > cash:
+            skipped.append({"ticker": ticker, "reason": f"cost ${cost} > cash ${cash:.0f}"})
+            continue
+
+        stop_price = round(price * (1 - mgr.settings.initial_stop_pct), 2)
+        entry.update({
+            "price": price,
+            "shares": shares,
+            "cost": cost,
+            "stop": stop_price,
+            "size_pct": round(size_pct * 100, 1),
+        })
+        sized.append(entry)
+        cash -= cost
+
+    _buy_list = sized
+    return _safe_json({
+        "sized": [e["ticker"] for e in sized],
+        "skipped": skipped,
+        "count": len(sized),
+    })
+
+
+@mcp.tool()
 def execute_entries() -> str:
     """Execute buy orders for the generated buy list.
 
     Places market orders via Alpaca and server-side GTC stop orders
     as crash-proof safety nets. Respects dry-run mode.
 
-    Must call generate_buy_list first.
+    Must call generate_buy_list (or size_buy_list after load_screen_results)
+    first so each entry has price/shares/stop populated.
     """
     mgr = _init_manager()
 
     if _buy_list is None:
-        return _safe_json({"error": "Call generate_buy_list first"})
+        return _safe_json({"error": "Call generate_buy_list or size_buy_list first"})
+
+    missing = [
+        e.get("ticker") for e in _buy_list
+        if any(e.get(k) is None for k in ("price", "shares", "stop"))
+    ]
+    if missing:
+        return _safe_json({
+            "error": (
+                "Buy list has entries with null price/shares/stop: "
+                f"{missing}. Call size_buy_list first to populate sizing."
+            ),
+            "unsized_tickers": missing,
+        })
 
     executed = mgr.execute_entries(
         _buy_list,
@@ -667,13 +750,15 @@ def load_screen_results() -> str:
             "timestamp": screen_data["timestamp"],
         })
 
+    global _regime
     _buy_list = screen_data.get("buy_list", [])
+    _regime = screen_data.get("regime", {}) or _regime
     return _safe_json({
         "buy_list": _buy_list,
         "count": len(_buy_list),
         "timestamp": screen_data["timestamp"],
         "age_hours": round(age_hours, 1),
-        "regime": screen_data.get("regime", {}),
+        "regime": _regime,
     })
 
 
@@ -733,6 +818,7 @@ def run_postmortem() -> str:
             "score_correlation": report.score_correlation,
             "avg_missed_upside": report.avg_missed_upside,
             "recommendations": report.recommendations,
+            "analysis_failures": report.analysis_failures,
         })
     except Exception as e:
         return _safe_json({"error": str(e)})

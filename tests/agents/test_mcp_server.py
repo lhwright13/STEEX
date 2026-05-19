@@ -222,7 +222,9 @@ class TestExecution:
 
     def test_execute_entries(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._buy_list = [{"ticker": "AAPL", "qty": 10, "price": 150.0}]
+        mcp_mod._buy_list = [
+            {"ticker": "AAPL", "shares": 10, "price": 150.0, "stop": 142.5}
+        ]
         inject_manager.execute_entries.return_value = [
             {"ticker": "AAPL", "status": "filled", "qty": 10}
         ]
@@ -235,12 +237,25 @@ class TestExecution:
 
     def test_execute_entries_dry_run(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._buy_list = [{"ticker": "AAPL", "qty": 10}]
+        mcp_mod._buy_list = [
+            {"ticker": "AAPL", "shares": 10, "price": 150.0, "stop": 142.5}
+        ]
         mcp_mod._dry_run = True
         inject_manager.execute_entries.return_value = []
 
         result = _parse(mcp_mod.execute_entries())
         assert result["dry_run"] is True
+
+    def test_execute_entries_rejects_unsized(self, inject_manager):
+        """execute_entries must refuse a buy list with null price/shares/stop."""
+        import src.agents.mcp_server as mcp_mod
+        mcp_mod._buy_list = [{"ticker": "AAPL", "score": 60.0}]
+
+        result = _parse(mcp_mod.execute_entries())
+
+        assert "error" in result
+        assert result["unsized_tickers"] == ["AAPL"]
+        inject_manager.execute_entries.assert_not_called()
 
     def test_execute_exits_requires_sell_list(self, inject_manager):
         import src.agents.mcp_server as mcp_mod

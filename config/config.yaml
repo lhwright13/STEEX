@@ -243,7 +243,7 @@ manager_require_insider: false   # Require insider activity for entry
 # -----------------------------------------------------------------------------
 # Agent Settings (Claude AI multi-agent mode)
 # -----------------------------------------------------------------------------
-agent_enabled: false              # Enable Claude AI agent mode globally
+agent_enabled: true               # Enable Claude AI agent mode globally
 agent_max_turns: 15               # Maximum agentic turns per sub-agent
 agent_timeout_seconds: 600        # Timeout for each agent invocation (10 min)
 agent_fallback_deterministic: true  # Fall back to QuantManager if agent fails

@@ -58,6 +58,7 @@ agents:
     allowed_tools:
       - sync_broker
       - load_screen_results
+      - size_buy_list
       - execute_entries
       - execute_exits
       - get_order_status
