@@ -85,7 +85,7 @@ weight_insider: 0.25             # Insider weight in score
 weight_volume: 0.15              # Volume surge weight
 weight_sentiment: 0.15           # Sentiment weight
 weight_fundamental: 0.10         # Fundamental analysis weight
-weight_options: 0.05             # Options intelligence weight
+weight_options: 0.12             # Options intelligence weight (increased for Tier 1+2)
 
 # -----------------------------------------------------------------------------
 # Sentiment Analysis

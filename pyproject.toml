@@ -21,6 +21,8 @@ dependencies = [
     "alpaca-py>=0.43.2",
     "python-dotenv>=1.0.0",
     "mcp>=1.0.0",
+    "langgraph>=0.2.0",
+    "langsmith>=0.1.0",
 ]
 
 [project.optional-dependencies]

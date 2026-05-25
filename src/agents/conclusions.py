@@ -121,6 +121,63 @@ class AnalysisConclusion(BaseModel):
     meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
 
 
+class ConsensusStock(BaseModel):
+    """A stock that passed consensus synthesis from multiple analysis variants."""
+
+    ticker: str
+    composite_score: float = Field(
+        description="Averaged score across variants that agreed"
+    )
+    variants_agreeing: int = Field(
+        description="Number of variants (1-3) that picked this stock"
+    )
+    high_conviction: bool = Field(
+        default=False,
+        description="True if all 3 variants agreed",
+    )
+    reasons: List[str] = Field(
+        default_factory=list,
+        description="Why each variant picked it",
+    )
+
+
+class MetaAnalysisConclusion(BaseModel):
+    """Output from the MetaAnalysisAgent.
+
+    Synthesizes results from conservative, aggressive, and momentum variants
+    into a consensus recommendation based on how many variants agree.
+    """
+
+    candidates: List[ConsensusStock] = Field(
+        default_factory=list,
+        description="Consensus picks with multi-variant agreement",
+    )
+    high_conviction_count: int = Field(
+        default=0,
+        description="Number of picks with all 3 variants agreeing",
+    )
+    consensus_count: int = Field(
+        default=0,
+        description="Total picks with 2+ variants agreeing",
+    )
+    speculative_excluded: List[str] = Field(
+        default_factory=list,
+        description="Tickers picked by only 1 variant (excluded)",
+    )
+    variant_summaries: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Number of candidates from each variant (conservative, aggressive, momentum)",
+    )
+    reasoning: str = Field(
+        default="",
+        description="Explanation of consensus synthesis approach",
+    )
+    meta: Optional[AgentMeta] = Field(
+        default=None,
+        description="Self-improvement suggestions",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Manager decision (synthesis of sub-agent conclusions)
 # ---------------------------------------------------------------------------

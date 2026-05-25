@@ -65,6 +65,24 @@ class AgentTrace:
         if conclusion_dict and "meta" in conclusion_dict:
             self.meta = conclusion_dict["meta"]
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AgentTrace":
+        """Deserialize an AgentTrace from a dict (e.g., from LangGraph state)."""
+        return cls(
+            run_id=data.get("run_id", ""),
+            role=data.get("role", ""),
+            mode=data.get("mode", ""),
+            started_at=data.get("started_at", ""),
+            finished_at=data.get("finished_at", ""),
+            duration_seconds=data.get("duration_seconds", 0.0),
+            tools_called=data.get("tools_called", []),
+            raw_output=data.get("raw_output", ""),
+            conclusion=data.get("conclusion"),
+            success=data.get("success", False),
+            error=data.get("error"),
+            meta=data.get("meta"),
+        )
+
 
 @dataclass
 class AgentSession:

@@ -39,6 +39,7 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 from config.settings import Settings, get_settings  # noqa: E402
 from src.strategy.manager import QuantManager  # noqa: E402
+from src.research.alpha_monitor import AlphaDecayMonitor  # noqa: E402
 
 logger = logging.getLogger("steex.mcp")
 
@@ -68,6 +69,57 @@ _exit_signals = None
 _regime = None
 _buy_list = None
 _sell_list = None
+
+# Variant screening parameter presets
+VARIANT_PARAMS = {
+    "conservative": {
+        "momentum_min_return": 0.10,
+        "sentiment_min_score": 50.0,
+        "fundamental_max_pe": 30.0,
+        "fundamental_min_roe": 0.10,
+    },
+    "aggressive": {
+        "momentum_min_return": 0.02,
+        "sentiment_min_score": 28.0,
+        "fundamental_max_pe": 80.0,
+        "fundamental_min_roe": 0.0,
+    },
+    "momentum": {
+        "momentum_min_return": 0.08,
+        "sentiment_min_score": 35.0,
+        "fundamental_enabled": False,
+    },
+}
+
+# Regime-specific screening parameter overrides
+REGIME_PARAMS = {
+    "risk_on": {
+        "rationale": "Lower entry bars, favor momentum",
+        "weight_momentum": 0.35,
+        "weight_fundamental": 0.08,
+        "momentum_min_return": 0.03,
+    },
+    "cautious": {
+        "rationale": "Medium bars, raise insider weight for quality",
+        "weight_insider": 0.30,
+        "weight_momentum": 0.25,
+        "sentiment_min_score": 40.0,
+    },
+    "risk_off": {
+        "rationale": "High bars, insider weight dominant",
+        "weight_insider": 0.35,
+        "weight_momentum": 0.15,
+        "sentiment_min_score": 50.0,
+        "fundamental_min_roe": 0.12,
+    },
+    "crisis": {
+        "rationale": "Very high bars, insider weight maximum",
+        "weight_insider": 0.40,
+        "weight_momentum": 0.10,
+        "sentiment_min_score": 60.0,
+        "fundamental_min_roe": 0.15,
+    },
+}
 
 
 def _init_manager() -> QuantManager:
@@ -438,6 +490,237 @@ def construct_portfolio() -> str:
         })
     except Exception as e:
         return _safe_json({"error": str(e)})
+
+
+# ---- Variant Screening Tools -----------------------------------------------
+
+
+@mcp.tool()
+def run_screening_variant(variant: str) -> str:
+    """Run screening with a specific variant's parameter preset.
+
+    Variants: conservative (high bars), aggressive (low bars), momentum (no fundamentals).
+    Temporarily overrides settings, runs the 5-stage pipeline, then restores.
+
+    Must be called before rank_candidates or get_unusual_options_activity.
+    """
+    global _pipeline_result
+    mgr = _init_manager()
+
+    if variant not in VARIANT_PARAMS:
+        return _safe_json({
+            "error": f"Unknown variant: {variant}. Options: {list(VARIANT_PARAMS.keys())}"
+        })
+
+    params = VARIANT_PARAMS[variant]
+    original = {}
+
+    try:
+        for key, value in params.items():
+            if hasattr(mgr.settings, key):
+                original[key] = getattr(mgr.settings, key)
+                setattr(mgr.settings, key, value)
+
+        _pipeline_result = mgr.run_screening()
+
+        candidates = []
+        for c in _pipeline_result.final_candidates:
+            candidates.append({
+                "ticker": c.ticker,
+                "momentum_6m": round(c.momentum_6m, 3) if c.momentum_6m else None,
+                "insider_score": round(c.insider_score, 1),
+                "sentiment_score": round(c.sentiment_score, 1) if c.sentiment_score else None,
+                "fundamental_score": round(c.fundamental_score, 1) if c.fundamental_score else None,
+                "volume_surge": round(c.volume_surge, 1) if c.volume_surge else None,
+            })
+
+        return _safe_json({
+            "variant": variant,
+            "params_applied": params,
+            "universe_size": _pipeline_result.universe_size,
+            "stage_1_passed": _pipeline_result.stage_1_passed,
+            "stage_2_passed": _pipeline_result.stage_2_passed,
+            "stage_3_passed": _pipeline_result.stage_3_passed,
+            "stage_4_passed": _pipeline_result.stage_4_passed,
+            "stage_5_passed": _pipeline_result.stage_5_passed,
+            "final_candidates": len(_pipeline_result.final_candidates),
+            "candidates": candidates,
+        })
+    finally:
+        for key, value in original.items():
+            if hasattr(mgr.settings, key):
+                setattr(mgr.settings, key, value)
+
+
+@mcp.tool()
+def rank_candidates_with_weights(
+    weight_momentum: Optional[float] = None,
+    weight_insider: Optional[float] = None,
+    weight_volume: Optional[float] = None,
+    weight_sentiment: Optional[float] = None,
+    weight_fundamental: Optional[float] = None,
+    weight_options: Optional[float] = None,
+) -> str:
+    """Rank candidates with custom scoring weights.
+
+    All weights are optional. Temporarily overrides weight settings,
+    calls the ranker, then restores original weights.
+
+    Must call run_screening or run_screening_variant first.
+    """
+    global _ranked
+    mgr = _init_manager()
+
+    if _pipeline_result is None:
+        return _safe_json({"error": "Call run_screening or run_screening_variant first"})
+
+    original = {}
+    weights = {
+        "weight_momentum": weight_momentum,
+        "weight_insider": weight_insider,
+        "weight_volume": weight_volume,
+        "weight_sentiment": weight_sentiment,
+        "weight_fundamental": weight_fundamental,
+        "weight_options": weight_options,
+    }
+
+    try:
+        for key, value in weights.items():
+            if value is not None and hasattr(mgr.settings, key):
+                original[key] = getattr(mgr.settings, key)
+                setattr(mgr.settings, key, value)
+
+        _ranked = mgr.rank_candidates(_pipeline_result)
+
+        result = []
+        for r in _ranked:
+            result.append({
+                "rank": r.rank,
+                "ticker": r.ticker,
+                "composite_score": round(r.composite_score, 1),
+                "momentum_score": round(r.momentum_score, 1),
+                "insider_score": round(r.insider_score, 1),
+                "volume_score": round(r.volume_score, 1),
+                "sentiment_score": round(r.sentiment_score, 1),
+                "fundamental_score": round(r.fundamental_score, 1),
+                "options_score": round(r.options_score, 1),
+            })
+
+        return _safe_json({
+            "weights_applied": {k: v for k, v in weights.items() if v is not None},
+            "ranked": result,
+            "count": len(result),
+        })
+    finally:
+        for key, value in original.items():
+            if hasattr(mgr.settings, key):
+                setattr(mgr.settings, key, value)
+
+
+@mcp.tool()
+def get_regime_screening_params() -> str:
+    """Get screening parameter overrides based on current regime.
+
+    Reads the cached regime (populated by get_regime tool).
+    Returns regime-specific weight and threshold adjustments.
+    """
+    if _regime is None:
+        return _safe_json({
+            "error": "Call get_regime first to populate regime data"
+        })
+
+    regime_name = _regime.get("regime_name", "unknown")
+    if regime_name not in REGIME_PARAMS:
+        return _safe_json({
+            "error": f"Unknown regime: {regime_name}",
+            "available_regimes": list(REGIME_PARAMS.keys()),
+        })
+
+    params = REGIME_PARAMS[regime_name]
+    return _safe_json({
+        "regime": regime_name,
+        "regime_confidence": _regime.get("regime_confidence", 0),
+        "rationale": params.get("rationale", ""),
+        "param_overrides": {k: v for k, v in params.items() if k != "rationale"},
+    })
+
+
+@mcp.tool()
+def get_signal_confidence() -> str:
+    """Get confidence scores and recommended weights for each signal.
+
+    Reads AlphaDecayMonitor for per-signal rolling win rates.
+    Reads signal research output from learning journal for recommended weights.
+    Returns overall confidence and per-signal status.
+    """
+    mgr = _init_manager()
+    settings = mgr.settings
+
+    result = {
+        "overall_win_rate": None,
+        "degrading_signals": [],
+        "watch_list": [],
+        "recommended_weights": {
+            "weight_momentum": settings.weight_momentum,
+            "weight_insider": settings.weight_insider,
+            "weight_volume": settings.weight_volume,
+            "weight_sentiment": settings.weight_sentiment,
+            "weight_fundamental": settings.weight_fundamental,
+            "weight_options": settings.weight_options,
+        },
+    }
+
+    try:
+        monitor = AlphaDecayMonitor(settings.data_dir)
+        report = monitor.generate_report()
+        result["overall_win_rate"] = report.get("overall_win_rate")
+        result["degrading_signals"] = report.get("degrading_signals", [])
+        result["watch_list"] = report.get("watch_list", [])
+    except Exception as e:
+        logger.warning("Could not load AlphaDecayMonitor: %s", e)
+
+    return _safe_json(result)
+
+
+@mcp.tool()
+def get_unusual_options_activity(min_call_volume_ratio: float = 1.5) -> str:
+    """Get stocks with unusual call/put imbalance indicating bullish activity.
+
+    Requires run_screening or run_screening_variant to have been called.
+    Filters for stocks with call-heavy options (unusual_call_activity=True
+    and put_call_ratio < 0.9), sorted by options_score.
+
+    Args:
+        min_call_volume_ratio: Minimum call-to-put volume ratio (default 1.5)
+
+    Returns list of unusual call activity stocks with options metrics.
+    """
+    if _pipeline_result is None:
+        return _safe_json({
+            "error": "Call run_screening or run_screening_variant first"
+        })
+
+    unusual = []
+    for c in _pipeline_result.final_candidates:
+        has_unusual = getattr(c, "unusual_call_activity", False)
+        put_call_ratio = getattr(c, "put_call_ratio", 1.0)
+        options_score = getattr(c, "options_score", 0.0)
+
+        if has_unusual and put_call_ratio < 0.9:
+            unusual.append({
+                "ticker": c.ticker,
+                "put_call_ratio": round(put_call_ratio, 2),
+                "unusual_call_activity": True,
+                "options_score": round(options_score, 1),
+            })
+
+    unusual.sort(key=lambda x: x["options_score"], reverse=True)
+
+    return _safe_json({
+        "unusual_call_activity": unusual,
+        "count": len(unusual),
+        "filter_ratio": min_call_volume_ratio,
+    })
 
 
 # ---- Execution Tools ------------------------------------------------------

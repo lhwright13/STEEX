@@ -44,6 +44,54 @@ agents:
       - construct_portfolio
     external_servers: [alpaca, alphavantage, polygon]
 
+  analysis_conservative:
+    prompt: "analysis_conservative"
+    conclusion: "AnalysisConclusion"
+    max_turns: 15
+    needs_tools: true
+    allowed_tools:
+      - get_regime_screening_params
+      - run_screening_variant
+      - get_signal_confidence
+      - rank_candidates_with_weights
+      - get_unusual_options_activity
+      - construct_portfolio
+    external_servers: [alpaca, alphavantage, polygon]
+
+  analysis_aggressive:
+    prompt: "analysis_aggressive"
+    conclusion: "AnalysisConclusion"
+    max_turns: 15
+    needs_tools: true
+    allowed_tools:
+      - get_regime_screening_params
+      - run_screening_variant
+      - get_signal_confidence
+      - rank_candidates_with_weights
+      - get_unusual_options_activity
+      - construct_portfolio
+    external_servers: [alpaca, alphavantage, polygon]
+
+  analysis_momentum:
+    prompt: "analysis_momentum"
+    conclusion: "AnalysisConclusion"
+    max_turns: 15
+    needs_tools: true
+    allowed_tools:
+      - get_regime_screening_params
+      - run_screening_variant
+      - get_signal_confidence
+      - rank_candidates_with_weights
+      - get_unusual_options_activity
+      - construct_portfolio
+    external_servers: [alpaca, alphavantage, polygon]
+
+  meta_analysis:
+    prompt: "meta_analysis"
+    conclusion: "MetaAnalysisConclusion"
+    max_turns: 5
+    needs_tools: false
+
   manager:
     prompt: "manager"
     conclusion: "ManagerDecision"
@@ -127,9 +175,11 @@ agents:
 
 modes:
   screen:
-    sub_agents: [data, risk, analysis]
+    sub_agents: [data, risk]
+    parallel_agents: [analysis_conservative, analysis_aggressive, analysis_momentum]
+    meta_agent: meta_analysis
     manager: manager
-    critical_agents: [risk, analysis]
+    critical_agents: [risk]
     post_actions: [save_screen, report]
     fallback: screen
 

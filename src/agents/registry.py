@@ -45,6 +45,8 @@ class ModeConfig:
 
     name: str
     sub_agents: List[str] = field(default_factory=list)
+    parallel_agents: List[str] = field(default_factory=list)
+    meta_agent: Optional[str] = None
     manager: str = "manager"
     critical_agents: List[str] = field(default_factory=list)
     executor: Optional[str] = None
@@ -85,6 +87,8 @@ class AgentRegistry:
             self.modes[name] = ModeConfig(
                 name=name,
                 sub_agents=cfg.get("sub_agents", []),
+                parallel_agents=cfg.get("parallel_agents", []),
+                meta_agent=cfg.get("meta_agent"),
                 manager=cfg.get("manager", "manager"),
                 critical_agents=cfg.get("critical_agents", []),
                 executor=cfg.get("executor"),

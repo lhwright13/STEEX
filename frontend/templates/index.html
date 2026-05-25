@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>STEEX Trading Dashboard</title>
+<style>
+  /* ==========================================================
+     STEEX — Utility-first dashboard
+     Black on white, status colors only, monospace for data.
+     ========================================================== */
+
+  :root {
+    --fg: #000000;
+    --bg: #ffffff;
+    --dim: #333333;
+    --muted: #6a6a6a;
+    --border: #d8d8d8;
+    --border-strong: #000000;
+    --panel: #f9f9f9;
+    --grid: #f0f0f0;
+    --row-hover: #fafafa;
+
+    --ok: #00772a;        /* green */
+    --bad: #b80000;       /* red */
+    --warn: #b07000;      /* amber */
+    --pending: #444;
+
+    --mono: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", "Courier New", monospace;
+    --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { background: #000; color: #fff; text-decoration: none; }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px 28px 80px;
+  }
+
+  /* ---------- Header ---------- */
+  header.app {
+    border-bottom: 2px solid var(--border-strong);
+    padding-bottom: 14px;
+    margin-bottom: 22px;
+  }
+  header.app .titlerow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  header.app h1 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+  header.app h1 .mark {
+    font-family: var(--mono);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  header.app .meta {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  header.app .meta b { color: var(--fg); font-weight: 600; }
+  header.app .statusline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  header.app .statusline .left { display: flex; gap: 14px; flex-wrap: wrap; }
+  header.app .statusline .right { display: flex; gap: 6px; align-items: center; }
+
+  .btn {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    padding: 3px 10px;
+    cursor: pointer;
+    line-height: 1.4;
+  }
+  .btn:hover { background: var(--fg); color: var(--bg); }
+  .btn.on { background: var(--fg); color: var(--bg); }
+
+  /* ---------- Panel ---------- */
+  section.panel {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    margin-bottom: 22px;
+  }
+  section.panel > header {
+    background: #efefef;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  section.panel > header h2 {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-family: var(--sans);
+  }
+  section.panel > header h2 .sub {
+    font-family: var(--mono);
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    color: var(--dim);
+    margin-left: 10px;
+  }
+  section.panel > header .tools {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+  }
+  section.panel > .body {
+    padding: 14px;
+  }
+  section.panel > .body.tight { padding: 10px 14px 14px; }
+
+  /* ---------- Two-column layout for some panels ---------- */
+  .col2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  @media (max-width: 880px) {
+    .col2 { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- Data table ---------- */
+  table.data {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 13px;
+    background: #fff;
+  }
+  table.data th, table.data td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--grid);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  table.data thead th {
+    font-family: var(--sans);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--dim);
+    font-weight: 600;
+    background: #f3f3f3;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+  }
+  table.data tbody tr:hover { background: var(--row-hover); }
+  table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.data td.t { font-weight: 700; }
+  table.data td .sub { color: var(--muted); font-size: 11px; }
+
+  /* ---------- Status pills/tags ---------- */
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 1px 6px;
+    border: 1px solid currentColor;
+    line-height: 1.4;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .ok  { color: var(--ok); }
+  .bad { color: var(--bad); }
+  .warn{ color: var(--warn); }
+  .dim { color: var(--dim); }
+  .mute{ color: var(--muted); }
+  .b   { font-weight: 700; }
+
+  .glyph { font-family: var(--mono); font-weight: 700; display: inline-block; width: 1.1em; text-align: center; }
+  .gx-ok   { color: var(--ok); }
+  .gx-run  { color: var(--warn); }
+  .gx-q    { color: var(--muted); }
+  .gx-bad  { color: var(--bad); }
+
+  /* ---------- ASCII pipeline tree ---------- */
+  .ascii {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--fg);
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .ascii .h { color: var(--dim); }
+  .ascii .ok { color: var(--ok); }
+  .ascii .bad { color: var(--bad); }
+  .ascii .warn { color: var(--warn); }
+  .ascii .mute { color: var(--muted); }
+  .ascii b { font-weight: 700; }
+
+  /* ---------- Bar/progress meters ---------- */
+  .bar {
+    display: inline-block;
+    width: 130px;
+    height: 8px;
+    background: #e5e5e5;
+    border: 1px solid var(--border);
+    position: relative;
+    vertical-align: middle;
+  }
+  .bar > i {
+    display: block;
+    height: 100%;
+    background: var(--fg);
+  }
+  .bar.run > i { background: repeating-linear-gradient(45deg,#000,#000 3px,#444 3px,#444 6px); }
+  .bar.warn > i { background: var(--warn); }
+  .bar.bad > i { background: var(--bad); }
+  .bar.ok > i { background: var(--ok); }
+
+  /* ---------- Variant column cards (inside col3) ---------- */
+  .col3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    background: #fff;
+  }
+  @media (max-width: 880px) { .col3 { grid-template-columns: 1fr; } }
+  .col3 > .v {
+    padding: 14px 16px;
+    border-right: 1px solid var(--border);
+  }
+  .col3 > .v:last-child { border-right: 0; }
+  @media (max-width: 880px) {
+    .col3 > .v { border-right: 0; border-bottom: 1px solid var(--border); }
+    .col3 > .v:last-child { border-bottom: 0; }
+  }
+  .v h3 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .v .sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 10px;
+  }
+  .v .stats {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+    margin-bottom: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 14px;
+  }
+  .v .stats b { color: var(--fg); }
+  .v table.mini {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .v table.mini td { padding: 3px 0; border: 0; vertical-align: top; }
+  .v table.mini td.rank { width: 16px; color: var(--muted); }
+  .v table.mini td.tk   { width: 56px; font-weight: 700; }
+  .v table.mini td.score{ width: 44px; text-align: right; }
+  .v table.mini td.bd   { color: var(--muted); padding-left: 10px; font-size: 11px; }
+
+  /* ---------- Key/value lines ---------- */
+  .kv {
+    font-family: var(--mono);
+    font-size: 13px;
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    row-gap: 4px;
+    column-gap: 14px;
+  }
+  .kv dt { color: var(--dim); }
+  .kv dd { margin: 0; }
+  .kv dd b { font-weight: 700; }
+
+  /* ---------- Tree text ---------- */
+  .tree {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+  }
+  .tree b { font-weight: 700; }
+  .tree .lbl { color: var(--dim); display: inline-block; min-width: 200px; }
+
+  /* ---------- Weight bars ---------- */
+  table.weights {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  table.weights td { padding: 4px 8px 4px 0; border: 0; vertical-align: middle; }
+  table.weights td.k { width: 130px; color: var(--dim); }
+  table.weights td.v { width: 48px; text-align: right; font-weight: 700; }
+  table.weights td.b { width: 220px; }
+  table.weights td.n { color: var(--muted); font-size: 12px; }
+
+  .wbar {
+    width: 100%;
+    height: 10px;
+    background: #ececec;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .wbar > i { display: block; height: 100%; background: var(--fg); }
+  .wbar > .rec {
+    position: absolute; top: -2px; bottom: -2px;
+    width: 2px; background: var(--bad);
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    margin-top: 28px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  /* small inline helpers */
+  .hr-ascii {
+    color: var(--dim);
+    font-family: var(--mono);
+    line-height: 1;
+    user-select: none;
+    overflow: hidden;
+    white-space: nowrap;
+    display: block;
+    margin: 2px 0 8px;
+  }
+  .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .right { text-align: right; }
+
+  /* tabs (history) */
+  .tabs { display: flex; gap: 0; font-family: var(--mono); font-size: 12px; }
+  .tabs .tab {
+    border: 1px solid var(--border);
+    border-right: 0;
+    padding: 3px 10px;
+    color: var(--dim);
+    background: #fff;
+    cursor: pointer;
+  }
+  .tabs .tab:last-child { border-right: 1px solid var(--border); }
+  .tabs .tab.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+  /* live dot */
+  .live-dot {
+    display: inline-block; width: 8px; height: 8px;
+    background: var(--bad); border-radius: 50%;
+    vertical-align: middle; margin-right: 4px;
+    animation: blink 1.2s steps(2) infinite;
+  }
+  @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.25; } }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ HEADER ============ -->
+  <header class="app">
+    <div class="titlerow">
+      <h1><span class="mark">STEEX</span> &nbsp;Trading Dashboard</h1>
+      <div class="meta">
+        <span><b>Mode:</b> screen</span>
+        <span><b>Env:</b> live · localhost:5000</span>
+        <span><b>Operator:</b> jc@steex</span>
+        <span><a href="/system">system &amp; agents →</a></span>
+      </div>
+    </div>
+    <div class="statusline">
+      <div class="left">
+        <span><span></span><b>IDLE</b></span>
+        <span>Server time: —</span>
+        <span>Last update: —</span>
+        <span>Next update: —</span>
+      </div>
+      <div class="right">
+        <span>Refresh:</span>
+        <button class="btn" id="btn-refresh-manual">Manual</button>
+        <button class="btn on" id="btn-refresh-auto">Auto 5s</button>
+        <button class="btn" id="btn-refresh-pause">Pause</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ 3.2 PIPELINE STATUS ============ -->
+  <section class="panel">
+    <header>
+      <h2>Live Pipeline <span class="sub" id="pipeline-info">idle · no active run</span></h2>
+      <div class="tools">
+        <span>est. complete —</span>
+        <button class="btn" id="btn-cancel-run">Cancel run</button>
+      </div>
+    </header>
+    <div class="body tight">
+<div class="ascii"><span class="mute">No pipeline running. Start a run with: python run_manager.py screen --agent --paper</span></div>
+
+      <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;font-family:var(--mono);font-size:12px;">
+        <div id="progress-conservative">
+          <div class="dim">conservative</div>
+          <div class="row" style="gap:8px;">
+            <span class="bar"><i style="width:0%"></i></span>
+            <span><b>— / 15</b></span>
+          </div>
+        </div>
+        <div id="progress-aggressive">
+          <div class="dim">aggressive</div>
+          <div class="row" style="gap:8px;">
+            <span class="bar"><i style="width:0%"></i></span>
+            <span><b>— / 15</b></span>
+          </div>
+        </div>
+        <div id="progress-momentum">
+          <div class="dim">momentum</div>
+          <div class="row" style="gap:8px;">
+            <span class="bar"><i style="width:0%"></i></span>
+            <span><b>— / 15</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3.3 VARIANT CONCLUSIONS (LIVE) ============ -->
+  <section class="panel">
+    <header>
+      <h2>Analysis Variants <span class="sub">real-time results · 3-way fan-out</span></h2>
+      <div class="tools"><span>polling 2s</span></div>
+    </header>
+    <div class="body" style="padding:0;background:#fff;">
+      <div class="col3">
+
+        <div class="v" data-variant="conservative">
+          <h3>Conservative <span class="dim" style="font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0;font-size:11px;">quality focus</span></h3>
+          <div class="sub"><span class="tag mute">IDLE</span></div>
+          <div class="stats">
+            <span>cand <b>—</b></span>
+            <span>top <b>—</b></span>
+            <span>avg <b>—</b></span>
+          </div>
+          <div style="font-size:12px;color:#999;padding:12px;">Run screening to generate candidates</div>
+        </div>
+
+        <div class="v" data-variant="aggressive">
+          <h3>Aggressive <span class="dim" style="font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0;font-size:11px;">growth focus</span></h3>
+          <div class="sub"><span class="tag mute">IDLE</span></div>
+          <div class="stats">
+            <span>cand <b>—</b></span>
+            <span>top <b>—</b></span>
+            <span>avg <b>—</b></span>
+          </div>
+          <div style="font-size:12px;color:#999;padding:12px;">Run screening to generate candidates</div>
+        </div>
+
+        <div class="v" data-variant="momentum">
+          <h3>Momentum <span class="dim" style="font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0;font-size:11px;">trend following</span></h3>
+          <div class="sub"><span class="tag mute">IDLE</span></div>
+          <div class="stats">
+            <span>cand <b>—</b></span>
+            <span>top <b>—</b></span>
+            <span>avg <b>—</b></span>
+          </div>
+          <div style="font-size:12px;color:#999;padding:12px;">Run screening to generate candidates</div>
+        </div>
+
+      </div>
+      <div style="padding:10px 14px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--dim);background:#f6f6f6;">
+        <b>Consensus Synthesis</b> · —
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3.4 TODAY'S TRADES ============ -->
+  <section class="panel">
+    <header>
+      <h2>Today's Executions <span class="sub" id="executions-info">no runs yet</span></h2>
+      <div class="tools">
+        <button class="btn" id="btn-filter-all">All</button>
+        <button class="btn on" id="btn-filter-today">Today</button>
+        <button class="btn" id="btn-export-csv">Export CSV</button>
+      </div>
+    </header>
+    <div class="body">
+    <div style="text-align:center;padding:24px;color:#999;">
+      No executions yet. Run screening to generate trade candidates.
+    </div>
+
+      <div class="row" style="font-family:var(--mono);font-size:12px;color:var(--dim);margin-bottom:10px;gap:22px;">
+        <span><b style="color:#000">—</b> screen runs</span>
+        <span><b style="color:#000">—</b> candidates identified</span>
+        <span><b style="color:#000">—</b> consensus picks</span>
+        <span><b style="color:#000">—</b> entry orders approved</span>
+        <span><b style="color:#000">—</b> entries executed</span>
+        <span><b style="color:#000">—</b> pending</span>
+        <span><b style="color:#000">—</b> exits executed</span>
+      </div>
+
+      <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin:6px 0 4px;">Entries — consensus picks</div>
+      <div style="text-align:center;padding:12px;color:#999;">No active positions. Consensus picks from screening will appear here.</div>
+
+      <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin:18px 0 4px;">Exits</div>
+      <div style="text-align:center;padding:12px;color:#999;">No completed exits.</div>
+
+      <!-- Portfolio quick read -->
+      <div style="margin-top:18px;display:grid;grid-template-columns:repeat(6,1fr);gap:0;border:1px solid var(--border);font-family:var(--mono);background:#fff;">
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Portfolio Value</div>
+          <div style="font-size:16px;font-weight:700;">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Cash Reserve</div>
+          <div style="font-size:16px;font-weight:700;">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Exposure</div>
+          <div style="font-size:16px;font-weight:700;">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Realized P&amp;L</div>
+          <div style="font-size:16px;font-weight:700;">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Unrealized P&amp;L</div>
+          <div style="font-size:16px;font-weight:700;">—</div>
+        </div>
+        <div style="padding:10px 12px;">
+          <div class="dim" style="font-size:11px;">VIX</div>
+          <div style="font-size:16px;font-weight:700;" data-live="vix-value">—</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ 3.5 VARIANT CONSENSUS MATRIX ============ -->
+  <section class="panel">
+    <header>
+      <h2>Variant Consensus Matrix <span class="sub">3-way agreement · no data yet</span></h2>
+      <div class="tools"><span>—</span></div>
+    </header>
+    <div class="body">
+      <table class="data" id="consensus-table">
+        <thead>
+          <tr>
+            <th>Stock</th>
+            <th class="num">Conservative</th>
+            <th class="num">Aggressive</th>
+            <th class="num">Momentum</th>
+            <th>Consensus</th>
+            <th>Conviction</th>
+            <th>Options Flow</th>
+            <th class="num">Pos Size</th>
+          </tr>
+        </thead>
+        <tbody id="consensus-table-body">
+          <tr>
+            <td colspan="8" style="text-align:center;padding:24px;color:#999;">
+              No consensus picks available. Run screening to generate candidates.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+<div class="ascii" style="margin-top:12px;">
+<b>Consensus rules</b>
+<span class="ok">HIGH</span>   (3/3)  →  include with <b>max</b> position size
+<span class="warn">MED</span>    (2/3)  →  include with <b>standard</b> position size
+<span class="bad">LOW</span>    (1/3)  →  <b>exclude</b>  (unless unusual options activity confirms)</div>
+    </div>
+  </section>
+
+  <!-- ============ 3.6 + 3.7  Two-column: REGIME / SIGNALS ============ -->
+  <div class="col2">
+
+    <!-- REGIME -->
+    <section class="panel">
+      <header>
+        <h2>Market Regime &amp; Risk</h2>
+        <div class="tools"><span class="tag mute" data-live="regime-label">—</span></div>
+      </header>
+      <div class="body">
+<div class="tree"><b>Current Regime:</b>  <span class="mute" data-live="regime-label">—</span>
+├─ Confidence . . . . . . <b class="mute">—</b>
+├─ VIX Level . . . . . . .<b data-live="vix-value" class="mute">—</b>  <span class="dim">(loading...)</span>
+├─ Yield Curve . . . . . .<span class="mute">—</span>
+├─ Market Breadth . . . . <span class="mute">—</span>
+└─ Dollar Strength . . . <span class="mute">—</span>
+
+<b>Regime-Adjusted Thresholds</b>
+<span class="mute">Loading regime data...</span>
+
+<b>Portfolio Risk</b>
+<span class="mute">Loading portfolio data...</span>
+
+<b>Entry Gates</b>
+<span class="mute">Loading entry gates...</span></div>
+      </div>
+    </section>
+
+    <!-- SIGNALS -->
+    <section class="panel" id="signal-panel">
+      <header>
+        <h2>Signal Confidence &amp; Alpha Decay</h2>
+        <div class="tools"><span class="mute">—</span></div>
+      </header>
+      <div class="body">
+        <div style="padding:24px;text-align:center;color:#999;">
+          No signal analysis available. Run screening and learning pipelines to generate signal data.
+        </div>
+
+        <div style="margin-top:10px;display:flex;gap:6px;">
+          <button class="btn" id="btn-apply-recs">Apply Recommendations</button>
+          <button class="btn" id="btn-run-learning">Run Learning Mode</button>
+          <button class="btn" id="btn-dismiss-signal">Dismiss</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ============ 3.8 SESSION HISTORY ============ -->
+  <section class="panel">
+    <header>
+      <h2>Session History <span class="sub">screen mode</span></h2>
+      <div class="tools tabs">
+        <span class="tab on" id="tab-history-7d" data-period="7d">Last 7 days</span>
+        <span class="tab" id="tab-history-30d" data-period="30d">Last 30 days</span>
+        <span class="tab" id="tab-history-custom" data-period="custom">Custom</span>
+      </div>
+    </header>
+    <div class="body">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Run ID</th>
+            <th class="num">Duration</th>
+            <th>Consensus</th>
+            <th>Entries</th>
+            <th>Status</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colspan="8" style="text-align:center;padding:24px;color:#999;">
+              No session history available. Run screening to generate session data.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--muted);">
+        ↳ click row to expand: variant breakdowns · agent turns · full consensus logic
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3.9 CONFIGURATION ============ -->
+  <section class="panel">
+    <header>
+      <h2>Configuration &amp; Parameters <span class="sub">snapshot · effective now</span></h2>
+      <div class="tools">
+        <button class="btn" id="btn-config-edit" disabled title="Not available in this version">Edit</button>
+        <button class="btn" id="btn-config-load" disabled title="Not available in this version">Load Preset</button>
+        <button class="btn" id="btn-config-save" disabled title="Not available in this version">Save As New</button>
+        <button class="btn" id="btn-config-diff" disabled title="Not available in this version">Diff vs Previous</button>
+      </div>
+    </header>
+    <div class="body">
+
+      <div class="col2">
+        <!-- Weights -->
+        <div>
+          <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">Scoring weights — current</div>
+          <table class="weights">
+            <tbody>
+              <tr>
+                <td class="k">Momentum</td>
+                <td class="v">0.30</td>
+                <td class="b"><div class="wbar"><i style="width:60%"></i></div></td>
+                <td class="n">primary</td>
+              </tr>
+              <tr>
+                <td class="k">Insider</td>
+                <td class="v">0.25</td>
+                <td class="b"><div class="wbar"><i style="width:50%"></i></div></td>
+                <td class="n">quality</td>
+              </tr>
+              <tr>
+                <td class="k">Volume</td>
+                <td class="v">0.15</td>
+                <td class="b"><div class="wbar"><i style="width:30%"></i></div></td>
+                <td class="n">confirmation</td>
+              </tr>
+              <tr>
+                <td class="k">Sentiment</td>
+                <td class="v">0.15</td>
+                <td class="b"><div class="wbar"><i style="width:30%"></i><span class="rec" style="left:16%"></span></div></td>
+                <td class="n bad">→ rec 0.08</td>
+              </tr>
+              <tr>
+                <td class="k">Fundamental</td>
+                <td class="v">0.10</td>
+                <td class="b"><div class="wbar"><i style="width:20%"></i></div></td>
+                <td class="n">filter</td>
+              </tr>
+              <tr>
+                <td class="k">Options</td>
+                <td class="v">0.05</td>
+                <td class="b"><div class="wbar"><i style="width:10%"></i><span class="rec" style="left:24%"></span></div></td>
+                <td class="n ok">→ rec 0.12</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px;">
+            <span style="display:inline-block;width:2px;height:10px;background:var(--bad);vertical-align:middle;margin-right:6px;"></span>
+            red marker = recommended weight from signal research
+          </div>
+        </div>
+
+        <!-- Screening + Position mgmt -->
+        <div>
+          <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin-bottom:6px;">Screening thresholds — default</div>
+          <dl class="kv" style="font-size:12px;">
+            <dt>min price</dt>           <dd><b>$5.00</b></dd>
+            <dt>min volume</dt>          <dd><b>500K</b> shares/day</dd>
+            <dt>min momentum (6M)</dt>   <dd><b>5.0%</b> return</dd>
+            <dt>min sentiment</dt>       <dd><b>30</b>  <span class="dim">(0–100)</span></dd>
+            <dt>max P/E</dt>             <dd><b>50.0</b></dd>
+            <dt>min ROE</dt>             <dd><b>5.0%</b></dd>
+            <dt>max debt/equity</dt>     <dd><b>2.0</b></dd>
+          </dl>
+
+          <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin:14px 0 6px;">Position management</div>
+          <dl class="kv" style="font-size:12px;">
+            <dt>max positions</dt>       <dd><b>10</b> concurrent</dd>
+            <dt>daily picks target</dt>  <dd><b>2</b></dd>
+            <dt>position size</dt>       <dd><b>4.0%</b> of portfolio / trade</dd>
+            <dt>max single position</dt> <dd><b>10.0%</b></dd>
+            <dt>max sector exposure</dt> <dd><b>30.0%</b></dd>
+            <dt>stop loss</dt>           <dd><b>12%</b>  <span class="dim">tight when VIX&gt;30</span></dd>
+            <dt>hold time</dt>           <dd><b>30</b> trading days <span class="dim">or exit signal</span></dd>
+          </dl>
+        </div>
+      </div>
+
+      <!-- Variant presets -->
+      <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin:18px 0 6px;">Variant presets</div>
+      <div class="col3" style="background:#fff;">
+        <div class="v">
+          <h3>Conservative</h3>
+          <table class="mini">
+            <tr><td class="rank" style="width:auto;color:var(--dim);">Momentum min</td><td style="text-align:right;font-weight:700;">10.0%</td><td class="bd">vs 5.0%</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">Sentiment min</td><td style="text-align:right;font-weight:700;">50</td><td class="bd">vs 30</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">P/E max</td><td style="text-align:right;font-weight:700;">30</td><td class="bd">vs 50</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">ROE min</td><td style="text-align:right;font-weight:700;">10.0%</td><td class="bd">vs 5.0%</td></tr>
+          </table>
+        </div>
+        <div class="v">
+          <h3>Aggressive</h3>
+          <table class="mini">
+            <tr><td class="rank" style="width:auto;color:var(--dim);">Momentum min</td><td style="text-align:right;font-weight:700;">2.0%</td><td class="bd">vs 5.0%</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">Sentiment min</td><td style="text-align:right;font-weight:700;">28</td><td class="bd">vs 30</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">P/E max</td><td style="text-align:right;font-weight:700;">80</td><td class="bd">vs 50</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">ROE min</td><td style="text-align:right;font-weight:700;">0%</td><td class="bd">optional</td></tr>
+          </table>
+        </div>
+        <div class="v">
+          <h3>Momentum</h3>
+          <table class="mini">
+            <tr><td class="rank" style="width:auto;color:var(--dim);">Momentum min</td><td style="text-align:right;font-weight:700;">8.0%</td><td class="bd">vs 5.0%</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">Sentiment min</td><td style="text-align:right;font-weight:700;">35</td><td class="bd">vs 30</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">Fundamentals</td><td style="text-align:right;font-weight:700;" class="bad">DISABLED</td><td class="bd">—</td></tr>
+            <tr><td class="rank" style="width:auto;color:var(--dim);">&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <footer>
+    <div>
+      STEEX · v0.4.2 · build a7f3e2c1 · localhost:5000/api/v1
+    </div>
+    <div>
+      All times UTC · ⌘R to refresh · ⌘P print
+    </div>
+  </footer>
+
+</div>
+
+<script src="/static/js/refresh.js"></script>
+</body>
+</html>

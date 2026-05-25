@@ -9,4 +9,4 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-exec venv/bin/python -m flask --app dashboard.app:create_app run "$@"
+exec venv/bin/python -m flask --app frontend.app:create_app run "$@"
