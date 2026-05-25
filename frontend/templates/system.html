@@ -1,0 +1,1402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>STEEX · System Transparency</title>
+<link rel="stylesheet" href="/static/css/steex.css" />
+<style>
+  /* page-specific bits */
+  nav.views {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border-strong);
+    margin-bottom: 22px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  nav.views .v {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    background: #f3f3f3;
+    color: var(--dim);
+    cursor: pointer;
+    margin-right: 4px;
+    user-select: none;
+  }
+  nav.views .v.on {
+    background: var(--fg);
+    color: var(--bg);
+    border-color: var(--fg);
+  }
+  nav.views .v:hover:not(.on) { background: #e6e6e6; color: #000; }
+
+  .view { display: none; }
+  .view.on { display: block; }
+
+  /* flowchart (SVG) */
+  .flowchart {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #fff;
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+  }
+  .flowchart .links line,
+  .flowchart .links polyline { stroke: #000; stroke-width: 1.4; fill: none; }
+  .flowchart .links .bar    { stroke: #000; stroke-width: 1.8; }
+  .flowchart .annot { font-size: 10.5px; fill: var(--dim); font-family: var(--mono); letter-spacing: 0.06em; }
+  .flowchart .node  { cursor: pointer; }
+  .flowchart .node .box    { fill: #fff; stroke: #000; stroke-width: 1.4; transition: fill 0.08s; }
+  .flowchart .node .stripe { fill: transparent; }
+  .flowchart .node.crit  .stripe { fill: var(--bad); }
+  .flowchart .node.par   .stripe { fill: #0058b8; }
+  .flowchart .node.reason .box { stroke-dasharray: 4 3; }
+  .flowchart .node text  { font-family: var(--mono); fill: #000; }
+  .flowchart .node .idx  { font-size: 10.5px; fill: var(--muted); letter-spacing: 0.04em; }
+  .flowchart .node .nm   { font-size: 14px; font-weight: 700; }
+  .flowchart .node .mt   { font-size: 10.5px; fill: var(--dim); }
+  .flowchart .node .st   { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; }
+  .flowchart .node .st.ok   { fill: var(--ok); }
+  .flowchart .node .st.warn { fill: var(--warn); }
+  .flowchart .node .st.mute { fill: var(--muted); }
+  .flowchart .node:hover .box { fill: #000; }
+  .flowchart .node:hover text { fill: #fff; }
+  .flowchart .node:hover .idx,
+  .flowchart .node:hover .mt  { fill: #bdbdbd; }
+  .flowchart .node.sel .box { fill: #000; }
+  .flowchart .node.sel text { fill: #fff; }
+  .flowchart .node.sel .idx,
+  .flowchart .node.sel .mt  { fill: #bdbdbd; }
+  .flowchart .post rect { fill: #f0f0f0; stroke: #000; stroke-width: 1; }
+  .flowchart .post text { fill: var(--dim); font-size: 11px; letter-spacing: 0.08em; }
+  .flowchart .endcap { fill: #000; }
+  .flowchart .endcap-text { fill: #fff; font-size: 11px; letter-spacing: 0.12em; font-weight: 700; }
+
+  .legend {
+    display: flex;
+    gap: 22px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .legend span b { color: var(--fg); font-weight: 700; }
+  .swatch {
+    display: inline-block;
+    width: 12px; height: 12px;
+    vertical-align: middle;
+    margin-right: 4px;
+    border: 1px solid var(--border);
+  }
+
+  /* agent detail panel */
+  .agent-detail {
+    margin-top: 18px;
+    border: 1px solid var(--border-strong);
+    background: #fff;
+  }
+  .agent-detail > header {
+    background: #000;
+    color: #fff;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .agent-detail > header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-family: var(--sans);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .agent-detail > header .pill {
+    border: 1px solid #fff;
+    padding: 1px 8px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .agent-detail .ad-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  @media (max-width: 880px) { .agent-detail .ad-body { grid-template-columns: 1fr; } }
+  .agent-detail .ad-cell {
+    padding: 14px 16px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .agent-detail .ad-cell:nth-child(even) { border-right: 0; }
+  .agent-detail .ad-cell.full { grid-column: 1 / -1; border-right: 0; }
+  .agent-detail h4 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    font-family: var(--sans);
+  }
+  .agent-detail .actions {
+    padding: 12px 16px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--border);
+    background: #fafafa;
+  }
+
+  /* matrix */
+  table.matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+    background: #fff;
+  }
+  table.matrix th, table.matrix td {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    text-align: center;
+    white-space: nowrap;
+  }
+  table.matrix th {
+    background: #f3f3f3;
+    font-family: var(--sans);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+  }
+  table.matrix td.lbl { text-align: left; font-weight: 700; background: #fafafa; }
+  table.matrix td.no { color: var(--muted); }
+  table.matrix td.crit { background: #fff4f4; }
+
+  /* schedule */
+  .gantt {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+    overflow-x: auto;
+  }
+  .gantt-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 80px;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--grid);
+  }
+  .gantt-row:last-child { border-bottom: 0; }
+  .gantt-row .lbl { color: var(--dim); }
+  .gantt-row .track {
+    position: relative;
+    height: 22px;
+    background: repeating-linear-gradient(to right,#fafafa,#fafafa 39px,#eaeaea 39px,#eaeaea 40px);
+    border: 1px solid var(--border);
+  }
+  .gantt-row .block {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    background: #000;
+    color: #fff;
+    font-size: 10px;
+    padding: 0 6px;
+    display: flex;
+    align-items: center;
+    letter-spacing: 0.04em;
+    border: 1px solid #000;
+  }
+  .gantt-row .block.run   { background: var(--warn); border-color: var(--warn); color: #fff; }
+  .gantt-row .block.queued{ background: #fff; color: #000; border: 1px dashed #000; }
+  .gantt-row .block.continuous {
+    background: repeating-linear-gradient(45deg,#000,#000 3px,#444 3px,#444 6px);
+    color: #fff;
+  }
+  .gantt-row .meta { font-size: 11px; color: var(--dim); text-align: right; }
+
+  .axis {
+    display: grid;
+    grid-template-columns: 110px 1fr 80px;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .axis-ticks {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* trace tree */
+  .trace {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .trace .tn { font-weight: 700; }
+  .trace .ok { color: var(--ok); }
+  .trace .dim { color: var(--dim); }
+
+  /* prompts */
+  details.prompt {
+    border: 1px solid var(--border);
+    background: #fff;
+    margin-top: 6px;
+  }
+  details.prompt summary {
+    cursor: pointer;
+    padding: 6px 12px;
+    background: #f3f3f3;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+    user-select: none;
+    list-style: none;
+  }
+  details.prompt summary::-webkit-details-marker { display: none; }
+  details.prompt summary::before { content: "▶  "; }
+  details[open].prompt summary::before { content: "▼  "; }
+  details[open].prompt summary { border-bottom: 1px solid var(--border); }
+  details.prompt pre {
+    margin: 0;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    line-height: 1.55;
+  }
+
+  /* workflow side-by-side */
+  .wf-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border: 1px solid var(--border);
+    background: #fff;
+  }
+  @media (max-width: 960px) { .wf-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 600px) { .wf-grid { grid-template-columns: 1fr; } }
+  .wf-grid > .wf {
+    padding: 14px 16px;
+    border-right: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .wf-grid > .wf:last-child { border-right: 0; }
+  .wf h4 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-family: var(--sans);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .wf .freq {
+    color: var(--dim);
+    font-size: 11px;
+    margin-bottom: 10px;
+  }
+  .wf ol {
+    margin: 0 0 10px;
+    padding-left: 22px;
+  }
+  .wf ol li { margin-bottom: 3px; }
+  .wf ol li b { font-weight: 700; }
+  .wf .footer {
+    border-top: 1px solid var(--grid);
+    margin-top: 10px;
+    padding-top: 8px;
+    color: var(--dim);
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
+  /* agent list */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    background: #fff;
+  }
+  @media (max-width: 880px) { .agent-grid { grid-template-columns: 1fr; } }
+  .agent-grid > .ag {
+    padding: 12px 14px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .agent-grid > .ag:nth-child(even) { border-right: 0; }
+  .agent-grid > .ag:hover { background: #f6f6f6; }
+  .agent-grid > .ag.sel { background: #000; color: #fff; }
+  .agent-grid > .ag.sel .dim { color: #aaa; }
+  .agent-grid > .ag.sel .tag { color: #fff; border-color: #fff; }
+  .ag .head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  }
+  .ag .nm { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+  .ag .ix { font-family: var(--mono); color: var(--dim); font-size: 11px; }
+  .ag .role { font-size: 12px; color: var(--dim); margin: 2px 0 6px; }
+  .ag .stats { font-family: var(--mono); font-size: 11px; color: var(--dim); display: flex; gap: 14px; flex-wrap: wrap; }
+  .ag .stats b { color: inherit; font-weight: 700; }
+
+  /* tools tree */
+  .tools-tree {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    background: #fff;
+    border: 1px solid var(--border);
+    padding: 14px 18px;
+    white-space: pre-wrap;
+  }
+  .tools-tree h5 {
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 14px 0 4px;
+    font-weight: 700;
+  }
+  .tools-tree h5:first-child { margin-top: 0; }
+  .tools-tree .tn { font-weight: 700; }
+  .tools-tree .dim { color: var(--dim); }
+  .tools-tree .ag { color: #0058b8; }
+
+  .crumb {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--dim);
+    margin-bottom: 8px;
+  }
+  .crumb a { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ HEADER ============ -->
+  <header class="app">
+    <div class="titlerow">
+      <h1><span class="mark">STEEX</span> &nbsp;System Transparency</h1>
+      <div class="meta">
+        <span><a href="/">← back to dashboard</a></span>
+        <span><b>Mode:</b> screen</span>
+        <span><b>Status:</b> Active</span>
+      </div>
+    </div>
+    <div class="statusline">
+      <div class="left">
+        <span><span class="live-dot"></span><b>RUNNING</b></span>
+        <span>Last run: 2026-05-24 10:17:50</span>
+        <span>Next scheduled: 14:30:00 <b style="color:#000">(in 4 min)</b></span>
+        <span>Frequency: every 2.5 h</span>
+      </div>
+      <div class="right">
+        <button class="btn" id="btn-pause-schedule">Pause Schedule</button>
+        <button class="btn" id="btn-run-now">Run Now</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ VIEW SWITCHER ============ -->
+  <nav class="views" role="tablist">
+    <div class="v on"  data-view="graph">Graph</div>
+    <div class="v"     data-view="schedules">Schedules</div>
+    <div class="v"     data-view="agents">Agents</div>
+    <div class="v"     data-view="tools">Tools</div>
+    <div class="v"     data-view="workflows">Workflows</div>
+  </nav>
+
+  <!-- =================================================================
+       VIEW · GRAPH
+       ================================================================= -->
+  <div class="view on" data-view="graph">
+
+    <section class="panel">
+      <header>
+        <h2>Pipeline Graph <span class="sub">screen mode · click any agent for details</span></h2>
+        <div class="tools">
+          <span>nodes: 6</span><span>parallel: 3</span><span>critical: 3</span>
+        </div>
+      </header>
+      <div class="body">
+
+<svg id="graph" class="flowchart" viewBox="0 0 1000 770" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pipeline flowchart">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#000"></path>
+    </marker>
+  </defs>
+
+  <!-- LINKS (drawn under boxes) -->
+  <g class="links">
+    <!-- data -> risk -->
+    <line x1="500" y1="130" x2="500" y2="158" marker-end="url(#arr)"></line>
+    <!-- risk -> fan-out bar -->
+    <line x1="500" y1="230" x2="500" y2="255"></line>
+    <!-- fan-out bar -->
+    <line class="bar" x1="190" y1="255" x2="810" y2="255"></line>
+    <!-- bar -> 3 parallel -->
+    <line x1="190" y1="255" x2="190" y2="278" marker-end="url(#arr)"></line>
+    <line x1="500" y1="255" x2="500" y2="278" marker-end="url(#arr)"></line>
+    <line x1="810" y1="255" x2="810" y2="278" marker-end="url(#arr)"></line>
+    <!-- 3 parallel -> merge bar -->
+    <line x1="190" y1="350" x2="190" y2="380"></line>
+    <line x1="500" y1="350" x2="500" y2="380"></line>
+    <line x1="810" y1="350" x2="810" y2="380"></line>
+    <line class="bar" x1="190" y1="380" x2="810" y2="380"></line>
+    <!-- merge -> meta -->
+    <line x1="500" y1="380" x2="500" y2="408" marker-end="url(#arr)"></line>
+    <!-- meta -> mgr -->
+    <line x1="500" y1="480" x2="500" y2="508" marker-end="url(#arr)"></line>
+    <!-- mgr -> exec -->
+    <line x1="500" y1="580" x2="500" y2="608" marker-end="url(#arr)"></line>
+    <!-- exec -> post -->
+    <line x1="500" y1="680" x2="500" y2="708" marker-end="url(#arr)"></line>
+  </g>
+
+  <!-- ANNOTATIONS -->
+  <text class="annot" x="500" y="247" text-anchor="middle">▾  FAN-OUT  ·  3 parallel branches</text>
+  <text class="annot" x="500" y="397" text-anchor="middle">▴  MERGE  ·  consensus synthesis</text>
+
+  <!-- NODES (clickable) -->
+  <g class="node crit" data-agent="DataAgent" transform="translate(390 60)">
+    <rect class="box" width="220" height="70"></rect>
+    <rect class="stripe" width="220" height="4"></rect>
+    <text class="idx" x="10" y="22">[1]</text>
+    <text class="st ok" x="210" y="22" text-anchor="end">✓ DONE · 8s</text>
+    <text class="nm" x="110" y="46" text-anchor="middle">DataAgent</text>
+    <text class="mt" x="110" y="62" text-anchor="middle">critical · 10T · alpaca★</text>
+  </g>
+
+  <g class="node crit" data-agent="RiskAgent" transform="translate(390 160)">
+    <rect class="box" width="220" height="70"></rect>
+    <rect class="stripe" width="220" height="4"></rect>
+    <text class="idx" x="10" y="22">[2]</text>
+    <text class="st ok" x="210" y="22" text-anchor="end">✓ DONE · 12s</text>
+    <text class="nm" x="110" y="46" text-anchor="middle">RiskAgent</text>
+    <text class="mt" x="110" y="62" text-anchor="middle">critical · 12T · regime cautious</text>
+  </g>
+
+  <g class="node par" data-agent="analysis_conservative" transform="translate(80 280)">
+    <rect class="box" width="220" height="70"></rect>
+    <rect class="stripe" width="220" height="4"></rect>
+    <text class="idx" x="10" y="22">[3A]</text>
+    <text class="st warn" x="210" y="22" text-anchor="end">⟳ 8/15</text>
+    <text class="nm" x="110" y="46" text-anchor="middle">conservative</text>
+    <text class="mt" x="110" y="62" text-anchor="middle">15T · 35s · 8 candidates</text>
+  </g>
+
+  <g class="node par" data-agent="analysis_aggressive" transform="translate(390 280)">
+    <rect class="box" width="220" height="70"></rect>
+    <rect class="stripe" width="220" height="4"></rect>
+    <text class="idx" x="10" y="22">[3B]</text>
+    <text class="st warn" x="210" y="22" text-anchor="end">⟳ 6/15</text>
+    <text class="nm" x="110" y="46" text-anchor="middle">aggressive</text>
+    <text class="mt" x="110" y="62" text-anchor="middle">15T · 38s · 15 candidates</text>
+  </g>
+
+  <g class="node par" data-agent="analysis_momentum" transform="translate(700 280)">
+    <rect class="box" width="220" height="70"></rect>
+    <rect class="stripe" width="220" height="4"></rect>
+    <text class="idx" x="10" y="22">[3C]</text>
+    <text class="st mute" x="210" y="22" text-anchor="end">▲ QUEUED</text>
+    <text class="nm" x="110" y="46" text-anchor="middle">momentum</text>
+    <text class="mt" x="110" y="62" text-anchor="middle">15T · 32s · trend only</text>
+  </g>
+
+  <g class="node reason" data-agent="MetaAnalysisAgent" transform="translate(390 410)">
+    <rect class="box" width="220" height="70"></rect>
+    <text class="idx" x="10" y="22">[4]</text>
+    <text class="st mute" x="210" y="22" text-anchor="end">▲ QUEUED</text>
+    <text class="nm" x="110" y="46" text-anchor="middle">MetaAnalysisAgent</text>
+    <text class="mt" x="110" y="62" text-anchor="middle">no tools · 5T · 15s</text>
+  </g>
+
+  <g class="node reason" data-agent="ManagerAgent" transform="translate(390 510)">
+    <rect class="box" width="220" height="70"></rect>
+    <text class="idx" x="10" y="22">[5]</text>
+    <text class="st mute" x="210" y="22" text-anchor="end">▲ QUEUED</text>
+    <text class="nm" x="110" y="46" text-anchor="middle">ManagerAgent</text>
+    <text class="mt" x="110" y="62" text-anchor="middle">no tools · 3T · 8s</text>
+  </g>
+
+  <g class="node crit" data-agent="ExecutionAgent" transform="translate(390 610)">
+    <rect class="box" width="220" height="70"></rect>
+    <rect class="stripe" width="220" height="4"></rect>
+    <text class="idx" x="10" y="22">[6]</text>
+    <text class="st mute" x="210" y="22" text-anchor="end">▲ QUEUED</text>
+    <text class="nm" x="110" y="46" text-anchor="middle">ExecutionAgent</text>
+    <text class="mt" x="110" y="62" text-anchor="middle">critical · 10T · alpaca★</text>
+  </g>
+
+  <!-- POST -->
+  <g class="post" transform="translate(390 710)">
+    <rect width="220" height="36"></rect>
+    <text x="110" y="22" text-anchor="middle">POST  ·  save  ·  report</text>
+  </g>
+</svg>
+
+        <div class="legend">
+          <span><span class="swatch" style="background:#b80000;"></span><b>red bar</b> critical (failure aborts run)</span>
+          <span><span class="swatch" style="background:#0058b8;"></span><b>blue bar</b> parallel branch</span>
+          <span><span class="swatch" style="background:#fff;border:1px dashed #000;"></span><b>dashed</b> reasoning-only (no tools)</span>
+          <span><b>[N]</b> execution order</span>
+          <span><b>NT</b> max reasoning turns</span>
+          <span><b>✓</b> done  ·  <b>⟳</b> running  ·  <b>▲</b> queued</span>
+          <span class="dim">→ click any box to inspect</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- AGENT DETAIL PANEL (populated by JS) -->
+    <div id="agent-detail-host"></div>
+
+  </div>
+
+  <!-- =================================================================
+       VIEW · SCHEDULES
+       ================================================================= -->
+  <div class="view" data-view="schedules">
+
+    <section class="panel">
+      <header>
+        <h2>Scheduled Modes <span class="sub">all cron jobs · click to drill</span></h2>
+        <div class="tools tabs" id="schedule-period-tabs">
+          <span class="tab on" data-period="week">Week</span>
+          <span class="tab" data-period="month">Month</span>
+          <span class="tab" data-period="30d">Next 30 Days</span>
+        </div>
+      </header>
+      <div class="body">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th>Frequency</th>
+              <th>Next Run</th>
+              <th>Last Run</th>
+              <th class="num">Avg Dur</th>
+              <th class="num">Success</th>
+              <th>Status</th>
+              <th>Pipeline</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="t">screen</td>
+              <td>every 2.5 h</td>
+              <td>2026-05-24 14:30 <span class="warn">(4m)</span></td>
+              <td>2026-05-24 10:18</td>
+              <td class="num">2:17</td>
+              <td class="num ok">94%</td>
+              <td><span class="tag ok">OK</span></td>
+              <td class="dim">data → risk → 3-way → meta → mgr</td>
+            </tr>
+            <tr>
+              <td class="t">enter</td>
+              <td>15 min after screen</td>
+              <td>2026-05-24 14:35</td>
+              <td>2026-05-24 10:33</td>
+              <td class="num">1:18</td>
+              <td class="num ok">96%</td>
+              <td><span class="tag ok">OK</span></td>
+              <td class="dim">load → risk → mgr → exec</td>
+            </tr>
+            <tr>
+              <td class="t">monitor</td>
+              <td>continuous</td>
+              <td>always</td>
+              <td>2026-05-24 14:32</td>
+              <td class="num">0:08</td>
+              <td class="num ok">99%</td>
+              <td><span class="tag warn">RUNNING</span></td>
+              <td class="dim">risk → mgr</td>
+            </tr>
+            <tr>
+              <td class="t">post_market</td>
+              <td>16:00 ET daily</td>
+              <td>2026-05-24 16:00</td>
+              <td>2026-05-23 16:00</td>
+              <td class="num">3:45</td>
+              <td class="num ok">100%</td>
+              <td><span class="tag ok">OK</span></td>
+              <td class="dim">risk → research → mgr → exec</td>
+            </tr>
+            <tr>
+              <td class="t">learning</td>
+              <td>2× / week</td>
+              <td>2026-05-26 09:00</td>
+              <td>2026-05-22 09:15</td>
+              <td class="num">17:20</td>
+              <td class="num ok">92%</td>
+              <td><span class="tag ok">OK</span></td>
+              <td class="dim">learning_agent → mgr</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>Today's Schedule <span class="sub">2026-05-24 · all modes · UTC</span></h2>
+        <div class="tools"><span>now: 14:32:15</span></div>
+      </header>
+      <div class="body">
+
+        <div class="gantt">
+          <!-- gantt rows: each track is 00:00 → 24:00 -->
+          <div class="gantt-row">
+            <div class="lbl">screen</div>
+            <div class="track">
+              <!-- 08:02, 10:15, 14:30 -->
+              <div class="block"        style="left:33.5%;width:1.5%;">08:02</div>
+              <div class="block"        style="left:42.7%;width:1.5%;">10:15</div>
+              <div class="block queued" style="left:60.4%;width:1.5%;">14:30</div>
+            </div>
+            <div class="meta">3 runs</div>
+          </div>
+
+          <div class="gantt-row">
+            <div class="lbl">enter</div>
+            <div class="track">
+              <div class="block"        style="left:34.5%;width:1.5%;">08:17</div>
+              <div class="block"        style="left:43.8%;width:1.5%;">10:33</div>
+              <div class="block queued" style="left:60.7%;width:1.5%;">14:35</div>
+            </div>
+            <div class="meta">3 runs</div>
+          </div>
+
+          <div class="gantt-row">
+            <div class="lbl">monitor</div>
+            <div class="track">
+              <div class="block continuous" style="left:0%;width:100%;">continuous · checks every 5m</div>
+            </div>
+            <div class="meta">∞</div>
+          </div>
+
+          <div class="gantt-row">
+            <div class="lbl">post_market</div>
+            <div class="track">
+              <div class="block queued" style="left:66.7%;width:2.5%;">16:00 ET (20:00 UTC)</div>
+            </div>
+            <div class="meta">1 run</div>
+          </div>
+
+          <div class="gantt-row">
+            <div class="lbl">learning</div>
+            <div class="track">
+              <div class="block queued" style="left:37.5%;width:9%;display:none;">—</div>
+              <span style="font-size:11px;color:var(--muted);padding:4px 8px;display:inline-block;">— next: Mon 2026-05-26 09:00 UTC</span>
+            </div>
+            <div class="meta">0 today</div>
+          </div>
+
+          <!-- now indicator -->
+          <div style="position:relative;height:0;">
+            <div style="position:absolute;left:calc(110px + 12px + (100% - 110px - 12px - 80px - 12px) * 0.605);width:1px;background:var(--bad);top:-148px;height:148px;"></div>
+          </div>
+
+          <div class="axis">
+            <div></div>
+            <div class="axis-ticks">
+              <span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span>
+            </div>
+            <div></div>
+          </div>
+        </div>
+
+        <div style="margin-top:18px;font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);">Run log — today</div>
+        <table class="data" style="margin-top:6px;">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Mode</th>
+              <th>Action</th>
+              <th>Agents</th>
+              <th>Status</th>
+              <th class="num">Dur</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>08:02</td><td class="t">screen</td><td>Run screening</td><td class="dim">data→risk→3-way→meta→mgr</td><td><span class="tag ok">DONE</span></td><td class="num">1:58</td></tr>
+            <tr><td>08:17</td><td class="t">enter</td><td>Enter trades</td><td class="dim">load→risk→mgr→exec</td><td><span class="tag ok">DONE</span></td><td class="num">1:22</td></tr>
+            <tr><td>10:15</td><td class="t">screen</td><td>Run screening</td><td class="dim">data→risk→3-way→meta→mgr</td><td><span class="tag ok">DONE</span></td><td class="num">2:23</td></tr>
+            <tr><td>10:33</td><td class="t">enter</td><td>Enter trades</td><td class="dim">load→risk→mgr→exec</td><td><span class="tag ok">DONE</span></td><td class="num">1:14</td></tr>
+            <tr><td>14:30</td><td class="t">screen</td><td><b>Run screening</b></td><td class="dim">data→risk→3-way→meta→mgr</td><td><span class="tag warn">NEXT (4m)</span></td><td class="num mute">—</td></tr>
+            <tr><td>14:35</td><td class="t">enter</td><td>Enter trades</td><td class="dim">load→risk→mgr→exec</td><td><span class="tag mute">QUEUED</span></td><td class="num mute">—</td></tr>
+            <tr><td>16:00</td><td class="t">post_market</td><td>Day wrap</td><td class="dim">risk→research→mgr→exec</td><td><span class="tag mute">QUEUED</span></td><td class="num mute">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- =================================================================
+       VIEW · AGENTS
+       ================================================================= -->
+  <div class="view" data-view="agents">
+    <section class="panel">
+      <header>
+        <h2>Agents <span class="sub">all roles in the orchestrator · click to inspect</span></h2>
+        <div class="tools">
+          <span>10 agents</span><span>3 critical</span><span>3 parallel</span>
+        </div>
+      </header>
+      <div class="body" style="padding:0;">
+        <div class="agent-grid" id="agent-grid"></div>
+      </div>
+    </section>
+
+    <div id="agent-detail-host-2"></div>
+  </div>
+
+  <!-- =================================================================
+       VIEW · TOOLS
+       ================================================================= -->
+  <div class="view" data-view="tools">
+
+    <section class="panel">
+      <header>
+        <h2>MCP Tool Permissions <span class="sub">which agent can call which server</span></h2>
+        <div class="tools"><span>4 MCP servers</span></div>
+      </header>
+      <div class="body">
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th style="text-align:left">Agent</th>
+              <th>Steex</th>
+              <th>Alpaca</th>
+              <th>Polygon</th>
+              <th>AlphaVantage</th>
+              <th style="text-align:left">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="crit"><td class="lbl">DataAgent</td>            <td>4</td>          <td class="ok b">★</td>  <td class="no">—</td>     <td class="no">—</td>     <td class="lbl" style="background:#fff4f4;color:var(--bad);">critical</td></tr>
+            <tr class="crit"><td class="lbl">RiskAgent</td>            <td>6</td>          <td class="ok b">★</td>  <td class="no">—</td>     <td class="no">—</td>     <td class="lbl" style="background:#fff4f4;color:var(--bad);">critical</td></tr>
+            <tr><td class="lbl">analysis_conservative</td>             <td>6</td>          <td class="ok b">★</td>  <td class="ok b">★</td>  <td class="ok b">★</td>  <td class="lbl">parallel</td></tr>
+            <tr><td class="lbl">analysis_aggressive</td>               <td>6</td>          <td class="ok b">★</td>  <td class="ok b">★</td>  <td class="ok b">★</td>  <td class="lbl">parallel</td></tr>
+            <tr><td class="lbl">analysis_momentum</td>                 <td>6</td>          <td class="ok b">★</td>  <td class="ok b">★</td>  <td class="ok b">★</td>  <td class="lbl">parallel</td></tr>
+            <tr><td class="lbl">MetaAnalysisAgent</td>                 <td class="no">—</td><td class="no">—</td>    <td class="no">—</td>     <td class="no">—</td>     <td class="lbl dim">pure reasoning</td></tr>
+            <tr><td class="lbl">ManagerAgent</td>                      <td class="no">—</td><td class="no">—</td>    <td class="no">—</td>     <td class="no">—</td>     <td class="lbl dim">pure reasoning</td></tr>
+            <tr class="crit"><td class="lbl">ExecutionAgent</td>       <td>8</td>          <td class="ok b">★</td>  <td class="no">—</td>     <td class="no">—</td>     <td class="lbl" style="background:#fff4f4;color:var(--bad);">critical · trades</td></tr>
+            <tr><td class="lbl">ResearchAgent</td>                     <td>6</td>          <td class="no">—</td>    <td class="ok b">★</td>  <td class="ok b">★</td>  <td class="lbl">learning</td></tr>
+            <tr><td class="lbl">ReportAgent</td>                       <td>3</td>          <td class="no">—</td>    <td class="ok b">★</td>  <td class="no">—</td>     <td class="lbl">async</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--muted);">
+          <b style="color:var(--ok)">★</b> wildcard access (all server tools) &nbsp;·&nbsp; <b>N</b> = N tools allow-listed &nbsp;·&nbsp; <b>—</b> not permitted
+        </div>
+      </div>
+    </section>
+
+    <div class="col2">
+      <section class="panel">
+        <header>
+          <h2>STEEX Server Tools <span class="sub">mcp__steex__*</span></h2>
+          <div class="tools"><span>26 tools</span></div>
+        </header>
+        <div class="body" style="padding:0">
+<div class="tools-tree"><h5>Screening &amp; Analysis</h5>├─ <span class="tn">run_screening</span>
+│   <span class="dim">5-stage pipeline → universe + candidates</span>
+│   <span class="ag">data · risk · analysis_*</span>
+├─ <span class="tn">run_screening_variant(variant)</span>
+│   <span class="dim">conservative / aggressive / momentum presets</span>
+│   <span class="ag">analysis_*</span>
+├─ <span class="tn">rank_candidates</span>
+│   <span class="dim">weighted composite score ranking</span>
+│   <span class="ag">analysis_* · research</span>
+├─ <span class="tn">rank_candidates_with_weights</span>
+│   <span class="dim">custom weight overrides per variant</span>
+│   <span class="ag">analysis_*</span>
+├─ <span class="tn">construct_portfolio</span>
+│   <span class="dim">diversification + correlation caps</span>
+│   <span class="ag">analysis_* · execution</span>
+├─ <span class="tn">get_regime_screening_params</span>
+│   <span class="dim">regime-driven threshold adjustments</span>
+│   <span class="ag">analysis_*</span>
+├─ <span class="tn">get_signal_confidence</span>
+│   <span class="dim">30-day rolling win rate per signal</span>
+│   <span class="ag">analysis_* · learning</span>
+└─ <span class="tn">get_unusual_options_activity</span>
+    <span class="dim">call-heavy stocks · IV skew · put/call</span>
+    <span class="ag">analysis_* · research</span>
+
+<h5>Regime &amp; Risk</h5>├─ <span class="tn">get_regime</span>            <span class="dim">risk_on · cautious · risk_off · crisis</span>
+├─ <span class="tn">assess_portfolio_risk</span> <span class="dim">current position concentration</span>
+└─ <span class="tn">get_exit_signals</span>     <span class="dim">stop-loss · hold-time triggers</span>
+
+<h5>Execution &amp; Broker</h5>├─ <span class="tn">sync_broker</span>          <span class="dim">connection · account sync</span>
+├─ <span class="tn">size_buy_list</span>        <span class="dim">vol-adjusted sizing</span>
+├─ <span class="tn">execute_entries</span>      <span class="dim">place buy orders</span>
+├─ <span class="tn">execute_exits</span>        <span class="dim">place sell orders</span>
+├─ <span class="tn">generate_buy_list</span>    <span class="dim">deterministic picks</span>
+└─ <span class="tn">generate_sell_list</span>   <span class="dim">deterministic exits</span>
+
+<h5>Data &amp; Health</h5>├─ <span class="tn">prefetch_data</span>        <span class="dim">cache market snapshots</span>
+├─ <span class="tn">refresh_data</span>         <span class="dim">reload from APIs</span>
+└─ <span class="tn">check_data_health</span>    <span class="dim">freshness · staleness</span>
+
+<h5>Info &amp; History</h5>├─ <span class="tn">get_positions</span>        <span class="dim">current holdings</span>
+├─ <span class="tn">get_account</span>          <span class="dim">cash · buying power</span>
+├─ <span class="tn">get_trade_history</span>    <span class="dim">closed P&amp;L</span>
+├─ <span class="tn">get_order_status</span>     <span class="dim">live fills</span>
+└─ <span class="tn">load_screen_results</span>  <span class="dim">prior run cache</span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header>
+          <h2>External MCP Servers <span class="sub">3 sources</span></h2>
+          <div class="tools"><span>all healthy</span></div>
+        </header>
+        <div class="body" style="padding:0">
+<div class="tools-tree"><h5>Alpaca <span class="dim">mcp__alpaca__*</span></h5>├─ <span class="tn">get_quote</span> · <span class="tn">get_snapshot</span> · <span class="tn">get_option_chain</span>
+├─ <span class="tn">place_order</span> · <span class="tn">cancel_order</span> · <span class="tn">get_order_status</span>
+├─ <span class="tn">get_positions</span> · <span class="tn">get_account</span>
+└─ <span class="tn">market_hours</span> · <span class="tn">circuit_breaker_status</span>
+<span class="ag">used by:</span> <span class="dim">DataAgent · RiskAgent · ExecutionAgent · all analysis variants</span>
+
+<h5>AlphaVantage <span class="dim">mcp__alphavantage__*</span></h5>├─ 50+ technical indicators <span class="dim">(RSI, MACD, BBands, ...)</span>
+├─ Economic indicators <span class="dim">(CPI, unemployment, GDP)</span>
+├─ Earnings calendar · fundamentals
+└─ Commodity &amp; FX data
+<span class="ag">used by:</span> <span class="dim">all analysis variants · ResearchAgent · LearningAgent</span>
+
+<h5>Polygon / Massive <span class="dim">mcp__polygon__*</span></h5>├─ Stock aggregates · daily bars
+├─ Options aggregates · unusual options activity
+├─ Company news · sentiment analysis
+└─ Option chains · IV · Greeks
+<span class="ag">used by:</span> <span class="dim">all analysis variants · ResearchAgent · MonitorAgent</span>
+
+<h5>Health</h5>├─ Alpaca        <span class="ok">✓ healthy</span> <span class="dim">last beat 12s ago</span>
+├─ AlphaVantage  <span class="ok">✓ healthy</span> <span class="dim">last beat 47s ago</span>
+└─ Polygon       <span class="ok">✓ healthy</span> <span class="dim">last beat 8s ago</span></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <header>
+        <h2>Tool Execution Trace <span class="sub">analysis_conservative · run c4d2a1b9 · 2026-05-24 10:15:42</span></h2>
+        <div class="tools"><span>6 calls · 11.7s tools · 35s total (incl. reasoning)</span></div>
+      </header>
+      <div class="body">
+<div class="trace"><span class="tn">1.</span> <span class="tn">get_regime_screening_params</span>                              <span class="dim">0.2s</span>   <span class="ok">✓</span>
+   in    <span class="dim">(no params)</span>
+   out   <span class="dim">regime=cautious · insider_weight 0.25→0.30 · sentiment 30→40</span>
+
+<span class="tn">2.</span> <span class="tn">run_screening_variant</span>                                       <span class="dim">4.1s</span>   <span class="ok">✓</span>
+   in    <span class="dim">variant="conservative"</span>
+   out   <span class="dim">universe=500 · passed=8 · funnel [500→312→147→62→8]</span>
+
+<span class="tn">3.</span> <span class="tn">get_signal_confidence</span>                                       <span class="dim">0.3s</span>   <span class="ok">✓</span>
+   in    <span class="dim">(reads AlphaDecayMonitor cache)</span>
+   out   <span class="dim">overall 61.7% · degrading [sentiment] · watch [momentum]</span>
+
+<span class="tn">4.</span> <span class="tn">rank_candidates_with_weights</span>                                <span class="dim">2.8s</span>   <span class="ok">✓</span>
+   in    <span class="dim">mom=0.25 · ins=0.35 · fund=0.20 · vol=0.12 · snt=0.05 · opt=0.03</span>
+   out   <span class="dim">[AAPL 72.5 · JPM 69.3 · KO 67.8 · PG 64.1 · MRK 62.9 · ...]</span>
+
+<span class="tn">5.</span> <span class="tn">get_unusual_options_activity</span>                                <span class="dim">1.2s</span>   <span class="ok">✓</span>
+   in    <span class="dim">min_call_volume_ratio=1.5</span>
+   out   <span class="dim">[AAPL unusual_calls · pc_ratio 0.42 · IV skew -1.8]</span>
+
+<span class="tn">6.</span> <span class="tn">construct_portfolio</span>                                         <span class="dim">3.1s</span>   <span class="ok">✓</span>
+   in    <span class="dim">max_correlation=0.55 · max_positions=10</span>
+   out   <span class="dim">selected=8 · rejected=0 · diversification_ratio=0.75</span></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- =================================================================
+       VIEW · WORKFLOWS
+       ================================================================= -->
+  <div class="view" data-view="workflows">
+    <section class="panel">
+      <header>
+        <h2>Execution Workflows <span class="sub">side-by-side comparison</span></h2>
+        <div class="tools"><span>4 modes</span></div>
+      </header>
+      <div class="body" style="padding:0;">
+        <div class="wf-grid">
+          <div class="wf">
+            <h4>screen</h4>
+            <div class="freq">every 2.5h · 3 critical agents</div>
+            <ol>
+              <li><b>DataAgent</b> <span style="color:var(--dim)">10T</span></li>
+              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
+              <li><b>fan-out</b>
+                <ol style="margin:2px 0 4px;padding-left:16px;color:var(--dim);">
+                  <li>conservative 15T</li>
+                  <li>aggressive 15T</li>
+                  <li>momentum 15T</li>
+                </ol>
+              </li>
+              <li><b>MetaAnalysis</b> <span style="color:var(--dim)">5T</span></li>
+              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
+              <li><b>Fallback / save / report</b></li>
+            </ol>
+            <div class="footer">duration 2–3 min<br/>≈55 tool calls / run<br/>critical: data · risk · exec</div>
+          </div>
+
+          <div class="wf">
+            <h4>enter</h4>
+            <div class="freq">15 min after screen</div>
+            <ol>
+              <li><b>load_screen</b></li>
+              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
+              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
+              <li><b>ExecutionAgent</b> <span style="color:var(--dim)">10T</span></li>
+              <li><b>Report</b></li>
+            </ol>
+            <div class="footer">duration 1–2 min<br/>≈12 tool calls / run<br/>writes broker orders</div>
+          </div>
+
+          <div class="wf">
+            <h4>monitor</h4>
+            <div class="freq">continuous · 5m checks</div>
+            <ol>
+              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
+              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
+              <li><b>Fallback / execute</b></li>
+            </ol>
+            <div class="footer">duration ~8s/check<br/>no entries · only exit signals<br/>watches stop-loss + VIX</div>
+          </div>
+
+          <div class="wf">
+            <h4>learning</h4>
+            <div class="freq">2× per week (Mon/Thu 09:00)</div>
+            <ol>
+              <li><b>LearningAgent</b> <span style="color:var(--dim)">25T</span></li>
+              <li><b>LearningManager</b> <span style="color:var(--dim)">3T</span></li>
+            </ol>
+            <div class="footer">duration 15–20 min<br/>writes new weights<br/>critical: learning agent</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header>
+        <h2>Cost &amp; Latency Comparison <span class="sub">per-run averages, last 30 d</span></h2>
+        <div class="tools"></div>
+      </header>
+      <div class="body">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Mode</th>
+              <th class="num">Avg Dur</th>
+              <th class="num">P90 Dur</th>
+              <th class="num">Tool Calls</th>
+              <th class="num">LLM Tokens</th>
+              <th class="num">Cost / Run</th>
+              <th class="num">Runs / Day</th>
+              <th class="num">Daily $</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="t">screen</td>      <td class="num">2:17</td><td class="num">3:08</td><td class="num">~55</td><td class="num">42,180</td><td class="num">$0.087</td><td class="num">~9.6</td><td class="num">$0.84</td></tr>
+            <tr><td class="t">enter</td>       <td class="num">1:18</td><td class="num">1:42</td><td class="num">~12</td><td class="num">8,420</td><td class="num">$0.018</td><td class="num">~9.6</td><td class="num">$0.17</td></tr>
+            <tr><td class="t">monitor</td>     <td class="num">0:08</td><td class="num">0:14</td><td class="num">~4</td><td class="num">1,250</td><td class="num">$0.003</td><td class="num">~288</td><td class="num">$0.86</td></tr>
+            <tr><td class="t">post_market</td> <td class="num">3:45</td><td class="num">4:30</td><td class="num">~28</td><td class="num">28,700</td><td class="num">$0.059</td><td class="num">1</td><td class="num">$0.06</td></tr>
+            <tr><td class="t">learning</td>    <td class="num">17:20</td><td class="num">22:10</td><td class="num">~140</td><td class="num">186,400</td><td class="num">$0.385</td><td class="num">~0.3</td><td class="num">$0.11</td></tr>
+            <tr style="border-top:2px solid var(--border-strong);"><td class="t">total</td><td colspan="7" class="num"><b>~ $2.04 / day · ~$61 / month</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============ FOOTER ============ -->
+  <footer>
+    <div>STEEX · v0.4.2 · build a7f3e2c1 · localhost:5000/api/v1/system</div>
+    <div>All times UTC · click any agent for detail</div>
+  </footer>
+
+</div>
+
+<!-- ====================================================================
+     AGENT DATA + VIEW SWITCHING
+     ==================================================================== -->
+<script>
+/* ---------- Agent registry ---------- */
+// Agent registry (live data fetched from API)
+// Legacy hardcoded data removed - all data now comes from /api/v1/system/agents
+const AGENTS = {
+  // Populated dynamically by system-live.js from live API data
+};
+
+const ORDER = ["DataAgent","RiskAgent","analysis_conservative","analysis_aggressive","analysis_momentum","MetaAnalysisAgent","ManagerAgent","ExecutionAgent","ResearchAgent","ReportAgent"];
+
+/* ---------- Render agent detail ---------- */
+function renderDetail(name) {
+  const a = AGENTS[name];
+  if (!a) {
+    return `<div style="padding:20px;text-align:center;color:#999;">
+      <p>Loading agent details...</p>
+      <p style="font-size:0.9em;margin-top:10px;">Data will be populated from API</p>
+    </div>`;
+  }
+  const critTag = a.critical
+    ? '<span class="pill" style="border-color:#ff8a8a;color:#ffb3b3">CRITICAL</span>'
+    : '<span class="pill">' + (a.type || "OPTIONAL") + '</span>';
+
+  const toolList = a.tools.length
+    ? a.tools.map(t => `<li><b>${t[0]}</b> <span class="dim">— ${t[1]}</span></li>`).join("")
+    : `<li class="dim">no tools (pure reasoning)</li>`;
+
+  const mcpList = a.mcp.length
+    ? a.mcp.map(s => `<li>${s}</li>`).join("")
+    : `<li class="dim">none</li>`;
+
+  const outList = a.output.map(o => `<li><span class="dim">└</span> ${o}</li>`).join("");
+
+  const presets = a.presets ? `
+    <div class="ad-cell">
+      <h4>Variant Presets <span class="dim" style="font-family:var(--mono);">hardcoded</span></h4>
+      <table style="font-family:var(--mono);font-size:12px;border-collapse:collapse;width:100%;">
+        <tbody>
+          ${a.presets.map(p =>
+            `<tr><td style="padding:2px 8px 2px 0;color:var(--dim)">${p[0]}</td><td style="padding:2px 8px 2px 0;font-weight:700">${p[1]}</td><td style="padding:2px 0;color:var(--muted)">${p[2]}</td></tr>`
+          ).join("")}
+        </tbody>
+      </table>
+    </div>` : "";
+
+  const weights = a.weights ? `
+    <div class="ad-cell">
+      <h4>Weight Overrides <span class="dim" style="font-family:var(--mono);">applied via rank_candidates_with_weights</span></h4>
+      <table style="font-family:var(--mono);font-size:12px;border-collapse:collapse;width:100%;">
+        <tbody>
+          ${a.weights.map(w =>
+            `<tr><td style="padding:2px 8px 2px 0;color:var(--dim)">${w[0]}</td><td style="padding:2px 8px 2px 0;font-weight:700">${w[1]}</td><td style="padding:2px 0;color:var(--muted)">${w[2]}</td></tr>`
+          ).join("")}
+        </tbody>
+      </table>
+    </div>` : "";
+
+  return `
+    <div class="agent-detail">
+      <header>
+        <h3>[${a.idx}] · ${name}</h3>
+        ${critTag}
+      </header>
+      <div class="ad-body">
+        <div class="ad-cell">
+          <h4>Metadata</h4>
+          <dl class="kv" style="grid-template-columns:130px 1fr;font-size:12px;">
+            <dt>role</dt>      <dd>${a.role}</dd>
+            <dt>type</dt>      <dd><b>${a.type}</b></dd>
+            <dt>max turns</dt> <dd><b>${a.maxTurns}</b></dd>
+            <dt>avg duration</dt><dd><b>${a.avgDur}</b></dd>
+            <dt>success rate</dt><dd><b>${a.success}</b></dd>
+            <dt>last run</dt>  <dd>${a.lastRun}</dd>
+            <dt>prompt file</dt><dd class="dim">${a.promptFile}</dd>
+            <dt>conclusion</dt><dd><b>${a.conclusion}</b></dd>
+          </dl>
+        </div>
+        <div class="ad-cell">
+          <h4>Tools Allowed</h4>
+          <ul style="margin:0;padding-left:18px;font-family:var(--mono);font-size:12px;line-height:1.55;">${toolList}</ul>
+          <h4 style="margin-top:12px;">External MCP Servers</h4>
+          <ul style="margin:0;padding-left:18px;font-family:var(--mono);font-size:12px;line-height:1.55;">${mcpList}</ul>
+        </div>
+        ${presets}
+        ${weights}
+        <div class="ad-cell full">
+          <h4>Output Schema (last conclusion)</h4>
+          <ul style="margin:0;padding-left:18px;font-family:var(--mono);font-size:12px;line-height:1.55;">${outList}</ul>
+        </div>
+        <div class="ad-cell full">
+          <h4>System Prompt</h4>
+          <details class="prompt">
+            <summary>expand preprompt · ${a.prompt.length.toLocaleString()} chars</summary>
+            <pre>${a.prompt.replace(/</g,"&lt;")}</pre>
+          </details>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn">View Full Prompt</button>
+        <button class="btn">View Last Output</button>
+        <button class="btn">Download Output JSON</button>
+        <button class="btn">Test Run</button>
+        <button class="btn">Rerun Agent</button>
+      </div>
+    </div>`;
+}
+
+/* ---------- Build agents grid ---------- */
+function buildAgentsGrid() {
+  const grid = document.getElementById("agent-grid");
+  if (!grid) return;
+
+  // If AGENTS is empty, show loading state
+  if (Object.keys(AGENTS).length === 0) {
+    grid.innerHTML = '<div style="padding:40px;text-align:center;color:#999;">Loading agents from API...</div>';
+    return;
+  }
+
+  grid.innerHTML = ORDER.map(name => {
+    const a = AGENTS[name];
+    if (!a) return '';
+
+    const tag = a.critical
+      ? '<span class="tag bad">CRITICAL</span>'
+      : a.type && a.type.indexOf("parallel") >= 0 ? '<span class="tag" style="color:#0058b8">PARALLEL</span>'
+      : a.tools && a.tools.length === 0 ? '<span class="tag dim">NO TOOLS</span>'
+      : '<span class="tag dim">' + (a.type || 'AGENT').split(" ")[0].toUpperCase() + '</span>';
+
+    const toolCount = (a.tools && a.tools.length) || 0;
+    const mcpCount = (a.mcp && a.mcp.length) || 0;
+    const successStr = a.success || '—';
+
+    return `
+      <div class="ag" data-agent="${name}">
+        <div class="head">
+          <span class="nm">${name}</span>
+          <span class="ix">[${a.idx || '—'}] · ${a.maxTurns || '—'}T · ${a.avgDur || '—'}</span>
+        </div>
+        <div class="role">${a.role || '—'}</div>
+        <div class="stats">
+          <span>${tag}</span>
+          <span>tools <b>${toolCount}</b></span>
+          <span>mcp <b>${mcpCount}</b></span>
+          <span>success <b>${successStr.split(" ")[0]}</b></span>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+/* ---------- View switching ---------- */
+function switchView(name) {
+  document.querySelectorAll("nav.views .v").forEach(v => v.classList.toggle("on", v.dataset.view === name));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.view === name));
+}
+
+document.querySelectorAll("nav.views .v").forEach(v => {
+  v.addEventListener("click", () => switchView(v.dataset.view));
+});
+
+/* ---------- Wire agent detail action buttons ---------- */
+function wireDetailActions(host, agentName) {
+  if (!host) return;
+  const detail = host.querySelector('.agent-detail');
+  if (!detail) return;
+  const btns = detail.querySelectorAll('.actions .btn');
+  if (btns.length < 5) return;
+
+  // [0] View Full Prompt — open the details element
+  btns[0].addEventListener('click', () => {
+    const det = detail.querySelector('details.prompt');
+    if (det) {
+      det.open = true;
+      det.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    }
+  });
+
+  // [1] View Last Output — fetch from API
+  btns[1].addEventListener('click', async () => {
+    btns[1].textContent = 'Loading...';
+    btns[1].disabled = true;
+    try {
+      const r = await fetch(`/api/v1/system/agent/${agentName}/last-output`);
+      const d = await r.json();
+      showAgentOutput(detail, d);
+    } catch (e) {
+      alert('Error: ' + e.message);
+    } finally {
+      btns[1].disabled = false;
+      btns[1].textContent = 'View Last Output';
+    }
+  });
+
+  // [2] Download Output JSON — trigger download of agent config
+  btns[2].addEventListener('click', () => {
+    const agentData = AGENTS[agentName] || {};
+    const json = JSON.stringify(agentData, null, 2);
+    downloadAgentJSON(`${agentName}_config.json`, json);
+  });
+
+  // [3] Test Run — disabled, show reason
+  btns[3].disabled = true;
+  btns[3].title = 'Not available: test runs require manual execution';
+  btns[3].style.opacity = '0.5';
+
+  // [4] Rerun Agent — disabled, show reason
+  btns[4].disabled = true;
+  btns[4].title = 'Not available: reruns require manual execution';
+  btns[4].style.opacity = '0.5';
+}
+
+function showAgentOutput(container, data) {
+  container.querySelector('.last-output-block')?.remove();
+  const block = document.createElement('div');
+  block.className = 'last-output-block ad-cell full';
+  block.style.cssText = 'background:#fafafa;border-top:1px solid #d8d8d8;padding:12px 16px;margin-top:12px';
+  const outputText = data.conclusion
+    ? JSON.stringify(data.conclusion, null, 2)
+    : (data.message || 'No output available');
+  block.innerHTML = `
+    <b>Last Output</b>
+    <pre style="margin:8px 0 0;font-size:11px;overflow:auto;max-height:200px;font-family:var(--mono)">${outputText}</pre>`;
+  const body = container.querySelector('.ad-body');
+  if (body) body.appendChild(block);
+}
+
+function downloadAgentJSON(filename, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type:'application/json'}));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ---------- Agent click handlers ---------- */
+function selectAgent(name, hostId, fromGrid) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  host.innerHTML = renderDetail(name);
+  wireDetailActions(host, name);
+  // highlight only the surface that owns this host
+  if (hostId === "agent-detail-host") {
+    document.querySelectorAll("#graph .node").forEach(n => n.classList.toggle("sel", n.dataset.agent === name));
+  } else if (hostId === "agent-detail-host-2") {
+    document.querySelectorAll(".agent-grid .ag").forEach(n => n.classList.toggle("sel", n.dataset.agent === name));
+  }
+  // scroll the detail into view (within the wrap; not the whole window)
+  if (fromGrid) {
+    const r = host.getBoundingClientRect();
+    if (r.top > window.innerHeight - 100 || r.top < 60) {
+      window.scrollTo({ top: window.scrollY + r.top - 80, behavior: "smooth" });
+    }
+  }
+}
+
+document.getElementById("graph").addEventListener("click", e => {
+  const n = e.target.closest(".node");
+  if (!n) return;
+  selectAgent(n.dataset.agent, "agent-detail-host", false);
+});
+
+buildAgentsGrid();
+document.getElementById("agent-grid").addEventListener("click", e => {
+  const n = e.target.closest(".ag");
+  if (!n) return;
+  selectAgent(n.dataset.agent, "agent-detail-host-2", true);
+});
+
+/* default selection for graph view */
+selectAgent("analysis_conservative", "agent-detail-host", false);
+selectAgent("DataAgent", "agent-detail-host-2", false);
+
+/* ---------- Schedule control buttons ---------- */
+document.getElementById("btn-pause-schedule").addEventListener("click", async () => {
+  if (!confirm("Pause all scheduled runs?")) return;
+  const btn = document.getElementById("btn-pause-schedule");
+  btn.disabled = true;
+  btn.textContent = "Pausing...";
+  try {
+    const r = await fetch("/api/v1/system/schedules/pause", { method: "POST" });
+    const d = await r.json();
+    btn.textContent = d.message || "Paused";
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = "Pause Schedule";
+    }, 3000);
+  } catch (e) {
+    alert("Error: " + e.message);
+    btn.disabled = false;
+    btn.textContent = "Pause Schedule";
+  }
+});
+
+document.getElementById("btn-run-now").addEventListener("click", async () => {
+  const activeView = document.querySelector("[data-view].on");
+  const activeSched = activeView?.dataset.view === "schedules"
+    ? document.querySelector("[data-schedule].on")?.dataset.schedule || "screen"
+    : "screen";
+  if (!confirm(`Run '${activeSched}' now?`)) return;
+  const btn = document.getElementById("btn-run-now");
+  btn.disabled = true;
+  btn.textContent = "Running...";
+  try {
+    const r = await fetch(`/api/v1/system/schedules/${activeSched}/run`, { method: "POST" });
+    const d = await r.json();
+    btn.textContent = d.message || "Initiated";
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = "Run Now";
+    }, 3000);
+  } catch (e) {
+    alert("Error: " + e.message);
+    btn.disabled = false;
+    btn.textContent = "Run Now";
+  }
+});
+
+/* ---------- Schedule period tabs ---------- */
+document.querySelectorAll("#schedule-period-tabs .tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll("#schedule-period-tabs .tab").forEach(t => t.classList.remove("on"));
+    tab.classList.add("on");
+    // Future: filter visible rows in schedules table based on period
+  });
+});
+
+/* ---------- Live status overlay ---------- */
+async function syncLiveStatus() {
+  try {
+    const r = await fetch("/api/v1/system/agents");
+    const data = await r.json();
+    if (!data.agents || !Array.isArray(data.agents)) return;
+
+    data.agents.forEach(agent => {
+      const name = agent.name;
+      // Update SVG status if available
+      const svgNode = document.querySelector(`[data-agent="${name}"] .st`);
+      if (svgNode) {
+        svgNode.textContent = agent.status || "ready";
+      }
+      // Update grid card status tag if available
+      const gridCard = document.querySelector(`#agent-grid [data-agent="${name}"]`);
+      if (gridCard) {
+        const statusSpan = gridCard.querySelector(".stats span:first-child");
+        if (statusSpan) {
+          statusSpan.textContent = agent.status || "ready";
+        }
+      }
+    });
+  } catch (e) {
+    // Silent fail - static data still visible if API unavailable
+  }
+}
+
+// Sync on initial load and periodically
+document.addEventListener("DOMContentLoaded", syncLiveStatus);
+setInterval(syncLiveStatus, 10000); // Poll every 10 seconds
+</script>
+<script src="/static/js/system-live.js"></script>
+</body>
+</html>
