@@ -243,30 +243,43 @@ scheduler/run.sh screen       # Manual run of a specific mode
 
 ### Dashboard
 
-STEEX ships with a Flask web dashboard at `dashboard/` that visualizes everything the daily pipeline does. It reads from `data/dashboard.db` (populated by each pipeline run) plus the live JSON state files (`data/heartbeat.json`, `data/positions.json`).
+STEEX ships with a Flask web dashboard at `frontend/` that provides real-time visibility into the trading pipeline. All data is fetched live from REST APIs backed by run history and system configuration.
 
 ```bash
 # Start the dashboard on http://127.0.0.1:5000
-venv/bin/python -m flask --app dashboard.app:create_app run
+venv/bin/python -m flask --app frontend.app:create_app run
 
 # Or use the wrapper script (forwards extra args to flask run)
-scripts/run_dashboard.sh
-scripts/run_dashboard.sh --host 0.0.0.0 --port 8080
+scripts/run_dashboard.py
+scripts/run_dashboard.py --host 0.0.0.0 --port 8080
 ```
 
 Available views:
 
 | Path | Shows |
 |------|-------|
-| `/` | Overview: latest run, current regime, recent decisions, heartbeat |
-| `/runs` | History of all pipeline runs (screen / enter / monitor / etc.) with status |
-| `/runs/<id>` | Drill into a single run's trace, logs, and stage timings |
-| `/decisions` | Every buy/sell/skip decision the system has made, filterable |
-| `/screening/funnel` | Stage-by-stage funnel counts (universe → ranked → executed) |
-| `/risk/regime` | Current + historical regime detection (VIX, yield curve, breadth, dollar) |
-| `/status/current` | Live account snapshot: equity, cash, open positions, stops |
+| `/` | **Pipeline Dashboard**: current run status, live metrics, regime detection, consensus picks, screening funnel, variant results, execution history |
+| `/system` | **Agent Transparency**: system configuration, agent prompts, schedules, LangGraph visualization, execution traces with tool calls |
 
-Run the dashboard alongside cron — it's read-only, safe to leave running 24/7, and gives you a faster feedback loop than grepping `data/reports/*.json`. For remote access, put it behind a reverse proxy or bind to localhost only.
+Dashboard data is **live-API driven** (no database):
+
+| Endpoint | Source | Shows |
+|----------|--------|-------|
+| `/api/v1/pipeline/current` | Latest run file | Current stage, agent, elapsed time, progress |
+| `/api/v1/pipeline/recent-runs` | `data/runs/*.jsonl` | 10 recent executions with mode, status, duration |
+| `/api/v1/pipeline/trace/<run_id>` | Specific run file | Execution trace: tool calls, parameters, outputs |
+| `/api/v1/variants/results` | Latest run conclusions | Conservative/Aggressive/Momentum picks and scores |
+| `/api/v1/consensus` | Variant synthesis | Final consensus picks across all variants |
+| `/api/v1/screening/stats` | Run funnel data | Stage-by-stage counts (universe → ranked → executed) |
+| `/api/v1/regime` | RegimeDetector + VIX | Current market regime and VIX level |
+| `/api/v1/manager/decision` | ManagerAgent conclusion | Trade decision rationale and conviction |
+| `/api/v1/system/agents` | `config/agents.yaml` | Agent list, stats, success rates |
+| `/api/v1/system/schedules` | Mode configurations | Cron schedule definitions |
+| `/api/v1/system/agent/<name>/detail` | Agent config + prompt | Full agent configuration with system prompt |
+| `/api/v1/system/agent/<name>/last-output` | Run history | Last execution output for an agent |
+| `/api/v1/system/graph/<mode>` | LangGraph structure | Agent and node definitions for a mode |
+
+The dashboard auto-refreshes every 10 seconds and displays real system data with graceful degradation (empty states, "Loading...", etc. when no run data is available). Read-only and safe to leave running 24/7. For remote access, put it behind a reverse proxy or bind to localhost only.
 
 ### Tests
 
@@ -341,7 +354,13 @@ STEEX/
     config.yaml              # Cron schedule settings
     run.sh                   # Entry point with market gating
     install.sh / uninstall.sh
-  dashboard/                 # Flask web dashboard
+  frontend/
+    app.py                   # Flask app with REST API endpoints
+    services.py              # Dashboard data service layer
+    templates/               # HTML templates (index.html, system.html)
+    static/
+      js/                    # Client-side logic (refresh.js, system-live.js)
+      css/                   # Styling
   tests/                     # 376+ tests
   STRATEGY.md                # Full strategy document with code references
 ```
