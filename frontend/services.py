@@ -842,6 +842,64 @@ class DashboardService:
         }
         return labels.get(node_name, node_name.replace("_", " ").title())
 
+    # ====================================================================
+    # Recent Runs & Traces
+    # ====================================================================
+
+    def get_recent_runs(self, limit: int = 10) -> Dict[str, Any]:
+        """Get recent pipeline runs across all modes."""
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.exists():
+            return {"runs": [], "timestamp": datetime.utcnow().isoformat() + "Z"}
+
+        run_files = sorted(runs_dir.glob("run_*.jsonl"), reverse=True)[:limit]
+        runs = []
+
+        for run_file in run_files:
+            run_data = self._load_json(run_file)
+            if not run_data:
+                continue
+
+            run_info = {
+                "run_id": run_data.get("run_id"),
+                "mode": run_data.get("mode", "unknown"),
+                "status": run_data.get("status", "unknown"),
+                "started_at": run_data.get("started_at"),
+                "completed_at": run_data.get("completed_at"),
+                "elapsed": self._elapsed_seconds(run_data.get("started_at")),
+                "current_agent": run_data.get("current_agent"),
+                "stage": run_data.get("stage"),
+            }
+            runs.append(run_info)
+
+        return {
+            "runs": runs,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    def get_run_trace(self, run_id: str) -> Dict[str, Any]:
+        """Get execution trace for a specific run."""
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.exists():
+            return {"run_id": run_id, "traces": [], "message": "No run data available"}
+
+        # Find run file with matching run_id
+        for run_file in sorted(runs_dir.glob("run_*.jsonl"), reverse=True):
+            run_data = self._load_json(run_file)
+            if not run_data or run_data.get("run_id") != run_id:
+                continue
+
+            traces = run_data.get("traces", [])
+            return {
+                "run_id": run_id,
+                "mode": run_data.get("mode"),
+                "started_at": run_data.get("started_at"),
+                "traces": traces,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+
+        return {"run_id": run_id, "traces": [], "message": f"Run {run_id} not found"}
+
 
 # Singleton instance
 _service_instance: Optional[DashboardService] = None

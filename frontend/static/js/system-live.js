@@ -65,6 +65,26 @@
     }
   }
 
+  async function fetchRecentRuns() {
+    try {
+      const r = await fetch('/api/v1/pipeline/recent-runs');
+      return await r.json();
+    } catch (e) {
+      console.error('Error fetching recent runs:', e);
+      return null;
+    }
+  }
+
+  async function fetchRunTrace(runId) {
+    try {
+      const r = await fetch(`/api/v1/pipeline/trace/${runId}`);
+      return await r.json();
+    } catch (e) {
+      console.error(`Error fetching trace for ${runId}:`, e);
+      return null;
+    }
+  }
+
   // ── DOM Updaters ───────────────────────────────────────────────────────
 
   function q(sel) {
@@ -87,6 +107,54 @@
   function formatPercent(rate) {
     if (rate === null || rate === undefined) return '—';
     return `${Math.round(rate * 100)}%`;
+  }
+
+  function updateHeaderStatus(data) {
+    if (!data || !data.runs || data.runs.length === 0) return;
+
+    const latestRun = data.runs[0];
+    const statusline = q('.statusline .left');
+    if (statusline) {
+      const lastRunDate = new Date(latestRun.started_at);
+      const lastRunStr = lastRunDate.toLocaleString();
+      const spans = statusline.querySelectorAll('span');
+      if (spans.length > 1) {
+        spans[1].textContent = `Last run: ${lastRunStr}`;
+      }
+      if (spans.length > 2) {
+        const nextRun = new Date(lastRunDate.getTime() + 2.5 * 60 * 60 * 1000); // 2.5 hours from last run
+        const nextRunTime = nextRun.toLocaleTimeString();
+        const minutesUntil = Math.max(0, Math.floor((nextRun - new Date()) / 60000));
+        spans[2].innerHTML = `Next scheduled: ${nextRunTime} <b style="color:#000">(in ${minutesUntil} min)</b>`;
+      }
+    }
+  }
+
+  function updateScheduleHeader() {
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toISOString().split('T')[1].slice(0, 8);
+
+    // Update "Today's Schedule" header
+    const scheduleHeader = qa('h2');
+    for (let h of scheduleHeader) {
+      if (h.textContent.includes("Today's Schedule")) {
+        const sub = h.querySelector('.sub');
+        if (sub) {
+          sub.textContent = `${dateStr} · all modes · UTC`;
+        }
+        break;
+      }
+    }
+
+    // Update current time display
+    const tools = qa('.tools span');
+    for (let t of tools) {
+      if (t.textContent.includes('now:')) {
+        t.textContent = `now: ${timeStr}`;
+        break;
+      }
+    }
   }
 
   async function updateAgentGrid(data) {
@@ -275,9 +343,85 @@ ${detail.preprompt || 'Prompt not found'}
     graphContainer.innerHTML = graphInfo;
   }
 
+  async function updateRecentRunsTable(data) {
+    if (!data || !data.runs) return;
+
+    // Find the recent runs table
+    const tables = qa('table.data tbody');
+    if (tables.length < 2) return;
+    const runsTable = tables[1]; // Second table should be recent runs
+
+    const rows = data.runs.slice(0, 5).map(run => {
+      const startDate = new Date(run.started_at);
+      const startStr = startDate.toLocaleString();
+      const elapsedStr = formatDuration(run.elapsed);
+      const statusTag = run.status === 'complete' ? '<span class="tag ok">OK</span>'
+                      : run.status === 'running' ? '<span class="tag warn">RUNNING</span>'
+                      : '<span class="tag dim">—</span>';
+
+      return `
+        <tr>
+          <td class="t">${run.mode || '—'}</td>
+          <td>—</td>
+          <td>${startStr} ${run.elapsed ? `<span class="warn">(${Math.floor(run.elapsed/60)}m)</span>` : ''}</td>
+          <td>—</td>
+          <td class="num">${elapsedStr}</td>
+          <td class="num">—</td>
+          <td>${statusTag}</td>
+          <td class="dim">—</td>
+        </tr>
+      `;
+    }).join('\n');
+
+    if (rows) runsTable.innerHTML = rows;
+  }
+
+  async function updateExecutionTrace(data) {
+    if (!data || !data.traces || data.traces.length === 0) return;
+
+    // Find the trace section header
+    const header = qa('section.panel h2');
+    let traceSection = null;
+    for (let h of header) {
+      if (h.textContent.includes('Tool Execution Trace')) {
+        traceSection = h.closest('section.panel');
+        break;
+      }
+    }
+
+    if (!traceSection) return;
+
+    const traceBody = traceSection.querySelector('.trace');
+    if (!traceBody) return;
+
+    const traceHtml = data.traces.map((t, i) => {
+      const toolName = t.tool || `Tool ${i+1}`;
+      const duration = t.duration ? `${t.duration.toFixed(2)}s` : '—';
+      const status = t.status === 'success' ? '<span class="ok">✓</span>' : '—';
+      const input = t.input ? `<span class="dim">${t.input}</span>` : '<span class="dim">(no params)</span>';
+      const output = t.output ? `<span class="dim">${t.output}</span>` : '<span class="dim">—</span>';
+
+      return `
+<span class="tn">${i+1}.</span> <span class="tn">${toolName}</span> <span class="dim">${duration}</span> ${status}
+   in    ${input}
+   out   ${output}
+      `;
+    }).join('\n\n');
+
+    traceBody.innerHTML = traceHtml;
+
+    // Update the header
+    const traceHeader = traceSection.querySelector('h2 .sub');
+    if (traceHeader) {
+      const dateStr = new Date(data.started_at).toLocaleString();
+      traceHeader.textContent = `${data.mode || 'unknown'} · run ${data.run_id || '—'} · ${dateStr}`;
+    }
+  }
+
   async function refreshLiveData() {
     const agentsData = await fetchAgents();
     const schedulesData = await fetchSchedules();
+    const recentRunsData = await fetchRecentRuns();
 
     if (agentsData && agentsData.agents) {
       // Populate AGENTS object from API for backward compatibility
@@ -308,6 +452,22 @@ ${detail.preprompt || 'Prompt not found'}
     }
 
     if (schedulesData) await updateSchedulesTable(schedulesData);
+    if (recentRunsData) {
+      await updateRecentRunsTable(recentRunsData);
+      updateHeaderStatus(recentRunsData);
+    }
+
+    // Update schedule header with current date/time
+    updateScheduleHeader();
+
+    // Fetch and display trace from most recent run
+    if (recentRunsData && recentRunsData.runs && recentRunsData.runs.length > 0) {
+      const latestRun = recentRunsData.runs[0];
+      if (latestRun.run_id) {
+        const traceData = await fetchRunTrace(latestRun.run_id);
+        if (traceData) await updateExecutionTrace(traceData);
+      }
+    }
 
     // Also refresh graph for current mode
     await updateGraphVisualization(_currentMode);
