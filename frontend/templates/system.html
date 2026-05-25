@@ -897,33 +897,11 @@
 
     <section class="panel">
       <header>
-        <h2>Tool Execution Trace <span class="sub">analysis_conservative · run c4d2a1b9 · 2026-05-24 10:15:42</span></h2>
-        <div class="tools"><span>6 calls · 11.7s tools · 35s total (incl. reasoning)</span></div>
+        <h2>Tool Execution Trace <span class="sub">—</span></h2>
+        <div class="tools"><span>—</span></div>
       </header>
       <div class="body">
-<div class="trace"><span class="tn">1.</span> <span class="tn">get_regime_screening_params</span>                              <span class="dim">0.2s</span>   <span class="ok">✓</span>
-   in    <span class="dim">(no params)</span>
-   out   <span class="dim">regime=cautious · insider_weight 0.25→0.30 · sentiment 30→40</span>
-
-<span class="tn">2.</span> <span class="tn">run_screening_variant</span>                                       <span class="dim">4.1s</span>   <span class="ok">✓</span>
-   in    <span class="dim">variant="conservative"</span>
-   out   <span class="dim">universe=500 · passed=8 · funnel [500→312→147→62→8]</span>
-
-<span class="tn">3.</span> <span class="tn">get_signal_confidence</span>                                       <span class="dim">0.3s</span>   <span class="ok">✓</span>
-   in    <span class="dim">(reads AlphaDecayMonitor cache)</span>
-   out   <span class="dim">overall 61.7% · degrading [sentiment] · watch [momentum]</span>
-
-<span class="tn">4.</span> <span class="tn">rank_candidates_with_weights</span>                                <span class="dim">2.8s</span>   <span class="ok">✓</span>
-   in    <span class="dim">mom=0.25 · ins=0.35 · fund=0.20 · vol=0.12 · snt=0.05 · opt=0.03</span>
-   out   <span class="dim">[AAPL 72.5 · JPM 69.3 · KO 67.8 · PG 64.1 · MRK 62.9 · ...]</span>
-
-<span class="tn">5.</span> <span class="tn">get_unusual_options_activity</span>                                <span class="dim">1.2s</span>   <span class="ok">✓</span>
-   in    <span class="dim">min_call_volume_ratio=1.5</span>
-   out   <span class="dim">[AAPL unusual_calls · pc_ratio 0.42 · IV skew -1.8]</span>
-
-<span class="tn">6.</span> <span class="tn">construct_portfolio</span>                                         <span class="dim">3.1s</span>   <span class="ok">✓</span>
-   in    <span class="dim">max_correlation=0.55 · max_positions=10</span>
-   out   <span class="dim">selected=8 · rejected=0 · diversification_ratio=0.75</span></div>
+        <div class="trace" style="color:#999;text-align:center;padding:20px;">Loading execution trace from latest run...</div>
       </div>
     </section>
 

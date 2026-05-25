@@ -292,7 +292,6 @@ ${detail.preprompt || 'Prompt not found'}
       viewOutputBtn.addEventListener('click', async () => {
         const output = await fetchAgentLastOutput(agentName);
         if (output && output.conclusion) {
-          console.log(`Last output for ${agentName}:`, output);
           alert(`Last output for ${agentName}:\n${JSON.stringify(output.conclusion, null, 2)}`);
         }
       });
