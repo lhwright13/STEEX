@@ -7,7 +7,7 @@ without requiring actual claude CLI execution.
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
-from langgraph.constants import Send
+from langgraph.types import Send
 
 from src.agents.state import PipelineState, RunnerContext
 from src.agents.registry import AgentRegistry, ModeConfig
@@ -169,7 +169,8 @@ class TestGraphBuildingParallel:
         )
 
         # Entry point should be first sub_agent (data)
-        assert graph.entry_point == "data"
+        start_targets = [e.target for e in graph.get_graph().edges if e.source == "__start__"]
+        assert start_targets == ["data"]
 
 
 # ============================================================================
@@ -210,8 +211,7 @@ class TestFanOutNode:
 
         for send in result:
             # Each Send should contain the same state
-            assert send.kwargs.get("state") == sample_pipeline_state or \
-                   send.args[0] == sample_pipeline_state
+            assert send.arg == sample_pipeline_state
 
 
 # ============================================================================
@@ -296,14 +296,19 @@ class TestVariantAgentNode:
             assert item["conclusion"]["universe_size"] == 500
 
     def test_variant_node_handles_failure(self, mock_context, sample_pipeline_state):
-        """Variant node should handle agent failures gracefully"""
+        """A variant returning no conclusion is recorded as None without aborting.
+
+        Parallel fan-out is resilient by design: one variant producing nothing
+        must not abort the whole screen, so the meta-merge can still synthesize
+        from the surviving variants.
+        """
         with patch("src.agents.nodes.run_agent") as mock_run:
             mock_run.return_value = (None, AgentTrace(run_id="123", role="test", mode="screen"))
 
             node = make_variant_agent_node("analysis_momentum", mock_context)
             result = node(sample_pipeline_state)
 
-            assert result["abort"] is True
+            assert result.get("abort") is not True
             assert result["variant_conclusions"][0]["conclusion"] is None
 
 

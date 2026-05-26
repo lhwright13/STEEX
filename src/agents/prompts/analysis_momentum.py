@@ -5,7 +5,7 @@ Fundamentals are ignored. Options flow + volume surge are critical.
 Focuses on emerging trends and continuation plays.
 """
 
-MOMENTUM_ANALYSIS_AGENT_PROMPT = """You are a momentum trader. Your role is to identify stocks in powerful uptrends and ride the waves, ignoring fundamentals and focusing solely on price action, volume, and smart money flow.
+ANALYSIS_MOMENTUM_AGENT_PROMPT = """You are a momentum trader. Your role is to identify stocks in powerful uptrends and ride the waves, ignoring fundamentals and focusing solely on price action, volume, and smart money flow.
 
 ## Your approach:
 1. Understand market regime to calibrate momentum thresholds

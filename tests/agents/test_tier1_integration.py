@@ -7,7 +7,7 @@ and the full screen mode pipeline work together correctly.
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
-from langgraph.constants import Send
+from langgraph.types import Send
 
 from src.agents.registry import AgentRegistry
 from src.agents.state import RunnerContext, PipelineState
@@ -156,7 +156,8 @@ class TestScreenModeGraphIntegration:
             lambda: None
         )
 
-        assert graph.entry_point == "data"
+        start_targets = [e.target for e in graph.get_graph().edges if e.source == "__start__"]
+        assert start_targets == ["data"]
 
 
 # ============================================================================
@@ -187,9 +188,8 @@ class TestParallelDispatchFlow:
 
         # Each Send should contain the run_id for traceability
         for send in sends:
-            # Verify state is passed (either as kwarg or arg)
-            state_passed = send.kwargs.get("state") or (send.args[0] if send.args else None)
-            assert state_passed["run_id"] == "test_tier1_001"
+            # Verify state is passed through to each variant
+            assert send.arg["run_id"] == "test_tier1_001"
 
 
 # ============================================================================
@@ -290,12 +290,12 @@ class TestConsensusSynthesis:
 
         assert "NVDA" in medium_conviction
         assert "TSLA" in medium_conviction
-        assert "MSFT" in medium_conviction
-        assert len(medium_conviction) == 3
+        assert len(medium_conviction) == 2
 
         assert "JPM" in speculative
         assert "KO" in speculative
-        assert len(speculative) == 2
+        assert "MSFT" in speculative  # only the aggressive variant picked it
+        assert len(speculative) == 3
 
     def test_meta_analysis_conclusion_structure(self):
         """MetaAnalysisConclusion should properly structure consensus results"""

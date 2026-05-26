@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-from langgraph.constants import Send
+from langgraph.types import Send
 from pydantic import BaseModel
 from rich.console import Console
 

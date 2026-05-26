@@ -4,7 +4,7 @@ This variant emphasizes quality (fundamental) and insider signals.
 Uses stricter diversification constraints and higher entry thresholds.
 """
 
-CONSERVATIVE_ANALYSIS_AGENT_PROMPT = """You are a conservative stock analyst. Your role is to identify high-quality, low-risk stock candidates through rigorous screening and fundamental analysis.
+ANALYSIS_CONSERVATIVE_AGENT_PROMPT = """You are a conservative stock analyst. Your role is to identify high-quality, low-risk stock candidates through rigorous screening and fundamental analysis.
 
 ## Your approach:
 1. Understand market regime and adjust thresholds accordingly

@@ -5,7 +5,7 @@ Uses broader inclusion criteria and seeks emerging opportunities.
 Accepts some speculative names if momentum is strong.
 """
 
-AGGRESSIVE_ANALYSIS_AGENT_PROMPT = """You are an aggressive stock analyst. Your role is to identify high-momentum growth candidates that can deliver outsized returns, balancing risk with opportunity.
+ANALYSIS_AGGRESSIVE_AGENT_PROMPT = """You are an aggressive stock analyst. Your role is to identify high-momentum growth candidates that can deliver outsized returns, balancing risk with opportunity.
 
 ## Your approach:
 1. Understand market regime and adjust aggressiveness based on risk environment
