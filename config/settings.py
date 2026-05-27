@@ -418,7 +418,12 @@ class Settings(BaseSettings):
         default=15, description="Maximum agentic turns per sub-agent"
     )
     agent_timeout_seconds: int = Field(
-        default=600, description="Timeout for each agent invocation"
+        default=1200,
+        description=(
+            "Timeout for each agent invocation. Sized for the parallel analysis "
+            "variants: each runs a full ~550s universe screen, and three run "
+            "concurrently, so contention pushes individual runs past the old 600s."
+        ),
     )
     agent_fallback_deterministic: bool = Field(
         default=True, description="Fall back to QuantManager if agent fails"

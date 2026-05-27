@@ -172,6 +172,28 @@ class TestGraphBuildingParallel:
         start_targets = [e.target for e in graph.get_graph().edges if e.source == "__start__"]
         assert start_targets == ["data"]
 
+    def test_fan_out_dispatches_to_each_variant(self, registry, mock_context):
+        """fan_out must have an outgoing edge to every variant.
+
+        Regression: the Send fan-out belongs on a conditional edge, not a
+        node return value. If fan_out is wired as a plain node returning a
+        list of Send, the compiled graph has no fan_out→variant edges and
+        LangGraph raises INVALID_GRAPH_NODE_RETURN_VALUE at run time.
+        """
+        mode_config = registry.modes["screen"]
+        graph = build_graph(
+            "screen",
+            mode_config,
+            mock_context,
+            lambda x: str(x),
+            lambda: None
+        )
+
+        fan_out_targets = {
+            e.target for e in graph.get_graph().edges if e.source == "fan_out"
+        }
+        assert fan_out_targets == set(mode_config.parallel_agents)
+
 
 # ============================================================================
 # Test: Fan-Out Node Factory

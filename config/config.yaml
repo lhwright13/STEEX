@@ -80,12 +80,12 @@ trail_stop_30: 0.15              # Optimized: tighter at 30%+ (was 0.18) - lock 
 # -----------------------------------------------------------------------------
 # Scoring Weights (must sum to 1.0)
 # -----------------------------------------------------------------------------
-weight_momentum: 0.30            # Momentum weight in score
-weight_insider: 0.25             # Insider weight in score
-weight_volume: 0.15              # Volume surge weight
-weight_sentiment: 0.15           # Sentiment weight
-weight_fundamental: 0.10         # Fundamental analysis weight
-weight_options: 0.12             # Options intelligence weight (increased for Tier 1+2)
+weight_momentum: 0.2804          # Momentum weight in score
+weight_insider: 0.2336           # Insider weight in score
+weight_volume: 0.1402            # Volume surge weight
+weight_sentiment: 0.1402         # Sentiment weight
+weight_fundamental: 0.0935       # Fundamental analysis weight
+weight_options: 0.1121           # Options intelligence weight (rescaled from prior 0.30/.25/.15/.15/.10/.12 set summing to 1.07)
 
 # -----------------------------------------------------------------------------
 # Sentiment Analysis
@@ -245,7 +245,7 @@ manager_require_insider: false   # Require insider activity for entry
 # -----------------------------------------------------------------------------
 agent_enabled: true               # Enable Claude AI agent mode globally
 agent_max_turns: 15               # Maximum agentic turns per sub-agent
-agent_timeout_seconds: 600        # Timeout for each agent invocation (10 min)
+agent_timeout_seconds: 1200       # Timeout per agent (20 min) - parallel analysis variants each run a full ~550s screen concurrently
 agent_fallback_deterministic: true  # Fall back to QuantManager if agent fails
 
 # Agent trace and evolution

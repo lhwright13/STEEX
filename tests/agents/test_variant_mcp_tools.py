@@ -306,14 +306,20 @@ class TestToolIntegrationPoints:
 
         settings = Settings()
 
-        # Verify default weights from settings
-        assert settings.weight_momentum == 0.30
-        assert settings.weight_insider == 0.25
-        assert settings.weight_volume == 0.15
-        assert settings.weight_sentiment == 0.15
-        assert settings.weight_fundamental == 0.10
-        # Note: weight_options was updated to 0.12 for Tier 1+2
-        assert settings.weight_options == 0.12
+        # Weights are normalized to sum to 1.0 (the prior 0.30/0.25/0.15/0.15/
+        # 0.10/0.12 set erroneously summed to 1.07 and was rescaled).
+        weights = [
+            settings.weight_momentum,
+            settings.weight_insider,
+            settings.weight_volume,
+            settings.weight_sentiment,
+            settings.weight_fundamental,
+            settings.weight_options,
+        ]
+        assert abs(sum(weights) - 1.0) < 1e-6, f"weights must sum to 1.0, got {sum(weights)}"
+        # Momentum remains the dominant signal; options stays elevated for Tier 1+2.
+        assert settings.weight_momentum == max(weights)
+        assert settings.weight_options > settings.weight_fundamental
 
     def test_regime_params_use_correct_weight_names(self):
         """Regime params should use actual setting field names"""

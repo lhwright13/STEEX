@@ -50,6 +50,7 @@ agents:
     max_turns: 15
     needs_tools: true
     allowed_tools:
+      - get_regime
       - get_regime_screening_params
       - run_screening_variant
       - get_signal_confidence
@@ -64,6 +65,7 @@ agents:
     max_turns: 15
     needs_tools: true
     allowed_tools:
+      - get_regime
       - get_regime_screening_params
       - run_screening_variant
       - get_signal_confidence
@@ -78,6 +80,7 @@ agents:
     max_turns: 15
     needs_tools: true
     allowed_tools:
+      - get_regime
       - get_regime_screening_params
       - run_screening_variant
       - get_signal_confidence

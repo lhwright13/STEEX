@@ -35,9 +35,13 @@ class PipelineState(TypedDict):
     Nodes return partial dicts that are merged into state. All values must be
     JSON-serializable for LangSmith tracing.
 
-    variant_conclusions uses Annotated[list, add] reducer: when parallel nodes
-    each return {"variant_conclusions": [item]}, they are concatenated into a
-    single list instead of overwriting.
+    variant_conclusions and traces use the Annotated[list, add] reducer: when
+    parallel nodes each return {"key": [item]}, the items are concatenated into a
+    single list instead of overwriting. Nodes must therefore return ONLY their
+    own new entries (e.g. {"traces": [trace]}), never the accumulated list, or
+    entries would be duplicated. Concurrent writes in a single superstep (the
+    parallel analysis variants) require this reducer; a default LastValue channel
+    raises InvalidUpdateError on the second concurrent write.
     """
     mode: str
     task_context: str
@@ -45,7 +49,7 @@ class PipelineState(TypedDict):
     run_id: str
     conclusions: dict[str, dict]
     variant_conclusions: Annotated[list[dict], add]
-    traces: list[dict]
+    traces: Annotated[list[dict], add]
     manager_decision: Optional[dict]
     screen_data: Optional[dict]
     abort: bool

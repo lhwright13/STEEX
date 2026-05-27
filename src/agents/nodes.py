@@ -43,8 +43,14 @@ def get_mcp_config(ctx: RunnerContext) -> str:
     venv_bin = str(ctx.project_root / "venv" / "bin")
     server_script = str(ctx.project_root / "src" / "agents" / "mcp_server.py")
 
+    # Broker mode follows the configured settings, not the bare ctx.paper flag.
+    # broker_paper defaults to True (safety net), so a run without an explicit
+    # --live must stay on the paper endpoint — launching --live with paper keys
+    # produces Alpaca auth error 40110000 on every real call (e.g. sync_broker).
     server_args = []
-    if ctx.paper:
+    if not ctx.settings.broker_enabled:
+        server_args.append("--no-broker")
+    elif ctx.settings.broker_paper:
         server_args.append("--paper")
     else:
         server_args.append("--live")
@@ -64,7 +70,7 @@ def get_mcp_config(ctx: RunnerContext) -> str:
             val = os.environ.get(var)
             if val:
                 alpaca_env[var] = val
-        if ctx.paper:
+        if ctx.settings.broker_paper:
             alpaca_env["ALPACA_PAPER"] = "true"
         if alpaca_env.get("ALPACA_API_KEY"):
             servers["alpaca"] = {
@@ -270,8 +276,23 @@ def run_agent(
             trace.finish(success=True)
             _print_trace_summary(role, trace, conclusion)
         else:
-            console.print(f"  [yellow]{role}: could not parse conclusion[/yellow]")
-            trace.finish(success=False, error="conclusion parse failed")
+            fail_dir = Path(ctx.settings.data_dir) / "agents" / "failures"
+            fail_dir.mkdir(parents=True, exist_ok=True)
+            fail_path = fail_dir / (
+                f"{role}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_parse.log"
+            )
+            fail_path.write_text(
+                f"=== conclusion_type: {conclusion_type.__name__} ===\n"
+                f"=== AGENT OUTPUT ===\n{agent_text}\n"
+            )
+            logger.error(
+                "%s: could not parse %s from output (saved: %s)",
+                role, conclusion_type.__name__, fail_path,
+            )
+            console.print(
+                f"  [yellow]{role}: could not parse conclusion[/yellow] (see {fail_path})"
+            )
+            trace.finish(success=False, error=f"conclusion parse failed: {fail_path}")
 
         return conclusion, trace
 
@@ -357,7 +378,7 @@ def make_agent_node(agent_name: str, is_critical: bool, ctx: RunnerContext) -> C
         abort = is_critical and result is None
         return {
             "conclusions": new_conclusions,
-            "traces": state["traces"] + [_trace_to_dict(trace)],
+            "traces": [_trace_to_dict(trace)],
             "abort": abort or state["abort"],
             "abort_reason": (
                 f"critical agent {agent_name} failed" if abort
@@ -438,14 +459,14 @@ def make_manager_node(
 
         if decision is None:
             return {
-                "traces": state["traces"] + [_trace_to_dict(trace)],
+                "traces": [_trace_to_dict(trace)],
                 "abort": True,
                 "abort_reason": "Manager agent failed",
             }
 
         return {
             "manager_decision": decision.model_dump(),
-            "traces": state["traces"] + [_trace_to_dict(trace)],
+            "traces": [_trace_to_dict(trace)],
         }
     return node
 
@@ -456,14 +477,14 @@ def make_execution_node(executor_name: str, ctx: RunnerContext) -> Callable:
         exec_config = ctx.registry.get_agent(executor_name)
         if not exec_config:
             logger.error("Executor agent not in registry: %s", executor_name)
-            return {"traces": state["traces"]}
+            return {}
 
         try:
             exec_prompt = ctx.registry.resolve_prompt(executor_name, data_dir=ctx.settings.data_dir)
             exec_type = ctx.registry.resolve_conclusion_type(executor_name)
         except ValueError as e:
             logger.error("Failed to resolve executor config: %s", e)
-            return {"traces": state["traces"]}
+            return {}
 
         decision_dict = state.get("manager_decision") or {}
         exec_task = (
@@ -487,7 +508,7 @@ def make_execution_node(executor_name: str, ctx: RunnerContext) -> Callable:
             run_id=state["run_id"],
         )
 
-        return {"traces": state["traces"] + [_trace_to_dict(trace)]}
+        return {"traces": [_trace_to_dict(trace)]}
     return node
 
 
@@ -594,14 +615,14 @@ def make_report_node(mode: str, ctx: RunnerContext) -> Callable:
     def node(state: PipelineState) -> dict:
         report_config = ctx.registry.get_agent("report")
         if not report_config:
-            return {"traces": state["traces"]}
+            return {}
 
         try:
             report_prompt = ctx.registry.resolve_prompt("report", data_dir=ctx.settings.data_dir)
             report_type = ctx.registry.resolve_conclusion_type("report")
         except ValueError as e:
             logger.error("Failed to resolve report agent: %s", e)
-            return {"traces": state["traces"]}
+            return {}
 
         _, trace = run_agent(
             ctx,
@@ -617,7 +638,7 @@ def make_report_node(mode: str, ctx: RunnerContext) -> Callable:
             run_id=state["run_id"],
         )
 
-        return {"traces": state["traces"] + [_trace_to_dict(trace)]}
+        return {"traces": [_trace_to_dict(trace)]}
     return node
 
 
@@ -725,7 +746,7 @@ def make_variant_agent_node(agent_name: str, ctx: RunnerContext) -> Callable:
 
         return {
             "variant_conclusions": [variant_item],
-            "traces": state["traces"] + [_trace_to_dict(trace)],
+            "traces": [_trace_to_dict(trace)],
         }
     return node
 
@@ -805,7 +826,7 @@ def make_merge_variants_node(
 
         return {
             "conclusions": new_conclusions,
-            "traces": state["traces"] + [_trace_to_dict(trace)],
+            "traces": [_trace_to_dict(trace)],
             "abort": result is None,
             "abort_reason": (
                 "Meta-analysis failed" if result is None

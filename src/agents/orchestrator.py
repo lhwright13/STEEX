@@ -401,6 +401,21 @@ class Orchestrator:
             max_days=getattr(self.settings, "trace_retention_days", 30),
         )
 
+    def _collect_evolution_meta(self, session: AgentSession):
+        """Forward meta-recommendations from traces to the prompt evolver."""
+        try:
+            from dataclasses import asdict
+            session_data = {
+                "run_id": session.run_id,
+                "mode": session.mode,
+                "traces": [asdict(t) for t in session.traces],
+            }
+            for trace_dict in session_data["traces"]:
+                trace_dict.pop("_start_time", None)
+            self.evolver.collect_meta(session_data)
+        except Exception as e:
+            logger.debug("Failed to collect evolution meta: %s", e)
+
 
     # ------------------------------------------------------------------
     # Legacy mode methods

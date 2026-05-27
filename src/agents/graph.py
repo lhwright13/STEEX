@@ -69,7 +69,10 @@ def build_graph(
 
     # Parallel analysis variant nodes (Tier 1 upgrade)
     if mode_config.parallel_agents:
-        graph.add_node("fan_out", make_fan_out_node(mode_config.parallel_agents))
+        # fan_out is a pass-through node; the actual dispatch happens on its
+        # conditional edge (a node may not return a list of Send — that is a
+        # routing decision and belongs on add_conditional_edges below).
+        graph.add_node("fan_out", lambda state: {})
 
         for agent_name in mode_config.parallel_agents:
             graph.add_node(agent_name, make_variant_agent_node(agent_name, ctx))
@@ -149,6 +152,13 @@ def build_graph(
 
     # Parallel variant analysis edges (Tier 1 upgrade)
     if mode_config.parallel_agents and mode_config.meta_agent:
+        # fan_out → dispatch one Send per variant (parallel fan-out)
+        graph.add_conditional_edges(
+            "fan_out",
+            make_fan_out_node(mode_config.parallel_agents),
+            mode_config.parallel_agents,
+        )
+
         # Each parallel variant → merge_variants
         for agent_name in mode_config.parallel_agents:
             graph.add_edge(agent_name, "merge_variants")
