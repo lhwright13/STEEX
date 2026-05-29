@@ -598,7 +598,7 @@
               <th>Pipeline</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="schedules-tbody">
             <tr>
               <td class="t">screen</td>
               <td>every 2.5 h</td>
@@ -1041,15 +1041,22 @@ function renderDetail(name) {
     ? '<span class="pill" style="border-color:#ff8a8a;color:#ffb3b3">CRITICAL</span>'
     : '<span class="pill">' + (a.type || "OPTIONAL") + '</span>';
 
-  const toolList = a.tools.length
-    ? a.tools.map(t => `<li><b>${t[0]}</b> <span class="dim">— ${t[1]}</span></li>`).join("")
+  const tools = a.tools || [];
+  const toolList = tools.length
+    ? tools.map(t => Array.isArray(t)
+        ? `<li><b>${t[0]}</b> <span class="dim">— ${t[1]}</span></li>`
+        : `<li><b>${t.name || t}</b>${t.description ? ` <span class="dim">— ${t.description}</span>` : ''}</li>`).join("")
     : `<li class="dim">no tools (pure reasoning)</li>`;
 
-  const mcpList = a.mcp.length
-    ? a.mcp.map(s => `<li>${s}</li>`).join("")
+  const mcp = a.mcp || [];
+  const mcpList = mcp.length
+    ? mcp.map(s => `<li>${s}</li>`).join("")
     : `<li class="dim">none</li>`;
 
-  const outList = a.output.map(o => `<li><span class="dim">└</span> ${o}</li>`).join("");
+  const outList = (a.output || []).length
+    ? a.output.map(o => `<li><span class="dim">└</span> ${o}</li>`).join("")
+    : `<li class="dim">—</li>`;
+  const promptStr = a.prompt || "";
 
   const presets = a.presets ? `
     <div class="ad-cell">
@@ -1090,9 +1097,9 @@ function renderDetail(name) {
             <dt>max turns</dt> <dd><b>${a.maxTurns}</b></dd>
             <dt>avg duration</dt><dd><b>${a.avgDur}</b></dd>
             <dt>success rate</dt><dd><b>${a.success}</b></dd>
-            <dt>last run</dt>  <dd>${a.lastRun}</dd>
-            <dt>prompt file</dt><dd class="dim">${a.promptFile}</dd>
-            <dt>conclusion</dt><dd><b>${a.conclusion}</b></dd>
+            <dt>last run</dt>  <dd>${a.lastRun || "—"}</dd>
+            <dt>prompt file</dt><dd class="dim">${a.promptFile || "—"}</dd>
+            <dt>conclusion</dt><dd><b>${a.conclusion || "—"}</b></dd>
           </dl>
         </div>
         <div class="ad-cell">
@@ -1110,8 +1117,8 @@ function renderDetail(name) {
         <div class="ad-cell full">
           <h4>System Prompt</h4>
           <details class="prompt">
-            <summary>expand preprompt · ${a.prompt.length.toLocaleString()} chars</summary>
-            <pre>${a.prompt.replace(/</g,"&lt;")}</pre>
+            <summary>expand preprompt · ${promptStr.length.toLocaleString()} chars</summary>
+            <pre>${promptStr.replace(/</g,"&lt;") || "—"}</pre>
           </details>
         </div>
       </div>
@@ -1252,9 +1259,29 @@ function downloadAgentJSON(filename, text) {
 }
 
 /* ---------- Agent click handlers ---------- */
-function selectAgent(name, hostId, fromGrid) {
+async function hydrateAgent(name) {
+  // Pull the full prompt + tool list from the API and merge into AGENTS so
+  // the detail panel shows real data (the grid summary lacks prompt/tools).
+  try {
+    const r = await fetch(`/api/v1/system/agent/${name}/detail`);
+    const d = await r.json();
+    if (d && !d.error) {
+      const a = AGENTS[name] || {};
+      a.prompt = d.preprompt || a.prompt || "";
+      a.tools = (d.tools || []).map(t => [t.name || t, t.description || ""]);
+      a.mcp = d.external_servers || a.mcp || [];
+      a.role = d.role || a.role;
+      a.lastRun = d.last_run || a.lastRun || "—";
+      a.promptFile = `src/agents/prompts/${d.role}.py`;
+      AGENTS[name] = a;
+    }
+  } catch (e) { /* keep summary-only data */ }
+}
+
+async function selectAgent(name, hostId, fromGrid) {
   const host = document.getElementById(hostId);
   if (!host) return;
+  await hydrateAgent(name);
   host.innerHTML = renderDetail(name);
   wireDetailActions(host, name);
   // highlight only the surface that owns this host
@@ -1350,22 +1377,44 @@ async function syncLiveStatus() {
     const data = await r.json();
     if (!data.agents || !Array.isArray(data.agents)) return;
 
+    // Populate the AGENTS map from the API so the grid + detail panels render.
+    // Append any API agents missing from ORDER so nothing is silently hidden.
     data.agents.forEach(agent => {
-      const name = agent.name;
+      // Key by the display name (CamelCase) so the graph SVG nodes and the
+      // ORDER list line up with the registry's snake_case names.
+      const name = agent.display_name || agent.name;
+      AGENTS[name] = {
+        idx: ORDER.indexOf(name) >= 0 ? ORDER.indexOf(name) + 1 : "—",
+        role: agent.role || "—",
+        type: agent.critical ? "critical" : (name.indexOf("analysis_") === 0 ? "parallel" : "agent"),
+        critical: !!agent.critical,
+        maxTurns: agent.max_turns || "—",
+        avgDur: agent.avg_duration || "—",
+        tools: new Array(agent.tool_count || 0),
+        mcp: agent.external_servers || [],
+        success: agent.success_rate != null ? Math.round(agent.success_rate * 100) + "%" : "—",
+        status: agent.status || "ready",
+        servers: agent.external_servers || [],
+      };
+      if (ORDER.indexOf(name) < 0) ORDER.push(name);
+
       // Update SVG status if available
       const svgNode = document.querySelector(`[data-agent="${name}"] .st`);
-      if (svgNode) {
-        svgNode.textContent = agent.status || "ready";
-      }
-      // Update grid card status tag if available
-      const gridCard = document.querySelector(`#agent-grid [data-agent="${name}"]`);
-      if (gridCard) {
-        const statusSpan = gridCard.querySelector(".stats span:first-child");
-        if (statusSpan) {
-          statusSpan.textContent = agent.status || "ready";
-        }
-      }
+      if (svgNode) svgNode.textContent = agent.status || "ready";
     });
+
+    // (Re)build the grid now that AGENTS is populated.
+    buildAgentsGrid();
+
+    // The synchronous default selections on page load ran before AGENTS was
+    // fetched, so they showed "Loading...". Re-render them once the data lands.
+    if (!window._agentsLoaded) {
+      window._agentsLoaded = true;
+      const graphSel = document.querySelector("#graph .node.sel")?.dataset.agent || "analysis_conservative";
+      const gridSel = document.querySelector(".agent-grid .ag.sel")?.dataset.agent || "DataAgent";
+      selectAgent(graphSel, "agent-detail-host", false);
+      selectAgent(gridSel, "agent-detail-host-2", false);
+    }
   } catch (e) {
     // Silent fail - static data still visible if API unavailable
   }

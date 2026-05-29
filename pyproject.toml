@@ -19,6 +19,7 @@ dependencies = [
     "markupsafe>=2.1.0",
     "vaderSentiment>=3.3.2",
     "alpaca-py>=0.43.2",
+    "alpaca-mcp-server>=2.0.0",
     "python-dotenv>=1.0.0",
     "mcp>=1.0.0",
     "langgraph>=0.2.0",

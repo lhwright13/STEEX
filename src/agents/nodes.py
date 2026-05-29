@@ -70,12 +70,15 @@ def get_mcp_config(ctx: RunnerContext) -> str:
             val = os.environ.get(var)
             if val:
                 alpaca_env[var] = val
-        if ctx.settings.broker_paper:
-            alpaca_env["ALPACA_PAPER"] = "true"
+        # Official alpaca-mcp-server reads ALPACA_PAPER_TRADE (default "true");
+        # set it explicitly for both modes so live runs aren't silently paper.
+        alpaca_env["ALPACA_PAPER_TRADE"] = "true" if ctx.settings.broker_paper else "false"
         if alpaca_env.get("ALPACA_API_KEY"):
+            # Official server (PyPI: alpaca-mcp-server) installs a console
+            # script entry point; it has no `-m` runnable module.
             servers["alpaca"] = {
-                "command": venv_python,
-                "args": ["-m", "alpaca_mcp_server"],
+                "command": os.path.join(venv_bin, "alpaca-mcp-server"),
+                "args": [],
                 "env": alpaca_env,
             }
         else:

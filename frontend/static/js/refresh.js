@@ -114,6 +114,16 @@
     }
   }
 
+  async function fetchHoldings() {
+    try {
+      const r = await fetch('/api/v1/portfolio/holdings');
+      return await r.json();
+    } catch (e) {
+      console.error('Error fetching holdings:', e);
+      return null;
+    }
+  }
+
   // ── DOM Updaters ───────────────────────────────────────────────────────
 
   function formatTime(seconds) {
@@ -286,16 +296,61 @@
 
   // ── Refresh All ────────────────────────────────────────────────────────
 
+  function fmtMoney(v) {
+    if (v == null) return '—';
+    return '$' + Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+  }
+
+  function updateHoldingsDOM(data) {
+    if (!data) return;
+    const body = document.getElementById('holdings-table-body');
+    const positions = data.positions || [];
+    if (body) {
+      if (!positions.length) {
+        body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:12px;color:#999;">No open positions.</td></tr>';
+      } else {
+        body.innerHTML = positions.map(p => {
+          const pnl = p.unrealized_pnl;
+          const pnlCls = pnl == null ? '' : (pnl >= 0 ? 'ok' : 'bad');
+          const pnlStr = pnl == null ? '—'
+            : `${pnl >= 0 ? '+' : ''}${fmtMoney(pnl)}${p.unrealized_pct != null ? ` (${p.unrealized_pct}%)` : ''}`;
+          return `<tr>
+            <td class="t"><b>${p.ticker}</b></td>
+            <td class="num">${p.shares ?? '—'}</td>
+            <td class="num">$${p.entry_price ?? '—'}</td>
+            <td class="num">${p.current_price != null ? '$' + p.current_price : '—'}</td>
+            <td class="num">${fmtMoney(p.market_value)}</td>
+            <td class="num ${pnlCls}">${pnlStr}</td>
+            <td class="num">${p.current_stop != null ? '$' + Number(p.current_stop).toFixed(2) : '—'}</td>
+            <td class="num">${p.score ?? '—'}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+
+    const s = data.summary || {};
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set('pf-equity', fmtMoney(s.equity));
+    set('pf-cash', fmtMoney(s.cash));
+    set('pf-exposure', s.exposure_pct != null ? s.exposure_pct + '%' : '—');
+    set('pf-count', data.count != null ? String(data.count) : '—');
+    const upnl = s.total_unrealized_pnl;
+    set('pf-upnl', upnl == null ? '—' : `${upnl >= 0 ? '+' : ''}${fmtMoney(upnl)}`);
+    const src = document.getElementById('holdings-source');
+    if (src) src.textContent = data.live ? 'live · broker' : 'cached';
+  }
+
   async function refreshAll() {
     updateHeaderTime();
 
-    const [pipeline, variants, consensus, screening, regime, decision] = await Promise.allSettled([
+    const [pipeline, variants, consensus, screening, regime, decision, holdings] = await Promise.allSettled([
       fetchPipeline(),
       fetchVariants(),
       fetchConsensus(),
       fetchScreening(),
       fetchRegime(),
       fetchManagerDecision(),
+      fetchHoldings(),
     ]);
 
     // Extract values from PromiseSettledResult
@@ -303,6 +358,7 @@
     if (variants.status === 'fulfilled') updateVariantsDOM(variants.value);
     if (consensus.status === 'fulfilled') updateConsensusDOM(consensus.value);
     if (regime.status === 'fulfilled') updateRegimeDOM(regime.value);
+    if (holdings.status === 'fulfilled') updateHoldingsDOM(holdings.value);
     // screening and decision updates would go here if DOM has those elements
   }
 

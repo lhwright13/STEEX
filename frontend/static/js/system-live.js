@@ -109,24 +109,44 @@
     return `${Math.round(rate * 100)}%`;
   }
 
-  function updateHeaderStatus(data) {
+  async function updateHeaderStatus(data) {
     if (!data || !data.runs || data.runs.length === 0) return;
 
     const latestRun = data.runs[0];
     const statusline = q('.statusline .left');
-    if (statusline) {
-      const lastRunDate = new Date(latestRun.started_at);
-      const lastRunStr = lastRunDate.toLocaleString();
-      const spans = statusline.querySelectorAll('span');
-      if (spans.length > 1) {
-        spans[1].textContent = `Last run: ${lastRunStr}`;
-      }
-      if (spans.length > 2) {
-        const nextRun = new Date(lastRunDate.getTime() + 2.5 * 60 * 60 * 1000); // 2.5 hours from last run
-        const nextRunTime = nextRun.toLocaleTimeString();
-        const minutesUntil = Math.max(0, Math.floor((nextRun - new Date()) / 60000));
-        spans[2].innerHTML = `Next scheduled: ${nextRunTime} <b style="color:#000">(in ${minutesUntil} min)</b>`;
-      }
+    if (!statusline) return;
+    // Only direct-child spans — the RUNNING span contains a nested .live-dot
+    // span, so a plain querySelectorAll('span') shifts every index by one and
+    // clobbers the wrong cells.
+    const spans = statusline.querySelectorAll(':scope > span');
+
+    // Last run — guard falsy/invalid timestamps. new Date(null) is the 1969
+    // epoch (not NaN), so check the raw value before formatting.
+    if (spans.length > 1) {
+      const raw = latestRun.started_at;
+      const d = raw ? new Date(raw) : null;
+      spans[1].textContent = `Last run: ${d && !isNaN(d) ? d.toLocaleString() : '—'}`;
+    }
+
+    // Next scheduled — use the REAL cron for the current mode from the
+    // schedules API rather than guessing "last run + 2.5h".
+    if (spans.length > 2) {
+      try {
+        const r = await fetch('/api/v1/system/schedules');
+        const sched = await r.json();
+        const mode = (latestRun.mode) || _currentMode;
+        const match = (sched.schedules || []).find(s => s.mode === mode || s.name === mode);
+        if (match && match.next_run) {
+          const next = new Date(match.next_run);
+          if (!isNaN(next)) {
+            const mins = Math.max(0, Math.floor((next - new Date()) / 60000));
+            const when = mins < 1440
+              ? `in ${mins} min`
+              : `in ${Math.floor(mins / 1440)}d`;
+            spans[2].innerHTML = `Next scheduled: ${next.toLocaleString()} <b style="color:#000">(${when})</b>`;
+          }
+        }
+      } catch (e) { /* leave static text */ }
     }
   }
 
@@ -193,33 +213,37 @@
     });
   }
 
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d) ? '—' : d.toLocaleString();
+  }
+
   async function updateSchedulesTable(data) {
     if (!data || !data.schedules) return;
 
-    const scheduleBody = q('section:has(h2:contains("Schedules")) tbody');
-    if (!scheduleBody) {
-      // Try more specific selector
-      const tables = qa('table.data tbody');
-      if (tables.length > 0) {
-        scheduleBody = tables[tables.length - 1]; // Last table is usually schedules
-      }
-    }
-
+    const scheduleBody = q('#schedules-tbody');
     if (!scheduleBody) return;
 
+    // Columns match the table header: Mode | Frequency | Next Run |
+    // Last Run | Avg Dur | Success | Status | Pipeline
     const rows = data.schedules.map(schedule => {
-      const nextRunDate = new Date(schedule.next_run);
-      const nextRunStr = nextRunDate.toLocaleString();
-      const recentRuns = schedule.recent_runs || 0;
+      const avgDur = schedule.avg_duration != null ? `${schedule.avg_duration}s` : '—';
+      const success = schedule.success_rate != null ? `${schedule.success_rate}%` : '—';
+      const statusTag = schedule.enabled
+        ? '<span class="tag ok">enabled</span>'
+        : '<span class="tag">disabled</span>';
 
       return `
-        <tr data-schedule="${schedule.name}">
-          <td class="t">${schedule.mode}</td>
-          <td>${schedule.description}</td>
-          <td class="mute">${schedule.cron}</td>
-          <td class="num">${nextRunStr}</td>
-          <td class="num">${recentRuns}</td>
-          <td><span class="tag ok">${schedule.enabled ? 'enabled' : 'disabled'}</span></td>
+        <tr data-schedule="${schedule.name}" data-mode="${schedule.mode}">
+          <td class="t">${schedule.name}</td>
+          <td title="${schedule.cron}">${schedule.frequency || schedule.cron}</td>
+          <td class="num">${fmtTime(schedule.next_run)}</td>
+          <td class="num mute">${fmtTime(schedule.last_run)}</td>
+          <td class="num">${avgDur}</td>
+          <td class="num">${success}</td>
+          <td>${statusTag}</td>
+          <td class="mute">${schedule.mode}</td>
         </tr>
       `;
     }).join('\n');

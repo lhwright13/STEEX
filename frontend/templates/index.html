@@ -555,8 +555,27 @@
         <span><b style="color:#000">—</b> exits executed</span>
       </div>
 
-      <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin:6px 0 4px;">Entries — consensus picks</div>
-      <div style="text-align:center;padding:12px;color:#999;">No active positions. Consensus picks from screening will appear here.</div>
+      <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin:6px 0 4px;display:flex;justify-content:space-between;">
+        <span>Current Holdings</span>
+        <span class="dim" id="holdings-source" style="text-transform:none;letter-spacing:0;"></span>
+      </div>
+      <table class="data" id="holdings-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th class="num">Shares</th>
+            <th class="num">Entry</th>
+            <th class="num">Price</th>
+            <th class="num">Mkt Value</th>
+            <th class="num">Unreal. P&amp;L</th>
+            <th class="num">Stop</th>
+            <th class="num">Score</th>
+          </tr>
+        </thead>
+        <tbody id="holdings-table-body">
+          <tr><td colspan="8" style="text-align:center;padding:12px;color:#999;">Loading holdings…</td></tr>
+        </tbody>
+      </table>
 
       <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin:18px 0 4px;">Exits</div>
       <div style="text-align:center;padding:12px;color:#999;">No completed exits.</div>
@@ -565,23 +584,23 @@
       <div style="margin-top:18px;display:grid;grid-template-columns:repeat(6,1fr);gap:0;border:1px solid var(--border);font-family:var(--mono);background:#fff;">
         <div style="padding:10px 12px;border-right:1px solid var(--border);">
           <div class="dim" style="font-size:11px;">Portfolio Value</div>
-          <div style="font-size:16px;font-weight:700;">—</div>
+          <div style="font-size:16px;font-weight:700;" id="pf-equity">—</div>
         </div>
         <div style="padding:10px 12px;border-right:1px solid var(--border);">
           <div class="dim" style="font-size:11px;">Cash Reserve</div>
-          <div style="font-size:16px;font-weight:700;">—</div>
+          <div style="font-size:16px;font-weight:700;" id="pf-cash">—</div>
         </div>
         <div style="padding:10px 12px;border-right:1px solid var(--border);">
           <div class="dim" style="font-size:11px;">Exposure</div>
-          <div style="font-size:16px;font-weight:700;">—</div>
+          <div style="font-size:16px;font-weight:700;" id="pf-exposure">—</div>
         </div>
         <div style="padding:10px 12px;border-right:1px solid var(--border);">
-          <div class="dim" style="font-size:11px;">Realized P&amp;L</div>
-          <div style="font-size:16px;font-weight:700;">—</div>
+          <div class="dim" style="font-size:11px;">Positions</div>
+          <div style="font-size:16px;font-weight:700;" id="pf-count">—</div>
         </div>
         <div style="padding:10px 12px;border-right:1px solid var(--border);">
           <div class="dim" style="font-size:11px;">Unrealized P&amp;L</div>
-          <div style="font-size:16px;font-weight:700;">—</div>
+          <div style="font-size:16px;font-weight:700;" id="pf-upnl">—</div>
         </div>
         <div style="padding:10px 12px;">
           <div class="dim" style="font-size:11px;">VIX</div>

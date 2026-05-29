@@ -10,7 +10,7 @@ Connects dashboard to trading system:
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -23,6 +23,26 @@ logger = logging.getLogger("steex.dashboard")
 
 class DashboardService:
     """Provide live data from trading system to dashboard."""
+
+    # The graph SVG and agent grid use legacy CamelCase node names; the agent
+    # registry keys are snake_case. Map between them so detail/last-output
+    # lookups resolve regardless of which name the UI sends.
+    _AGENT_ALIASES = {
+        "DataAgent": "data",
+        "RiskAgent": "risk",
+        "MetaAnalysisAgent": "meta_analysis",
+        "ManagerAgent": "manager",
+        "ExecutionAgent": "execution",
+        "ReportAgent": "report",
+        "ResearchAgent": "research",
+    }
+    _DISPLAY_NAMES = {v: k for k, v in _AGENT_ALIASES.items()}
+
+    def _resolve_agent(self, name: str) -> str:
+        """Map a UI agent name (possibly legacy CamelCase) to a registry key."""
+        if name in self.registry.agents:
+            return name
+        return self._AGENT_ALIASES.get(name, name)
 
     def __init__(self):
         self.settings = get_settings()
@@ -203,6 +223,90 @@ class DashboardService:
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
+    def get_portfolio_holdings(self) -> Dict[str, Any]:
+        """Current open positions ("buys") plus a portfolio summary.
+
+        Always returns the locally tracked positions (data/positions.json) so
+        the panel works offline. Best-effort enriches each row with live
+        market value / unrealized P&L from the broker; if the broker is
+        unreachable, falls back to the cached heartbeat account snapshot and
+        cost-basis-only figures.
+        """
+        positions = self._load_json_file(self.data_dir / "positions.json") or {}
+        rows = []
+        for tkr, p in positions.items():
+            rows.append({
+                "ticker": p.get("ticker", tkr),
+                "shares": p.get("shares"),
+                "entry_price": p.get("entry_price"),
+                "cost_basis": p.get("cost_basis"),
+                "current_stop": p.get("current_stop"),
+                "score": p.get("score"),
+                "entry_date": p.get("entry_date"),
+                "reasons": p.get("reasons", []),
+                "current_price": None,
+                "market_value": None,
+                "unrealized_pnl": None,
+                "unrealized_pct": None,
+            })
+        rows.sort(key=lambda r: r["ticker"])
+
+        summary = {"equity": None, "cash": None, "buying_power": None}
+        live = False
+        try:
+            import os
+            from src.broker.alpaca import AlpacaBroker
+            paper = os.environ.get("STEEX_BROKER_PAPER", "true").lower() == "true"
+            broker = AlpacaBroker(paper=paper)
+            bpos = {bp.ticker: bp for bp in broker.get_positions()}
+            for r in rows:
+                bp = bpos.get(r["ticker"])
+                if not bp:
+                    continue
+                r["market_value"] = round(bp.market_value, 2)
+                r["unrealized_pnl"] = round(bp.unrealized_pnl, 2)
+                if bp.qty:
+                    r["current_price"] = round(bp.market_value / bp.qty, 2)
+                if r["cost_basis"]:
+                    r["unrealized_pct"] = round(100 * bp.unrealized_pnl / r["cost_basis"], 2)
+            acct = broker.get_account()
+            summary = {
+                "equity": acct.equity,
+                "cash": acct.cash,
+                "buying_power": acct.buying_power,
+            }
+            live = True
+        except Exception as e:
+            logger.debug("Live broker enrich failed, falling back to cache: %s", e)
+            hb = self._load_json_file(self.data_dir / "heartbeat.json") or {}
+            api = (hb.get("checks") or {}).get("api") or {}
+            summary = {
+                "equity": api.get("equity"),
+                "cash": api.get("cash"),
+                "buying_power": api.get("buying_power"),
+            }
+
+        total_cost = round(sum(r["cost_basis"] or 0 for r in rows), 2)
+        total_mv = sum(r["market_value"] for r in rows if r["market_value"] is not None)
+        total_upnl = sum(r["unrealized_pnl"] for r in rows if r["unrealized_pnl"] is not None)
+        summary["total_cost_basis"] = total_cost
+        summary["total_market_value"] = round(total_mv, 2) if live else None
+        summary["total_unrealized_pnl"] = round(total_upnl, 2) if live else None
+        if summary.get("equity"):
+            invested = (total_mv if live else total_cost)
+            summary["exposure_pct"] = round(100 * invested / summary["equity"], 1)
+        else:
+            summary["exposure_pct"] = None
+
+        return {
+            "positions": rows,
+            "count": len(rows),
+            "summary": summary,
+            "live": live,
+            "source": "broker" if live else "cache",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
     # ====================================================================
     # System Configuration
     # ====================================================================
@@ -218,13 +322,17 @@ class DashboardService:
         for agent_name, agent_config in self.registry.agents.items():
             last_run_info = self._get_agent_last_run(agent_name)
 
+            tools = self._get_agent_tools(agent_name)
             agent_data = {
                 "name": agent_name,
+                "display_name": self._DISPLAY_NAMES.get(agent_name, agent_name),
                 "role": agent_config.prompt_key or agent_name,
                 "status": self._get_agent_status(agent_name),
                 "max_turns": agent_config.max_turns,
                 "needs_tools": agent_config.needs_tools,
+                "tool_count": len(tools),
                 "external_servers": agent_config.external_servers or [],
+                "mcp_count": len(agent_config.external_servers or []),
                 "prompt_id": agent_config.prompt_key or agent_name,
                 "critical": agent_name in self.registry.modes.get("screen", ModeConfig("screen")).critical_agents,
                 "last_run_timestamp": last_run_info.get("timestamp"),
@@ -236,44 +344,138 @@ class DashboardService:
         return {"agents": sorted(agents, key=lambda a: a["name"])}
 
     def get_system_schedules(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Get schedule configuration from registered modes."""
+        """Get schedule configuration from the cron scheduler config.
+
+        Reads scheduler/config.yaml — the source of truth for what cron
+        actually runs — rather than the run_manager mode registry, so the
+        dashboard shows real cron expressions, enabled flags, and next-run
+        times. Per-mode run history (last run, success rate, avg duration)
+        is layered on from data/runs/.
+        """
         schedules = []
+        cfg = self._load_scheduler_config()
+        modes = (cfg or {}).get("modes", {})
 
-        # Build schedules from modes
-        for mode_name, mode_config in self.registry.modes.items():
-            # Get description from mode config
-            description = getattr(mode_config, 'description', f"Run {mode_name} mode")
+        for mode_name, mode_cfg in modes.items():
+            mode_cfg = mode_cfg or {}
+            cron = mode_cfg.get("schedule", "—")
+            enabled = bool(mode_cfg.get("enabled", True))
+            # The mode the manager actually runs (may differ from the cron key)
+            manager_mode = mode_cfg.get("mode_name", mode_name)
 
-            # Get recent runs for this mode to estimate next run
-            recent_runs = self._get_runs_for_mode(mode_name, limit=1)
-            next_run = datetime.utcnow() + timedelta(hours=1)
-            if recent_runs:
-                # Estimate next run as ~1 hour from last run
-                try:
-                    last_run_str = recent_runs[0].get("started_at")
-                    last_run = datetime.fromisoformat(last_run_str.replace("Z", "+00:00"))
-                    next_run = last_run + timedelta(hours=1)
-                except Exception:
-                    pass
+            history = self._get_runs_for_mode(manager_mode, limit=10)
+            last_run = history[0].get("started_at") if history else None
+            durations = [r.get("elapsed", 0) for r in history if r.get("elapsed")]
+            avg_dur = round(sum(durations) / len(durations)) if durations else None
+            successes = [r for r in history if r.get("status") in ("complete", "success")]
+            success_rate = (
+                round(100 * len(successes) / len(history)) if history else None
+            )
 
-            schedule_info = {
+            schedules.append({
                 "name": mode_name,
-                "mode": mode_name,
-                "cron": "—",  # Not available from config currently
-                "description": description,
-                "next_run": next_run.isoformat() + "Z",
-                "enabled": True,
-                "recent_runs": len(recent_runs),
-            }
-            schedules.append(schedule_info)
+                "mode": manager_mode,
+                "cron": cron,
+                "frequency": self._humanize_cron(cron),
+                "description": f"Run {manager_mode} mode",
+                "next_run": self._next_cron_run(cron),
+                "last_run": last_run,
+                "avg_duration": avg_dur,
+                "success_rate": success_rate,
+                "enabled": enabled,
+                "recent_runs": len(history),
+            })
 
         return {
             "schedules": sorted(schedules, key=lambda s: s["name"]),
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
+    def _load_scheduler_config(self) -> Optional[Dict]:
+        """Load scheduler/config.yaml from the project root."""
+        try:
+            import yaml
+            path = self.data_dir.parent / "scheduler" / "config.yaml"
+            if not path.exists():
+                return None
+            with open(path) as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            logger.debug("Could not load scheduler config: %s", e)
+            return None
+
+    @staticmethod
+    def _humanize_cron(cron: str) -> str:
+        """Turn a 5-field cron expr into a short human label (best-effort)."""
+        if not cron or cron == "—":
+            return "—"
+        parts = cron.split()
+        if len(parts) != 5:
+            return cron
+        minute, hour, _dom, _mon, dow = parts
+        dow_names = {
+            "1-5": "weekdays", "0": "Sundays", "6": "Saturdays",
+            "5": "Fridays", "0,6": "weekends", "*": "daily",
+        }
+        when = dow_names.get(dow, f"dow {dow}")
+        if hour.isdigit() and minute.isdigit():
+            return f"{int(hour):02d}:{int(minute):02d} {when}"
+        return f"{minute} {hour} · {when}"
+
+    @staticmethod
+    def _next_cron_run(cron: str) -> Optional[str]:
+        """Compute the next fire time for a standard 5-field cron expression.
+
+        Scans forward minute-by-minute up to 8 days. Avoids a croniter
+        dependency; cron here is local time (matching the host crontab).
+        """
+        if not cron or cron == "—":
+            return None
+        parts = cron.split()
+        if len(parts) != 5:
+            return None
+        minute_f, hour_f, dom_f, mon_f, dow_f = parts
+
+        def field_match(value: int, field: str, lo: int, hi: int) -> bool:
+            for token in field.split(","):
+                if token == "*":
+                    return True
+                step = 1
+                if "/" in token:
+                    base, step_s = token.split("/", 1)
+                    step = int(step_s)
+                    token = base
+                if token == "*":
+                    rng = range(lo, hi + 1)
+                elif "-" in token:
+                    a, b = token.split("-", 1)
+                    rng = range(int(a), int(b) + 1)
+                else:
+                    rng = range(int(token), int(token) + 1)
+                if value in rng and (value - rng.start) % step == 0:
+                    return True
+            return False
+
+        now = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
+        for i in range(8 * 24 * 60):
+            t = now + timedelta(minutes=i)
+            if (
+                field_match(t.minute, minute_f, 0, 59)
+                and field_match(t.hour, hour_f, 0, 23)
+                and field_match(t.day, dom_f, 1, 31)
+                and field_match(t.month, mon_f, 1, 12)
+                and field_match(t.weekday() + 1 if t.weekday() < 6 else 0, dow_f, 0, 7)
+            ):
+                # `t` is naive local time (cron runs in host local time).
+                # Convert to a real UTC instant so the API stays consistent
+                # with the rest of the Z-suffixed timestamps.
+                utc = t.astimezone(timezone.utc)
+                return utc.isoformat().replace("+00:00", "Z")
+        return None
+
     def get_agent_detail(self, agent_name: str) -> Dict[str, Any]:
         """Get detailed configuration for a specific agent."""
+        agent_name = self._resolve_agent(agent_name)
         agent_config = self.registry.agents.get(agent_name)
         if not agent_config:
             return {"error": f"Agent {agent_name} not found"}
@@ -281,13 +483,15 @@ class DashboardService:
         # Load prompt if available
         prompt_text = "Prompt not found"
         try:
-            prompt_file = self.settings.data_dir.parent / f"src/agents/prompts/{agent_config.prompt_key}.py"
+            prompt_file = self.data_dir.parent / f"src/agents/prompts/{agent_config.prompt_key}.py"
             if prompt_file.exists():
                 with open(prompt_file) as f:
                     content = f.read()
-                    # Extract the prompt variable (simple heuristic)
-                    if "_PROMPT = " in content:
-                        prompt_text = content.split("_PROMPT = ", 1)[1][:500] + "..."
+                # Extract the first `*_PROMPT = "..."` assignment (simple heuristic)
+                if "_PROMPT = " in content:
+                    body = content.split("_PROMPT = ", 1)[1].lstrip()
+                    body = body.lstrip('"').lstrip("'").lstrip()  # drop opening quotes
+                    prompt_text = body[:1500] + ("..." if len(body) > 1500 else "")
         except Exception as e:
             logger.debug(f"Could not load prompt for {agent_name}: {e}")
 
@@ -306,6 +510,7 @@ class DashboardService:
 
     def get_agent_last_output(self, agent_name: str) -> Dict[str, Any]:
         """Get last execution output for a specific agent."""
+        agent_name = self._resolve_agent(agent_name)
         run_file = self._get_latest_run_file()
         if not run_file:
             return {
@@ -367,6 +572,15 @@ class DashboardService:
                 lines = f.readlines()
                 if lines:
                     return json.loads(lines[-1])
+        except Exception as e:
+            logger.debug(f"Failed to load {path}: {e}")
+        return None
+
+    def _load_json_file(self, path: Path) -> Optional[Dict]:
+        """Load a whole-file JSON document (not JSONL)."""
+        try:
+            with open(path) as f:
+                return json.load(f)
         except Exception as e:
             logger.debug(f"Failed to load {path}: {e}")
         return None
@@ -655,7 +869,12 @@ class DashboardService:
             reverse=True
         )
 
-        for run_file in run_files[:limit]:
+        # Filter by mode BEFORE applying the limit — otherwise a burst of
+        # other-mode runs at the top of the (mtime-sorted) list can crowd out
+        # this mode entirely and return nothing.
+        for run_file in run_files:
+            if len(runs) >= limit:
+                break
             run_data = self._load_json(run_file)
             if run_data and run_data.get("mode") == mode:
                 runs.append({

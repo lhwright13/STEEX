@@ -97,6 +97,17 @@ def create_app():
             logger.error(f"Error fetching regime: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/portfolio/holdings")
+    def portfolio_holdings():
+        """Get current open positions and portfolio summary."""
+        try:
+            service = get_dashboard_service()
+            data = service.get_portfolio_holdings()
+            return jsonify(data)
+        except Exception as e:
+            logger.error(f"Error fetching holdings: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/manager/decision")
     def manager_decision():
         """Get manager's decision on the proposed trades."""
