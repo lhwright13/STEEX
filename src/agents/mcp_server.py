@@ -94,26 +94,26 @@ VARIANT_PARAMS = {
 # Regime-specific screening parameter overrides
 REGIME_PARAMS = {
     "risk_on": {
-        "rationale": "Lower entry bars, favor momentum",
-        "weight_momentum": 0.35,
-        "weight_fundamental": 0.08,
-        "momentum_min_return": 0.03,
+        "rationale": "Aggressive: momentum-led, catch early breakouts",
+        "weight_momentum": 0.45,
+        "weight_fundamental": 0.04,
+        "momentum_min_return": 0.01,
     },
     "cautious": {
-        "rationale": "Medium bars, raise insider weight for quality",
-        "weight_insider": 0.30,
-        "weight_momentum": 0.25,
-        "sentiment_min_score": 40.0,
+        "rationale": "Aggressive: still momentum-tilted, mild quality screen",
+        "weight_insider": 0.20,
+        "weight_momentum": 0.35,
+        "sentiment_min_score": 35.0,
     },
     "risk_off": {
-        "rationale": "High bars, insider weight dominant",
-        "weight_insider": 0.35,
-        "weight_momentum": 0.15,
-        "sentiment_min_score": 50.0,
-        "fundamental_min_roe": 0.12,
+        "rationale": "Less defensive: keep some momentum exposure",
+        "weight_insider": 0.30,
+        "weight_momentum": 0.25,
+        "sentiment_min_score": 45.0,
+        "fundamental_min_roe": 0.08,
     },
     "crisis": {
-        "rationale": "Very high bars, insider weight maximum",
+        "rationale": "Very high bars, insider weight maximum (entries frozen by regime)",
         "weight_insider": 0.40,
         "weight_momentum": 0.10,
         "sentiment_min_score": 60.0,
@@ -788,6 +788,12 @@ def size_buy_list() -> str:
     regime = _regime or {"sizing_multiplier": 1.0, "entries_allowed": True}
     portfolio_value = mgr._get_portfolio_value()
     cash = mgr._get_cash()
+
+    # Keep a cash reserve: never deploy below equity * min_cash_reserve_pct.
+    # With aggressive sizing (6% x up to 1.25 regime mult x 15 names) this is the
+    # guard that stops us over-committing buying power into bounced orders.
+    reserve = portfolio_value * mgr.settings.min_cash_reserve_pct
+    cash = max(0.0, cash - reserve)
 
     sized: List[Dict] = []
     skipped: List[Dict] = []

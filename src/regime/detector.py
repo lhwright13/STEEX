@@ -194,6 +194,9 @@ class RegimeDetector:
         risk_off_threshold = self.settings.regime_risk_off_threshold
         crisis_threshold = self.settings.regime_crisis_threshold
 
+        # Aggressive sizing: lever up in benign regimes, stay less defensive in
+        # risk_off. Crisis stays frozen (multiplier 0, entries blocked) as the
+        # hard safety floor — also the kill-switch the event-trigger path relies on.
         if composite >= crisis_threshold:
             name = "crisis"
             sizing_multiplier = 0.0
@@ -201,17 +204,17 @@ class RegimeDetector:
             confidence = min((composite - crisis_threshold) / 15.0 + 0.7, 1.0)
         elif composite >= risk_off_threshold:
             name = "risk_off"
-            sizing_multiplier = 0.25
+            sizing_multiplier = 0.5
             entries_allowed = True
             confidence = 0.6 + (composite - risk_off_threshold) / (crisis_threshold - risk_off_threshold) * 0.2
         elif composite >= 40:
             name = "cautious"
-            sizing_multiplier = 0.5
+            sizing_multiplier = 0.75
             entries_allowed = True
             confidence = 0.5 + (composite - 40) / (risk_off_threshold - 40) * 0.2
         else:
             name = "risk_on"
-            sizing_multiplier = 1.0
+            sizing_multiplier = 1.25
             entries_allowed = True
             confidence = 0.6 + (40 - composite) / 40 * 0.3
 

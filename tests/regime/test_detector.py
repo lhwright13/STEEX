@@ -84,7 +84,8 @@ class TestCompositeRegime:
         regime = detector.detect_regime()
         assert regime.name == "risk_on"
         assert regime.entries_allowed is True
-        assert regime.sizing_multiplier == 1.0
+        # Aggressive profile levers up in risk_on.
+        assert regime.sizing_multiplier == 1.25
 
     def test_crisis(self, detector):
         detector.vix_provider.get_current = MagicMock(return_value=50.0)

@@ -67,10 +67,10 @@ Call `construct_portfolio()` with strict constraints:
 
 ## Candidate selection criteria:
 Only include stocks that pass ALL of:
-  ✓ Composite score ≥ 55 (high bar)
+  ✓ Composite score ≥ 50 (quality anchor; slightly relaxed)
   ✓ PE ratio < 30 (no speculation)
   ✓ ROE > 10% (profitable at scale)
-  ✓ Insider score > 60 (conviction from insiders)
+  ✓ Insider score > 55 (conviction from insiders)
   ✓ If options data available: unusual call activity OR no bearish signals
 
 ## Your Output

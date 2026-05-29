@@ -96,29 +96,32 @@ class TestRegimeParameterMapping:
         assert "crisis" in REGIME_PARAMS
 
     def test_risk_on_regime(self):
-        """risk_on should lower entry bars"""
+        """risk_on (aggressive) should be momentum-led with low entry bars"""
         from src.agents.mcp_server import REGIME_PARAMS
 
         risk_on = REGIME_PARAMS["risk_on"]
-        assert risk_on["momentum_min_return"] == 0.03
-        assert risk_on["weight_momentum"] == 0.35
-        assert "lower" in risk_on["rationale"].lower()
+        assert risk_on["momentum_min_return"] == 0.01
+        assert risk_on["weight_momentum"] == 0.45
+        # Aggressive profile: risk_on is the most momentum-tilted regime.
+        assert risk_on["weight_momentum"] >= REGIME_PARAMS["cautious"]["weight_momentum"]
 
     def test_cautious_regime(self):
-        """cautious should raise insider weight"""
+        """cautious should stay momentum-tilted but add a mild quality screen"""
         from src.agents.mcp_server import REGIME_PARAMS
 
         cautious = REGIME_PARAMS["cautious"]
-        assert cautious["weight_insider"] == 0.30
-        assert cautious["sentiment_min_score"] == 40.0
+        assert cautious["weight_insider"] == 0.20
+        assert cautious["sentiment_min_score"] == 35.0
 
     def test_risk_off_regime(self):
-        """risk_off should favor insider heavily"""
+        """risk_off should lean defensive but keep some momentum exposure"""
         from src.agents.mcp_server import REGIME_PARAMS
 
         risk_off = REGIME_PARAMS["risk_off"]
-        assert risk_off["weight_insider"] == 0.35
-        assert risk_off["fundamental_min_roe"] == 0.12
+        assert risk_off["weight_insider"] == 0.30
+        assert risk_off["fundamental_min_roe"] == 0.08
+        # Defensive regimes raise the insider bar relative to risk_on.
+        assert risk_off["weight_insider"] > REGIME_PARAMS["risk_on"].get("weight_insider", 0.14)
 
     def test_crisis_regime(self):
         """crisis should maximize safety"""

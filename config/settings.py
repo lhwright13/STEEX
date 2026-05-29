@@ -75,8 +75,8 @@ class Settings(BaseSettings):
     )
 
     # Universe filter parameters
-    min_price: float = Field(default=5.0, description="Minimum stock price")
-    min_volume: int = Field(default=500_000, description="Minimum average daily volume")
+    min_price: float = Field(default=3.0, description="Minimum stock price (aggressive)")
+    min_volume: int = Field(default=300_000, description="Minimum average daily volume (aggressive)")
     earnings_blackout_days: int = Field(
         default=5, description="Days before earnings to avoid"
     )
@@ -85,19 +85,19 @@ class Settings(BaseSettings):
     )
 
     # Position management
-    max_positions: int = Field(default=10, description="Maximum concurrent positions")
-    daily_picks: int = Field(default=2, description="Number of stocks to pick daily")
+    max_positions: int = Field(default=15, description="Maximum concurrent positions (aggressive)")
+    daily_picks: int = Field(default=12, description="Number of stocks to pick daily (aggressive)")
     position_size_pct: float = Field(
-        default=0.04, description="Position size as fraction of portfolio (4%)"
+        default=0.06, description="Position size as fraction of portfolio (6%, aggressive)"
     )
     max_sector_pct: float = Field(
-        default=0.30, description="Maximum sector exposure (30%)"
+        default=0.45, description="Maximum sector exposure (45%, aggressive)"
     )
     max_single_position_pct: float = Field(
-        default=0.10, description="Maximum single position size (10%)"
+        default=0.12, description="Maximum single position size (12%, aggressive)"
     )
     min_cash_reserve_pct: float = Field(
-        default=0.10, description="Minimum cash reserve (10%)"
+        default=0.03, description="Minimum cash reserve (3%, aggressive)"
     )
 
     # Volatility-adjusted position sizing
@@ -122,10 +122,10 @@ class Settings(BaseSettings):
 
     # Exit parameters
     initial_stop_pct: float = Field(
-        default=0.12, description="Initial stop loss percentage (12%)"
+        default=0.14, description="Initial stop loss percentage (14%, aggressive)"
     )
     max_hold_days: int = Field(
-        default=30, description="Maximum holding period in trading days"
+        default=60, description="Maximum holding period in trading days (aggressive)"
     )
     dead_money_days: int = Field(
         default=10, description="Days below entry before exit as dead money"
@@ -139,10 +139,10 @@ class Settings(BaseSettings):
 
     # VIX thresholds
     vix_caution_level: float = Field(
-        default=30, description="VIX level to tighten stops"
+        default=35, description="VIX level to tighten stops (aggressive)"
     )
     vix_exit_level: float = Field(
-        default=40, description="VIX level to exit 50% of positions"
+        default=45, description="VIX level to exit 50% of positions (aggressive)"
     )
     vix_tight_stop_pct: float = Field(
         default=0.05, description="Tighter stop when VIX is elevated (5%)"
@@ -156,16 +156,16 @@ class Settings(BaseSettings):
         default=0.15, description="Trail distance after 20% gain"
     )
     trail_stop_30: float = Field(
-        default=0.15, description="Trail distance after 30% gain"
+        default=0.20, description="Trail distance after 30% gain (aggressive)"
     )
 
-    # Scoring weights (must sum to 1.0)
-    weight_momentum: float = Field(default=0.30, description="Momentum weight in score")
-    weight_insider: float = Field(default=0.25, description="Insider weight in score")
-    weight_volume: float = Field(default=0.15, description="Volume surge weight")
-    weight_sentiment: float = Field(default=0.15, description="Sentiment weight")
-    weight_fundamental: float = Field(default=0.10, description="Fundamental analysis weight")
-    weight_options: float = Field(default=0.05, description="Options intelligence weight")
+    # Scoring weights (must sum to 1.0) — aggressive, momentum-led
+    weight_momentum: float = Field(default=0.38, description="Momentum weight in score")
+    weight_insider: float = Field(default=0.14, description="Insider weight in score")
+    weight_volume: float = Field(default=0.16, description="Volume surge weight")
+    weight_sentiment: float = Field(default=0.12, description="Sentiment weight")
+    weight_fundamental: float = Field(default=0.04, description="Fundamental analysis weight")
+    weight_options: float = Field(default=0.16, description="Options intelligence weight")
 
     # Sentiment analysis parameters
     sentiment_enabled: bool = Field(
@@ -235,7 +235,7 @@ class Settings(BaseSettings):
 
     # Portfolio Construction
     portfolio_max_pairwise_corr: float = Field(
-        default=0.70, description="Max pairwise correlation for portfolio selection"
+        default=0.88, description="Max pairwise correlation for portfolio selection (aggressive)"
     )
     portfolio_risk_parity_enabled: bool = Field(
         default=True, description="Enable inverse-variance risk parity weighting"
@@ -461,10 +461,10 @@ class Settings(BaseSettings):
         default="data/reports", description="Directory for daily reports"
     )
     manager_max_daily_entries: int = Field(
-        default=2, description="Maximum new positions per day"
+        default=10, description="Maximum new positions per day (aggressive)"
     )
     manager_min_score_entry: float = Field(
-        default=55.0, description="Minimum composite score for entry"
+        default=42.0, description="Minimum composite score for entry (aggressive)"
     )
     manager_require_insider: bool = Field(
         default=False, description="Require insider activity for entry"

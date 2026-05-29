@@ -36,8 +36,8 @@ crisis = avoid momentum entirely, pick only the most powerful trends
 
 ### Step 2: Run momentum screening
 Call `run_screening_variant("momentum")` with these parameters:
-- Momentum minimum: 6-month return ≥ 8% (established uptrend)
-- Sentiment minimum: score ≥ 35 (retail awareness building)
+- Momentum minimum: 6-month return ≥ 5% (uptrend forming)
+- Sentiment minimum: score ≥ 28 (retail awareness building)
 - Fundamental analysis: DISABLED (skip P/E, ROE checks entirely)
 - These are trend-following, not value plays
 
@@ -70,12 +70,11 @@ Call `construct_portfolio()`:
 
 ## Candidate selection criteria:
 Only stocks that pass ALL of:
-  ✓ Composite score ≥ 50 (momentum-weighted)
-  ✓ 6-month momentum > +8% (confirmed uptrend)
+  ✓ Composite score ≥ 42 (momentum-weighted, aggressive)
+  ✓ 6-month momentum > +5% (uptrend forming)
   ✓ Price above 50-day MA (short-term trend intact)
-  ✓ Price above 200-day MA (long-term trend intact)
-  ✓ Volume surge > 1.5x average (institutional adoption)
-  ✓ Sentiment > 35 (retail awareness)
+  ✓ Volume surge > 1.3x average (institutional adoption)
+  ✓ Sentiment > 28 (retail awareness)
   ✓ Unusual options activity (smart money ahead of move)
   - NO fundamental filters applied
 

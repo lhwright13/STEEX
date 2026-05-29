@@ -29,20 +29,20 @@ min_purchase_value: 100000       # Minimum purchase value for significant signal
 # -----------------------------------------------------------------------------
 # Universe Filter Parameters
 # -----------------------------------------------------------------------------
-min_price: 5.0                   # Minimum stock price
-min_volume: 500000               # Minimum average daily volume
+min_price: 3.0                   # Aggressive: include lower-priced names (was 5.0)
+min_volume: 300000               # Aggressive: include thinner names (was 500000)
 earnings_blackout_days: 5        # Days before earnings to avoid
 min_history_days: 126            # Minimum trading history required (6 months)
 
 # -----------------------------------------------------------------------------
 # Position Management
 # -----------------------------------------------------------------------------
-max_positions: 10                # Optimized: concentrated portfolio outperforms
-daily_picks: 8                   # Top-N handed to portfolio construction (unblocks funnel)
-position_size_pct: 0.04          # Base position size (4%)
-max_sector_pct: 0.35             # Maximum sector exposure (small cushion after sector fix)
-max_single_position_pct: 0.10    # Maximum single position size (10%)
-min_cash_reserve_pct: 0.05       # Minimum cash reserve (frees capital for 5th-6th entry)
+max_positions: 15                # Aggressive: more concurrent positions (was 10)
+daily_picks: 12                  # Aggressive: bigger funnel into portfolio construction (was 8)
+position_size_pct: 0.06          # Aggressive: 6% base position size (was 4%)
+max_sector_pct: 0.45             # Aggressive: allow sector overweight for momentum clusters (was 0.35)
+max_single_position_pct: 0.12    # Aggressive: up to 12% in one name (was 0.10)
+min_cash_reserve_pct: 0.03       # Aggressive: deploy more capital (was 0.05)
 
 # -----------------------------------------------------------------------------
 # Volatility-Adjusted Position Sizing
@@ -57,8 +57,8 @@ vol_high_position_pct: 0.03      # Position size for high volatility stocks (3%)
 # -----------------------------------------------------------------------------
 # Exit Parameters
 # -----------------------------------------------------------------------------
-initial_stop_pct: 0.10           # Optimized: tighter 10% stop (was 12%)
-max_hold_days: 30                # Optimized: shorter hold (was 60) - forces rotation
+initial_stop_pct: 0.14           # Aggressive: wider stop, more drawdown tolerance (was 0.10)
+max_hold_days: 60                # Aggressive: hold winners longer (was 30)
 dead_money_days: 10              # Days below entry before exit as dead money
 dead_money_enabled: false        # Disabled - let stops handle exits
 cooling_off_days: 14             # Trading days to block re-entry after stop-loss
@@ -66,8 +66,8 @@ cooling_off_days: 14             # Trading days to block re-entry after stop-los
 # -----------------------------------------------------------------------------
 # VIX Thresholds
 # -----------------------------------------------------------------------------
-vix_caution_level: 30            # VIX level to tighten stops
-vix_exit_level: 40               # VIX level to exit 50% of positions
+vix_caution_level: 35            # Aggressive: tolerate higher VIX before tightening (was 30)
+vix_exit_level: 45               # Aggressive: stay in positions longer (was 40)
 vix_tight_stop_pct: 0.05         # Tighter stop when VIX is elevated (5%)
 
 # -----------------------------------------------------------------------------
@@ -75,17 +75,17 @@ vix_tight_stop_pct: 0.05         # Tighter stop when VIX is elevated (5%)
 # -----------------------------------------------------------------------------
 trail_stop_10: 0.12              # Trail distance after 10% gain
 trail_stop_20: 0.15              # Trail distance after 20% gain
-trail_stop_30: 0.15              # Optimized: tighter at 30%+ (was 0.18) - lock in big gains
+trail_stop_30: 0.20              # Aggressive: let big winners run further (was 0.15)
 
 # -----------------------------------------------------------------------------
 # Scoring Weights (must sum to 1.0)
 # -----------------------------------------------------------------------------
-weight_momentum: 0.2804          # Momentum weight in score
-weight_insider: 0.2336           # Insider weight in score
-weight_volume: 0.1402            # Volume surge weight
-weight_sentiment: 0.1402         # Sentiment weight
-weight_fundamental: 0.0935       # Fundamental analysis weight
-weight_options: 0.1121           # Options intelligence weight (rescaled from prior 0.30/.25/.15/.15/.10/.12 set summing to 1.07)
+weight_momentum: 0.38            # Aggressive: momentum-led (was 0.2804); sums to 1.00
+weight_insider: 0.14             # Aggressive: less quality gate (was 0.2336)
+weight_volume: 0.16              # Aggressive: institutional confirmation (was 0.1402)
+weight_sentiment: 0.12           # Sentiment weight (was 0.1402)
+weight_fundamental: 0.04         # Aggressive: minimal fundamental drag (was 0.0935)
+weight_options: 0.16             # Aggressive: smart-money flow (was 0.1121)
 
 # -----------------------------------------------------------------------------
 # Sentiment Analysis
@@ -124,7 +124,7 @@ walkforward_signal_interval: 7     # Days between signal generations
 # -----------------------------------------------------------------------------
 # Portfolio Construction
 # -----------------------------------------------------------------------------
-portfolio_max_pairwise_corr: 0.80  # Maximum pairwise correlation (S&P intra-sector pairs often exceed 0.70)
+portfolio_max_pairwise_corr: 0.88  # Aggressive: allow correlated momentum clusters (was 0.80)
 portfolio_risk_parity_enabled: true # Enable risk-parity weighting
 portfolio_correlation_lookback: 60  # Lookback days for correlation matrix
 
@@ -236,8 +236,8 @@ learning_validation_test_months: 1   # OOS validation test window
 # -----------------------------------------------------------------------------
 manager_portfolio_value: 50000   # Total portfolio value for position sizing
 manager_report_dir: "data/reports"  # Directory for daily reports
-manager_max_daily_entries: 6     # Maximum new positions per day (unblocks execution cap)
-manager_min_score_entry: 47.0    # Minimum composite score for entry (lowered after pysr/funnel fix)
+manager_max_daily_entries: 10    # Aggressive: more new positions per day (was 6)
+manager_min_score_entry: 42.0    # Aggressive: accept lower-conviction picks (was 47.0)
 manager_require_insider: false   # Require insider activity for entry
 
 # -----------------------------------------------------------------------------

@@ -35,9 +35,9 @@ In risk_off/crisis, maintain discipline even within aggressive mandate.
 
 ### Step 2: Run aggressive screening
 Call `run_screening_variant("aggressive")` with these implied parameters:
-- Momentum minimum: 6-month return ≥ 2% (includes growth stocks emerging from bases)
-- Sentiment minimum: score ≥ 28 (retail awareness developing)
-- Fundamental: PE < 80 (no profitless zombies), ROE > 0% (some profitability OK)
+- Momentum minimum: 6-month return ≥ 1% (catch early breakouts)
+- Sentiment minimum: score ≥ 20 (early retail awareness)
+- Fundamental: PE < 100 (allow growth stories), ROE > -5% (early-stage OK)
 - Allows growth stories with weak fundamentals if momentum compelling
 
 ### Step 3: Get signal confidence
@@ -70,10 +70,10 @@ Call `construct_portfolio()`:
 
 ## Candidate selection criteria:
 Include stocks that pass:
-  ✓ Composite score ≥ 45 (lower bar than conservative)
-  ✓ 6-month momentum > +2% (trending upward)
+  ✓ Composite score ≥ 38 (low bar — accept emerging trends)
+  ✓ 6-month momentum > +1% (trending upward)
   ✓ Volume surge > 1.2x (institutional accumulation)
-  ✓ Sentiment score > 28 (positive sentiment)
+  ✓ Sentiment score > 20 (early positive sentiment)
   ✓ If options available: unusual call activity is major plus
   ✓ If insider data available: adds credibility
   - Can include lower PE names if fundamentals reasonable
