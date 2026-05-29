@@ -12,8 +12,6 @@ Lifecycle: `start_run_log` writes one "running" line when the pipeline begins;
 line, so the final line wins. Filenames carry a sortable UTC stamp so the newest
 run sorts first.
 
-This replaced the old SQLite `dashboard.db` ingestion (scripts/ingest_run.py),
-which the LangGraph refactor orphaned.
 """
 
 from __future__ import annotations

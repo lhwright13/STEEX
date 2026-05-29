@@ -39,7 +39,7 @@ def create_app():
         return render_template("system.html")
 
     # ========================================================================
-    # API Endpoints (from DASHBOARD_SPEC.md)
+    # API Endpoints
     # ========================================================================
 
     @app.route("/api/v1/pipeline/current")
