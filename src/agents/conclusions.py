@@ -5,7 +5,7 @@ into a final decision. These models define the JSON schema that agents
 output at the end of their reasoning.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -279,6 +279,28 @@ class TestTraderConclusion(BaseModel):
     final_status: str = Field(description="success, partial, or failed")
     errors: List[str] = Field(default_factory=list)
     reasoning: str = Field(description="Summary of what happened during the roundtrip")
+    meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
+
+
+class EventReviewConclusion(BaseModel):
+    """Output from the EventReviewAgent (event_scan mode).
+
+    The deterministic event-trigger has already auto-bought a position on a
+    breaking-news headline. This agent re-examines the headline + the executed
+    trade and decides whether to keep it, exit immediately (fake/stale/misread
+    signal), or tighten the stop. On 'exit' it should call
+    generate_sell_list -> execute_exits for the ticker.
+    """
+
+    ticker: str = Field(description="Ticker the event trade targeted")
+    verdict: Literal["keep", "exit", "tighten_stop"] = Field(
+        description="keep = trade looks sound; exit = close now; tighten_stop = raise the stop"
+    )
+    confidence: float = Field(description="Confidence 0-1 in the verdict")
+    reasoning: str = Field(description="Why this verdict, referencing the headline and trade")
+    action_taken: Optional[str] = Field(
+        default=None, description="What the agent actually did (e.g. 'sold 10 shares', 'no action')"
+    )
     meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
 
 

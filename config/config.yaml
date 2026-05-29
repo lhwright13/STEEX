@@ -258,3 +258,26 @@ evolution_max_rewrites_per_week: 1 # Max prompt rewrites per agent per week
 mcp_alpaca_enabled: true           # Alpaca MCP: real-time quotes, order mgmt (uses ALPACA_API_KEY)
 mcp_polygon_enabled: false         # Polygon MCP: aggregates, news, options flow (needs POLYGON_API_KEY)
 mcp_alphavantage_enabled: true     # Alpha Vantage MCP: technical indicators, econ data (uses ALPHA_VANTAGE_API_KEY)
+
+# -----------------------------------------------------------------------------
+# Event-trigger subsystem (news-driven fast-path; src/strategy/event_trigger.py)
+# Auto-buys a small position on a bullish breaking-news headline for a watchlist
+# name, then a review agent re-checks the trade. Start disabled + dry_run.
+# -----------------------------------------------------------------------------
+event_trigger_enabled: false                  # Master switch for the event fast-path
+event_watchlist:                              # Tickers monitored for breaking news
+  - AAPL
+  - MSFT
+  - NVDA
+  - TSLA
+  - AMZN
+  - META
+  - GOOGL
+  - AMD
+  - NFLX
+  - JPM
+event_position_pct: 0.01                      # Fixed 1% size for event trades (small by design)
+event_sentiment_threshold: 40.0               # Min bullish VADER headline score to act
+max_event_trades_per_day: 2                   # Daily cap on event entries
+event_cooldown_minutes: 120                   # Per-ticker re-trigger cooldown
+event_news_lookback_days: 7                    # News query window per poll

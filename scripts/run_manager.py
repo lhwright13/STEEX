@@ -51,7 +51,7 @@ def main():
         choices=[
             "pre_market", "screen", "enter", "monitor",
             "stop_sync", "post_market", "learning", "full",
-            "test_roundtrip",
+            "test_roundtrip", "event_scan",
         ],
         help="Operating mode (default: pre_market)",
     )
@@ -127,8 +127,10 @@ def main():
     elif args.no_broker:
         settings.broker_enabled = False
 
-    # Agent mode: route to Claude AI orchestrator
-    if args.agent:
+    # Agent mode: route to Claude AI orchestrator.
+    # event_scan is orchestrator-only (deterministic ingest + review agent),
+    # so it always routes here regardless of the --agent flag.
+    if args.agent or args.mode == "event_scan":
         from src.agents.orchestrator import Orchestrator
 
         orchestrator = Orchestrator(

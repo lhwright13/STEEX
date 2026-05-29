@@ -176,6 +176,20 @@ agents:
       - get_account
     external_servers: [alpaca]
 
+  event_review:
+    prompt: "event_review"
+    conclusion: "EventReviewConclusion"
+    max_turns: 8
+    needs_tools: true
+    allowed_tools:
+      - get_positions
+      - get_account
+      - get_exit_signals
+      - generate_sell_list
+      - execute_exits
+      - get_regime
+    external_servers: [alpaca, polygon]
+
 modes:
   screen:
     sub_agents: [data, risk]
@@ -223,3 +237,9 @@ modes:
     manager: ""             # no manager synthesis - the agent is self-contained
     critical_agents: [test_trader]
     fallback: test_roundtrip  # deterministic fallback in QuantManager
+
+  event_scan:
+    sub_agents: [event_review]   # review agent dispatched per fill by run_event_scan
+    manager: ""                  # deterministic ingest+buy; review agent is self-contained
+    critical_agents: []
+    fallback: event_scan

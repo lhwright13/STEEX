@@ -32,7 +32,7 @@ from config.settings import Settings, get_settings
 from .conclusions import LearningConclusion, LearningManagerDecision, ManagerDecision
 from .evolution import PromptEvolver
 from .graph import build_graph
-from .nodes import cleanup_mcp
+from .nodes import cleanup_mcp, run_agent
 from .registry import AgentRegistry, ModeConfig
 from .run_log import start_run_log, finish_run_log
 from .state import PipelineState, RunnerContext
@@ -50,6 +50,7 @@ MODE_DISPLAY = {
     "post_market": ("Post-Market Wrap-up", "green"),
     "learning": ("Learning Loop", "magenta"),
     "pre_market": ("Pre-Market (Screen)", "cyan"),
+    "event_scan": ("Event Scan", "red"),
 }
 
 MANAGER_TASK_TEMPLATES = {
@@ -160,6 +161,9 @@ class Orchestrator:
             # should call run_test_roundtrip directly.
             return self.run_test_roundtrip("AAPL", 1000.0)
 
+        if effective_mode == "event_scan":
+            return self.run_event_scan()
+
         mode_config = self.registry.get_mode(effective_mode)
         if mode_config is None:
             logger.error("Unknown mode: %s", effective_mode)
@@ -256,6 +260,114 @@ class Orchestrator:
         return manager.run_test_roundtrip(
             ticker=ticker, amount_usd=amount_usd, dry_run=self.dry_run,
         )
+
+    def run_event_scan(self) -> Optional[Dict]:
+        """News event-trigger pass: deterministic ingest+guardrails+auto-buy,
+        then dispatch the event_review agent on each fill.
+
+        Gated by settings.event_trigger_enabled. The buy is deterministic (no
+        LLM in the hot path); the review agent is the post-trade safety net and
+        may exit the position. Writes a dashboard run log either way.
+        """
+        mode = "event_scan"
+        run_id = str(uuid.uuid4())[:8]
+
+        if not getattr(self.settings, "event_trigger_enabled", False):
+            console.print("[yellow]event_trigger_enabled is false — skipping event scan.[/yellow]")
+            return {"mode": mode, "skipped": "event_trigger_enabled=false"}
+
+        from src.strategy.manager import QuantManager
+        from src.data.event_source import NewsEventSource
+        from src.data.sentiment import SentimentProvider
+        from src.strategy.event_trigger import EventTrigger
+
+        try:
+            manager = QuantManager(settings=self.settings)
+        except RuntimeError:
+            self.settings.broker_enabled = False
+            manager = QuantManager(settings=self.settings)
+
+        sentiment = SentimentProvider()
+        source = NewsEventSource(
+            watchlist=self.settings.event_watchlist,
+            data_dir=self.settings.data_dir,
+            sentiment_provider=sentiment,
+            lookback_days=self.settings.event_news_lookback_days,
+        )
+        trigger = EventTrigger(manager, self.settings, source, sentiment)
+
+        run_file = start_run_log(self.settings.data_dir, run_id, mode)
+        console.print(Panel.fit(
+            f"[bold]Event Scan[/bold]  watchlist={len(self.settings.event_watchlist)}  "
+            f"dry_run={self.dry_run}  paper={self.paper}",
+            border_style="cyan",
+        ))
+
+        scan = trigger.run(dry_run=self.dry_run)
+        console.print(
+            f"  scanned={scan['scanned']} actionable={len(scan['actionable'])} "
+            f"executed={len(scan['executed'])} regime={scan.get('regime')}"
+        )
+
+        # Post-trade review: one review agent per fill.
+        reviews = []
+        ctx = None
+        if scan["executed"] and not self.dry_run:
+            ctx = RunnerContext(
+                settings=self.settings, paper=self.paper, dry_run=self.dry_run,
+                auto_confirm=self.auto_confirm, verbose=self.verbose,
+                registry=self.registry, evolver=self.evolver,
+                project_root=self._project_root,
+            )
+            agent_cfg = self.registry.get_agent("event_review")
+            for trade in scan["executed"]:
+                ev = trade.get("event", {})
+                task = (
+                    f"An event trade was just auto-executed. Review it.\n"
+                    f"Ticker: {trade['ticker']}\n"
+                    f"Headline: {ev.get('headline')}\n"
+                    f"Source: {ev.get('source')}  Published: {ev.get('published_at')}\n"
+                    f"Sentiment score: {ev.get('sentiment')}\n"
+                    f"Entry: {trade['shares']} shares @ ${trade['price']} "
+                    f"(stop ${trade['stop']}).\n"
+                    f"Decide keep / exit / tighten_stop. Paper={self.paper}."
+                )
+                try:
+                    result, _trace = run_agent(
+                        ctx,
+                        role="EventReviewAgent",
+                        system_prompt=self.registry.resolve_prompt("event_review", data_dir=self.settings.data_dir),
+                        task_message=task,
+                        conclusion_type=self.registry.resolve_conclusion_type("event_review"),
+                        max_turns=agent_cfg.max_turns,
+                        needs_tools=agent_cfg.needs_tools,
+                        allowed_tools=agent_cfg.allowed_tools,
+                        external_servers=agent_cfg.external_servers,
+                        mode=mode,
+                        run_id=run_id,
+                    )
+                    reviews.append(result.model_dump() if result else {"ticker": trade["ticker"], "verdict": "unknown"})
+                except Exception as e:
+                    logger.error("event_review failed for %s: %s", trade["ticker"], e)
+                    reviews.append({"ticker": trade["ticker"], "verdict": "error", "reasoning": str(e)})
+        elif scan["executed"]:
+            console.print("  [dim]dry_run: skipping post-trade review agent[/dim]")
+
+        report = {"mode": mode, "scan": scan, "reviews": reviews}
+        final_state = {
+            "mode": mode,
+            "conclusions": {"event_scan": scan},
+            "event_reviews": reviews,
+            "manager_decision": {"decision": "event_scan", "reasoning":
+                f"{len(scan['executed'])} event trade(s) executed, {len(reviews)} reviewed"},
+            "traces": [],
+            "abort": False,
+        }
+        finish_run_log(run_file, self.settings.data_dir, run_id, mode, final_state, status="complete")
+        self._save_report(report)
+        if ctx is not None:
+            cleanup_mcp(ctx)
+        return report
 
     def _run_deterministic(self, mode: str) -> Optional[Dict]:
         """Run a mode through the deterministic QuantManager (no AI)."""

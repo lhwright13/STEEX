@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 import yaml
 from pydantic import Field
@@ -438,6 +438,33 @@ class Settings(BaseSettings):
     )
     mcp_alphavantage_enabled: bool = Field(
         default=True, description="Enable Alpha Vantage MCP for technical indicators and economic data"
+    )
+
+    # Event-trigger subsystem (news-driven fast-path; see src/strategy/event_trigger.py)
+    event_trigger_enabled: bool = Field(
+        default=False, description="Enable the news event-trigger fast-path (auto-buy on breaking news)"
+    )
+    event_watchlist: List[str] = Field(
+        default_factory=lambda: [
+            "AAPL", "MSFT", "NVDA", "TSLA", "AMZN",
+            "META", "GOOGL", "AMD", "NFLX", "JPM",
+        ],
+        description="Tickers monitored for breaking-news events",
+    )
+    event_position_pct: float = Field(
+        default=0.01, description="Fixed position size for event trades (1% of portfolio)"
+    )
+    event_sentiment_threshold: float = Field(
+        default=40.0, description="Min bullish VADER headline score (-100..100) to act"
+    )
+    max_event_trades_per_day: int = Field(
+        default=2, description="Cap on event-triggered entries per day"
+    )
+    event_cooldown_minutes: int = Field(
+        default=120, description="Minutes before the same ticker can event-trigger again"
+    )
+    event_news_lookback_days: int = Field(
+        default=7, description="How far back to query news on each poll (cursor trims the rest)"
     )
 
     # Agent trace settings

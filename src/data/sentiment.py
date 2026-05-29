@@ -213,6 +213,27 @@ class SentimentProvider(DataProvider):
 
         return results
 
+    def fetch_company_news(self, ticker: str, frm: str, to: str) -> list:
+        """Fetch raw Finnhub company-news articles for a ticker over [frm, to].
+
+        Shared by sentiment scoring and the event-trigger ingestion layer so
+        there's a single Finnhub news code path. Dates are 'YYYY-MM-DD'.
+        Each article dict carries finnhub fields: id, headline, url, datetime
+        (epoch seconds), source, summary. Returns [] on any failure.
+        """
+        if not self.finnhub_key:
+            return []
+        try:
+            url = f"{self.FINNHUB_URL}/company-news"
+            params = {"symbol": ticker, "from": frm, "to": to, "token": self.finnhub_key}
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            news = response.json()
+            return news if isinstance(news, list) else []
+        except Exception:
+            logger.debug("Finnhub company-news fetch failed for %s", ticker, exc_info=True)
+            return []
+
     def _fetch_finnhub_sentiment(self, ticker: str) -> Optional[SentimentResult]:
         """Fetch sentiment from Finnhub news API.
 
@@ -226,18 +247,11 @@ class SentimentProvider(DataProvider):
             # Get company news from last 7 days
             to_date = datetime.now()
             from_date = to_date - timedelta(days=7)
-
-            url = f"{self.FINNHUB_URL}/company-news"
-            params = {
-                "symbol": ticker,
-                "from": from_date.strftime("%Y-%m-%d"),
-                "to": to_date.strftime("%Y-%m-%d"),
-                "token": self.finnhub_key,
-            }
-
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            news = response.json()
+            news = self.fetch_company_news(
+                ticker,
+                from_date.strftime("%Y-%m-%d"),
+                to_date.strftime("%Y-%m-%d"),
+            )
 
             if not news:
                 return self._neutral_sentiment(ticker)

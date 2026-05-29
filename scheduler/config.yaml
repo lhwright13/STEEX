@@ -59,6 +59,14 @@ modes:
     schedule: "0 7 * * 0"         # 7:00 AM PST = 10:00 AM ET, Sundays
     mode_name: "heartbeat"
 
+  # News event-trigger fast-path. Double-gated: this `enabled` flag AND
+  # settings.event_trigger_enabled must both be true to act. Starts disabled +
+  # dry_run; flip dry_run off (and event_trigger_enabled on) once validated.
+  event_scan:
+    enabled: false
+    schedule: "* 6-12 * * 1-5"    # every minute, 6:30 AM-1:00 PM PST market hours, weekdays
+    dry_run: true
+
 # ---------------------------------------------------------------------------
 # Log retention
 # ---------------------------------------------------------------------------
