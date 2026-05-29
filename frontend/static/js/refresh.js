@@ -124,6 +124,16 @@
     }
   }
 
+  async function fetchEvents() {
+    try {
+      const r = await fetch('/api/v1/events/recent');
+      return await r.json();
+    } catch (e) {
+      console.error('Error fetching events:', e);
+      return null;
+    }
+  }
+
   // ── DOM Updaters ───────────────────────────────────────────────────────
 
   function formatTime(seconds) {
@@ -340,10 +350,40 @@
     if (src) src.textContent = data.live ? 'live · broker' : 'cached';
   }
 
+  function updateEventsDOM(data) {
+    const body = document.getElementById('events-table-body');
+    if (!body || !data) return;
+    const events = data.events || [];
+    if (!events.length) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:12px;color:#999;">No event-triggered trades yet.</td></tr>';
+    } else {
+      body.innerHTML = events.map(e => {
+        const conf = e.confidence != null ? (Math.round(e.confidence * 100) + '%') : '—';
+        const v = e.verdict || '—';
+        const vCls = v === 'exit' ? 'bad' : (v === 'keep' ? 'ok' : '');
+        const head = (e.headline || '').slice(0, 90);
+        const link = e.url ? `<a href="${e.url}" target="_blank" rel="noopener">${head}</a>` : head;
+        return `<tr>
+          <td class="t"><b>${e.ticker || '—'}</b></td>
+          <td class="num">${e.price != null ? '$' + e.price : '—'}</td>
+          <td class="num">${e.shares ?? '—'}</td>
+          <td class="num">${conf}</td>
+          <td style="font-size:11px;">${link}</td>
+          <td class="${vCls}">${v}</td>
+        </tr>`;
+      }).join('');
+    }
+    const sub = document.getElementById('events-lastscan');
+    if (sub && data.last_scan) {
+      const ls = data.last_scan;
+      sub.textContent = `last scan: ${ls.scanned ?? 0} posts · regime ${ls.regime || '—'}`;
+    }
+  }
+
   async function refreshAll() {
     updateHeaderTime();
 
-    const [pipeline, variants, consensus, screening, regime, decision, holdings] = await Promise.allSettled([
+    const [pipeline, variants, consensus, screening, regime, decision, holdings, events] = await Promise.allSettled([
       fetchPipeline(),
       fetchVariants(),
       fetchConsensus(),
@@ -351,6 +391,7 @@
       fetchRegime(),
       fetchManagerDecision(),
       fetchHoldings(),
+      fetchEvents(),
     ]);
 
     // Extract values from PromiseSettledResult
@@ -359,6 +400,7 @@
     if (consensus.status === 'fulfilled') updateConsensusDOM(consensus.value);
     if (regime.status === 'fulfilled') updateRegimeDOM(regime.value);
     if (holdings.status === 'fulfilled') updateHoldingsDOM(holdings.value);
+    if (events.status === 'fulfilled') updateEventsDOM(events.value);
     // screening and decision updates would go here if DOM has those elements
   }
 

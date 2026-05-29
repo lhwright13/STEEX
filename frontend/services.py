@@ -663,15 +663,26 @@ class DashboardService:
     # Helper Methods
     # ====================================================================
 
-    def _get_latest_run_file(self) -> Optional[Path]:
-        """Get the most recent run data file."""
+    def _get_latest_run_file(self, exclude_modes=("event_scan",)) -> Optional[Path]:
+        """Get the most recent run data file, skipping certain modes.
+
+        event_scan runs every minute and would otherwise become the "latest"
+        run for every pipeline panel, blanking the screen/trade view. The
+        trading dashboard wants the latest screen/enter/monitor run, so
+        event_scan is excluded by default. Pass exclude_modes=() for any mode.
+        """
         runs_dir = self.data_dir / "runs"
         if not runs_dir.exists():
             return None
 
-        # Get most recent JSONL file
         run_files = sorted(runs_dir.glob("run_*.jsonl"), reverse=True)
-        return run_files[0] if run_files else None
+        if not exclude_modes:
+            return run_files[0] if run_files else None
+        for f in run_files:
+            data = self._load_json(f)
+            if data and data.get("mode") not in exclude_modes:
+                return f
+        return None
 
     def _load_json(self, path: Path) -> Optional[Dict]:
         """Load last line of JSONL file as JSON."""
@@ -1174,20 +1185,26 @@ class DashboardService:
     # ====================================================================
 
     def get_recent_runs(self, limit: int = 10) -> Dict[str, Any]:
-        """Get recent pipeline runs across all modes."""
+        """Get recent pipeline runs across the trading modes.
+
+        Excludes event_scan (it runs every minute and would crowd out the
+        screen/enter/monitor runs); event activity has its own feed.
+        """
         runs_dir = self.data_dir / "runs"
         if not runs_dir.exists():
             return {"runs": [], "timestamp": datetime.utcnow().isoformat() + "Z"}
 
-        run_files = sorted(runs_dir.glob("run_*.jsonl"), reverse=True)[:limit]
+        run_files = sorted(runs_dir.glob("run_*.jsonl"), reverse=True)
         runs = []
 
         for run_file in run_files:
+            if len(runs) >= limit:
+                break
             run_data = self._load_json(run_file)
-            if not run_data:
+            if not run_data or run_data.get("mode") == "event_scan":
                 continue
 
-            run_info = {
+            runs.append({
                 "run_id": run_data.get("run_id"),
                 "mode": run_data.get("mode", "unknown"),
                 "status": run_data.get("status", "unknown"),
@@ -1196,11 +1213,62 @@ class DashboardService:
                 "elapsed": self._elapsed_seconds(run_data.get("started_at")),
                 "current_agent": run_data.get("current_agent"),
                 "stage": run_data.get("stage"),
-            }
-            runs.append(run_info)
+            })
 
         return {
             "runs": runs,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    def get_event_activity(self, limit: int = 10) -> Dict[str, Any]:
+        """Recent event-trigger scans: executed trades and review verdicts.
+
+        Reads event_scan run logs (newest first) and surfaces any trades that
+        actually fired plus the post-trade review verdicts, so the dashboard
+        can show what the news fast-path has been doing.
+        """
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.exists():
+            return {"events": [], "last_scan": None, "timestamp": datetime.utcnow().isoformat() + "Z"}
+
+        events = []
+        last_scan = None
+        scanned_files = 0
+        for run_file in sorted(runs_dir.glob("run_*.jsonl"), reverse=True):
+            if len(events) >= limit or scanned_files >= 500:
+                break
+            data = self._load_json(run_file)
+            if not data or data.get("mode") != "event_scan":
+                continue
+            scanned_files += 1
+            scan = (data.get("conclusions") or {}).get("event_scan") or {}
+            if last_scan is None:
+                last_scan = {
+                    "completed_at": data.get("completed_at"),
+                    "regime": scan.get("regime"),
+                    "scanned": scan.get("scanned", 0),
+                }
+            reviews = {r.get("ticker"): r for r in (data.get("event_reviews") or [])}
+            for trade in scan.get("executed", []) or []:
+                ev = trade.get("event", {})
+                rv = reviews.get(trade.get("ticker"), {})
+                events.append({
+                    "ticker": trade.get("ticker"),
+                    "price": trade.get("price"),
+                    "shares": trade.get("shares"),
+                    "headline": ev.get("headline"),
+                    "source": ev.get("source"),
+                    "url": ev.get("url"),
+                    "confidence": ev.get("confidence"),
+                    "published_at": ev.get("published_at"),
+                    "verdict": rv.get("verdict"),
+                    "verdict_reason": rv.get("reasoning"),
+                    "run_id": data.get("run_id"),
+                })
+
+        return {
+            "events": events,
+            "last_scan": last_scan,
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 

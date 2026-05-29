@@ -110,6 +110,17 @@ def create_app():
             logger.error(f"Error fetching performance: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/events/recent")
+    def events_recent():
+        """Recent event-trigger trades and review verdicts."""
+        try:
+            service = get_dashboard_service()
+            data = service.get_event_activity(limit=10)
+            return jsonify(data)
+        except Exception as e:
+            logger.error(f"Error fetching event activity: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/portfolio/holdings")
     def portfolio_holdings():
         """Get current open positions and portfolio summary."""
