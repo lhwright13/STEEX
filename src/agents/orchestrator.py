@@ -277,9 +277,11 @@ class Orchestrator:
             return {"mode": mode, "skipped": "event_trigger_enabled=false"}
 
         from src.strategy.manager import QuantManager
-        from src.data.event_source import NewsEventSource
+        from src.data.event_source import NewsEventSource, TruthSocialEventSource
         from src.data.sentiment import SentimentProvider
         from src.strategy.event_trigger import EventTrigger
+        from src.agents.conclusions import EventTickerResolution
+        from src.agents.prompts.event_ticker import EVENT_TICKER_AGENT_PROMPT
 
         try:
             manager = QuantManager(settings=self.settings)
@@ -288,22 +290,62 @@ class Orchestrator:
             manager = QuantManager(settings=self.settings)
 
         sentiment = SentimentProvider()
-        source = NewsEventSource(
-            watchlist=self.settings.event_watchlist,
-            data_dir=self.settings.data_dir,
-            sentiment_provider=sentiment,
-            lookback_days=self.settings.event_news_lookback_days,
-        )
+
+        # Source: Truth Social (watchlist-free, LLM-resolved) when enabled,
+        # else the Finnhub watchlist poller.
+        if getattr(self.settings, "event_truth_social_enabled", False):
+            source = TruthSocialEventSource(
+                account_id=self.settings.event_truth_social_account_id,
+                data_dir=self.settings.data_dir,
+                lookback_hours=self.settings.event_truth_lookback_hours,
+            )
+            source_desc = f"truth_social:{self.settings.event_truth_social_account_id}"
+        else:
+            source = NewsEventSource(
+                watchlist=self.settings.event_watchlist,
+                data_dir=self.settings.data_dir,
+                sentiment_provider=sentiment,
+                lookback_days=self.settings.event_news_lookback_days,
+            )
+            source_desc = f"watchlist:{len(self.settings.event_watchlist)}"
+
         trigger = EventTrigger(manager, self.settings, source, sentiment)
+
+        # LLM resolver: free-text post -> {ticker, is_bullish, confidence}.
+        # Lazily build a RunnerContext so untickered events get an LLM call.
+        resolver_ctx = RunnerContext(
+            settings=self.settings, paper=self.paper, dry_run=self.dry_run,
+            auto_confirm=self.auto_confirm, verbose=self.verbose,
+            registry=self.registry, evolver=self.evolver,
+            project_root=self._project_root,
+        )
+
+        def _resolve(ev):
+            try:
+                res, _t = run_agent(
+                    resolver_ctx,
+                    role="EventTickerResolver",
+                    system_prompt=EVENT_TICKER_AGENT_PROMPT,
+                    task_message=f"Post by {ev.source}:\n\n{ev.headline}",
+                    conclusion_type=EventTickerResolution,
+                    max_turns=1,
+                    needs_tools=False,
+                    mode=mode,
+                    run_id=run_id,
+                )
+                return res
+            except Exception as e:
+                logger.error("ticker resolver failed: %s", e)
+                return None
 
         run_file = start_run_log(self.settings.data_dir, run_id, mode)
         console.print(Panel.fit(
-            f"[bold]Event Scan[/bold]  watchlist={len(self.settings.event_watchlist)}  "
+            f"[bold]Event Scan[/bold]  source={source_desc}  "
             f"dry_run={self.dry_run}  paper={self.paper}",
             border_style="cyan",
         ))
 
-        scan = trigger.run(dry_run=self.dry_run)
+        scan = trigger.run(dry_run=self.dry_run, resolver=_resolve)
         console.print(
             f"  scanned={scan['scanned']} actionable={len(scan['actionable'])} "
             f"executed={len(scan['executed'])} regime={scan.get('regime')}"

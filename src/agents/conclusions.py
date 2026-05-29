@@ -282,6 +282,26 @@ class TestTraderConclusion(BaseModel):
     meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
 
 
+class EventTickerResolution(BaseModel):
+    """Output from the EventTickerResolver (event_scan ingestion step).
+
+    Reads one social-media post and decides whether it names a specific,
+    publicly-traded US company in a bullish/endorsement way worth buying.
+    No watchlist — any tradable US ticker qualifies, including small caps.
+    """
+
+    mentions_company: bool = Field(
+        description="True only if the post names a specific publicly-traded US company"
+    )
+    company_name: Optional[str] = Field(default=None, description="Company named, if any")
+    ticker: Optional[str] = Field(default=None, description="US stock ticker (uppercase), if resolvable")
+    is_bullish: bool = Field(
+        default=False, description="True if the post is positive/an endorsement to buy that company"
+    )
+    confidence: float = Field(default=0.0, description="Confidence 0-1 in the ticker + bullish call")
+    reasoning: str = Field(description="Brief justification")
+
+
 class EventReviewConclusion(BaseModel):
     """Output from the EventReviewAgent (event_scan mode).
 

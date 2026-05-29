@@ -250,7 +250,7 @@ agent_fallback_deterministic: true  # Fall back to QuantManager if agent fails
 
 # Agent trace and evolution
 trace_retention_days: 30           # Days to keep agent session trace files
-evolution_enabled: false           # Enable agent prompt self-improvement
+evolution_enabled: true           # Enable agent prompt self-improvement
 evolution_max_rewrites_per_week: 1 # Max prompt rewrites per agent per week
 
 # External MCP servers (supplement STEEX tools with third-party data)
@@ -264,7 +264,7 @@ mcp_alphavantage_enabled: true     # Alpha Vantage MCP: technical indicators, ec
 # Auto-buys a small position on a bullish breaking-news headline for a watchlist
 # name, then a review agent re-checks the trade. Start disabled + dry_run.
 # -----------------------------------------------------------------------------
-event_trigger_enabled: false                  # Master switch for the event fast-path
+event_trigger_enabled: true                  # Master switch for the event fast-path
 event_watchlist:                              # Tickers monitored for breaking news
   - AAPL
   - MSFT
@@ -276,8 +276,15 @@ event_watchlist:                              # Tickers monitored for breaking n
   - AMD
   - NFLX
   - JPM
-event_position_pct: 0.01                      # Fixed 1% size for event trades (small by design)
+event_position_pct: 0.05                      # Fixed size for event trades 
 event_sentiment_threshold: 40.0               # Min bullish VADER headline score to act
 max_event_trades_per_day: 2                   # Daily cap on event entries
 event_cooldown_minutes: 120                   # Per-ticker re-trigger cooldown
-event_news_lookback_days: 7                    # News query window per poll
+event_news_lookback_days: 7                    # News query window per poll (watchlist path only)
+# Watchlist-free Truth Social source: react to any tradable company a public
+# figure names (incl. small caps); ticker resolved by an LLM and gated on
+# Alpaca tradability. event_watchlist above is only used when this is false.
+event_truth_social_enabled: true              # Primary source: Truth Social (no watchlist)
+event_truth_social_account_id: "107780257626128497"  # @realDonaldTrump
+event_truth_lookback_hours: 24                # How far back to consider posts per poll
+event_min_confidence: 0.7                     # Min LLM confidence to act on a resolved ticker

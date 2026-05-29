@@ -72,8 +72,28 @@ class EventTrigger:
         except Exception:
             return False
 
+    def _tradable(self, ticker: str) -> bool:
+        """Gate on Alpaca tradability — this replaces the watchlist as the
+        universe filter, so any real US-listed name (incl. small caps) qualifies
+        while garbage/private/non-US mentions are dropped."""
+        broker = getattr(self.mgr, "broker", None)
+        if broker is None:
+            return True  # no broker (e.g. dry-run without keys) — don't block
+        try:
+            asset = broker.get_asset(ticker)
+            return bool(asset and asset.tradable)
+        except Exception:
+            return False
+
     # ---- main pass ---------------------------------------------------------
-    def run(self, dry_run: bool = True) -> Dict:
+    def run(self, dry_run: bool = True, resolver=None) -> Dict:
+        """Run one scan.
+
+        `resolver(event) -> EventTickerResolution|None` turns a free-text post
+        (event.ticker == "") into a ticker + bullish/confidence judgement. Events
+        that already carry a ticker (e.g. Finnhub watchlist news) skip the
+        resolver and use VADER sentiment instead.
+        """
         now = datetime.now(timezone.utc)
         result: Dict = {
             "scanned": 0, "actionable": [], "skipped": [], "executed": [],
@@ -101,13 +121,40 @@ class EventTrigger:
         cooldown_min = self.settings.event_cooldown_minutes
         daily_cap = self.settings.max_event_trades_per_day
 
+        min_conf = getattr(self.settings, "event_min_confidence", 0.7)
+
         for ev in events:
             ticker = ev.ticker
-            score = self.sentiment._analyze_with_vader([ev.headline])
+            event_meta = {"id": ev.id, "headline": ev.headline, "url": ev.url,
+                          "source": ev.source, "published_at": ev.published_at}
 
-            # Relevance: bullish enough?
-            if score < threshold:
-                result["skipped"].append({"ticker": ticker, "reason": f"sentiment {score:.0f} < {threshold}", "headline": ev.headline})
+            if ticker:
+                # Pre-tickered (e.g. Finnhub watchlist news): VADER relevance.
+                score = self.sentiment._analyze_with_vader([ev.headline])
+                if score < threshold:
+                    result["skipped"].append({"ticker": ticker, "reason": f"sentiment {score:.0f} < {threshold}", "headline": ev.headline})
+                    continue
+                event_meta["sentiment"] = round(score, 1)
+            else:
+                # Free-text post (e.g. Truth Social): resolve company -> ticker via LLM.
+                if resolver is None:
+                    result["skipped"].append({"reason": "no resolver for untickered event", "headline": ev.headline})
+                    continue
+                res = resolver(ev)
+                if not res or not getattr(res, "mentions_company", False) or not getattr(res, "is_bullish", False):
+                    result["skipped"].append({"reason": "not a bullish company signal", "headline": ev.headline[:120]})
+                    continue
+                if not res.ticker or res.confidence < min_conf:
+                    result["skipped"].append({"ticker": res.ticker, "reason": f"low confidence {res.confidence:.2f} < {min_conf}", "headline": ev.headline[:120]})
+                    continue
+                ticker = res.ticker.upper()
+                score = round(res.confidence * 100, 1)
+                event_meta.update({"company": res.company_name, "confidence": res.confidence,
+                                   "resolver_reasoning": res.reasoning})
+
+            # Tradability gate (replaces the watchlist): must be a real US-listed name.
+            if not self._tradable(ticker):
+                result["skipped"].append({"ticker": ticker, "reason": "not tradable on Alpaca"})
                 continue
 
             # Daily cap
@@ -156,10 +203,8 @@ class EventTrigger:
                 "cost": round(price * shares, 2),
                 "stop": stop_price,
                 "score": round(score, 1),
-                "reasons": [f"EVENT: {ev.headline}"],
-                "event": {"id": ev.id, "headline": ev.headline, "url": ev.url,
-                          "source": ev.source, "published_at": ev.published_at,
-                          "sentiment": round(score, 1)},
+                "reasons": [f"EVENT: {ev.headline[:200]}"],
+                "event": event_meta,
             }
             result["actionable"].append(actionable)
 

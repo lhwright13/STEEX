@@ -466,6 +466,19 @@ class Settings(BaseSettings):
     event_news_lookback_days: int = Field(
         default=7, description="How far back to query news on each poll (cursor trims the rest)"
     )
+    event_truth_social_enabled: bool = Field(
+        default=True,
+        description="Use the watchlist-free Truth Social source (LLM-resolved tickers) instead of the Finnhub watchlist poller",
+    )
+    event_truth_social_account_id: str = Field(
+        default="107780257626128497", description="Truth Social account id to watch (default: @realDonaldTrump)"
+    )
+    event_truth_lookback_hours: int = Field(
+        default=24, description="How far back to consider Truth Social posts on each poll"
+    )
+    event_min_confidence: float = Field(
+        default=0.7, description="Min LLM confidence (0-1) that a post is a bullish, correctly-resolved ticker"
+    )
 
     # Agent trace settings
     trace_retention_days: int = Field(
