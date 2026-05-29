@@ -611,6 +611,47 @@
     </div>
   </section>
 
+  <!-- ============ 3.4 PERFORMANCE vs S&P 500 ============ -->
+  <section class="panel">
+    <header>
+      <h2>Performance vs S&amp;P 500 <span class="sub" id="perf-sub">portfolio return, benchmark &amp; alpha</span></h2>
+      <div class="tools tabs" id="perf-period-tabs">
+        <span class="tab" data-perf-period="1W">1W</span>
+        <span class="tab on" data-perf-period="1M">1M</span>
+        <span class="tab" data-perf-period="3M">3M</span>
+        <span class="tab" data-perf-period="1Y">1Y</span>
+      </div>
+    </header>
+    <div class="body">
+      <!-- Summary stats -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--border);font-family:var(--mono);background:#fff;margin-bottom:12px;">
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Portfolio</div>
+          <div style="font-size:18px;font-weight:700;" id="perf-port">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">S&amp;P 500</div>
+          <div style="font-size:18px;font-weight:700;" id="perf-spy">—</div>
+        </div>
+        <div style="padding:10px 12px;">
+          <div class="dim" style="font-size:11px;">Alpha (vs S&amp;P)</div>
+          <div style="font-size:18px;font-weight:700;" id="perf-alpha">—</div>
+        </div>
+      </div>
+      <!-- Chart (rendered by perf-chart.js) -->
+      <div id="perf-chart-host" style="width:100%;">
+        <div style="text-align:center;padding:40px;color:#999;">Loading performance…</div>
+      </div>
+      <!-- Legend -->
+      <div style="display:flex;gap:18px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px;flex-wrap:wrap;">
+        <span><span style="display:inline-block;width:18px;height:2px;background:#000;vertical-align:middle;"></span> Portfolio</span>
+        <span><span style="display:inline-block;width:18px;height:0;border-top:2px dashed #888;vertical-align:middle;"></span> S&amp;P 500</span>
+        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(0,119,42,0.18);vertical-align:middle;"></span> alpha &gt; 0</span>
+        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(184,0,0,0.16);vertical-align:middle;"></span> alpha &lt; 0</span>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ 3.5 VARIANT CONSENSUS MATRIX ============ -->
   <section class="panel">
     <header>
@@ -872,5 +913,6 @@
 </div>
 
 <script src="/static/js/refresh.js"></script>
+<script src="/static/js/perf-chart.js"></script>
 </body>
 </html>
