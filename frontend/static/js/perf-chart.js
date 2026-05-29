@@ -120,30 +120,42 @@
     });
 
     // --- alpha shading between the two lines (only where SPY exists) -----
+    // Fill the band between the portfolio and S&P lines segment by segment,
+    // splitting EXACTLY at each line crossing (interpolated) so the green/red
+    // boundary lands on the visual intersection, not the nearest sample.
     if (hasSpy) {
-      // Build contiguous segments split by alpha sign so each fills cleanly.
-      let seg = [];
-      let segSign = null;
-      const flush = () => {
-        if (seg.length < 2) { seg = []; return; }
-        const top = seg.map(i => `${x(i)},${y(series[i].portfolio_pct)}`);
-        const bot = seg.slice().reverse().map(i => `${x(i)},${y(series[i].spy_pct)}`);
-        svg.appendChild(el("polygon", {
-          points: top.concat(bot).join(" "),
-          fill: segSign >= 0 ? "rgba(0,119,42,0.18)" : "rgba(184,0,0,0.16)",
-          stroke: "none",
-        }));
-        // keep the last point so adjacent fills meet with no gap
-        seg = [seg[seg.length - 1]];
-      };
-      for (let i = 0; i < n; i++) {
-        if (series[i].spy_pct == null || series[i].alpha_pct == null) { flush(); seg = []; segSign = null; continue; }
-        const sign = series[i].alpha_pct >= 0 ? 1 : -1;
-        if (segSign === null) segSign = sign;
-        if (sign !== segSign) { flush(); segSign = sign; }
-        seg.push(i);
+      const GREEN = "rgba(0,119,42,0.18)";
+      const RED = "rgba(184,0,0,0.16)";
+      const fill = (pts, positive) => svg.appendChild(el("polygon", {
+        points: pts.map(p => `${p[0]},${p[1]}`).join(" "),
+        fill: positive ? GREEN : RED, stroke: "none",
+      }));
+
+      for (let i = 0; i < n - 1; i++) {
+        const a = series[i], b = series[i + 1];
+        if (a.spy_pct == null || b.spy_pct == null) continue;
+
+        const xL = x(i), xR = x(i + 1);
+        const pL = y(a.portfolio_pct), sL = y(a.spy_pct);
+        const pR = y(b.portfolio_pct), sR = y(b.spy_pct);
+        const dL = a.portfolio_pct - a.spy_pct;   // alpha at left
+        const dR = b.portfolio_pct - b.spy_pct;   // alpha at right
+
+        if (dL === 0 && dR === 0) continue;
+
+        if (dL * dR >= 0) {
+          // No sign change within the segment: one quad.
+          fill([[xL, pL], [xR, pR], [xR, sR], [xL, sL]], (dL + dR) >= 0);
+        } else {
+          // Lines cross inside the segment — find the intersection and split
+          // into two triangles that meet at the crossing point.
+          const t = dL / (dL - dR);              // 0..1 along the segment
+          const xc = xL + t * (xR - xL);
+          const yc = pL + t * (pR - pL);         // pL/sL coincide at crossing
+          fill([[xL, pL], [xc, yc], [xL, sL]], dL >= 0);
+          fill([[xc, yc], [xR, pR], [xR, sR]], dR >= 0);
+        }
       }
-      flush();
     }
 
     // --- S&P line (dashed gray) -----------------------------------------
