@@ -213,10 +213,17 @@ class Orchestrator:
             f"Do not change the ticker or amount. Dry run: {self.dry_run}."
         )
 
+        ctx = RunnerContext(
+            settings=self.settings, paper=self.paper, dry_run=self.dry_run,
+            auto_confirm=self.auto_confirm, verbose=self.verbose,
+            registry=self.registry, evolver=self.evolver,
+            project_root=self._project_root,
+        )
         try:
             prompt = self.registry.resolve_prompt(agent_name, data_dir=self.settings.data_dir)
             conclusion_type = self.registry.resolve_conclusion_type(agent_name)
-            result, trace = self._run_agent(
+            result, trace = run_agent(
+                ctx,
                 role="TestTraderAgent",
                 system_prompt=prompt,
                 task_message=task_message,
@@ -238,7 +245,7 @@ class Orchestrator:
         if result is None:
             session.fallback_used = True
             self._finalize_session(session)
-            self._cleanup()
+            cleanup_mcp(ctx)
             return self._fallback_test_roundtrip(ticker, amount_usd)
 
         report = {"mode": mode, "ticker": ticker, "amount_usd": amount_usd,
@@ -246,7 +253,7 @@ class Orchestrator:
         session.set_manager_decision(report)
         self._save_report(report)
         self._finalize_session(session)
-        self._cleanup()
+        cleanup_mcp(ctx)
         return report
 
     def _fallback_test_roundtrip(self, ticker: str, amount_usd: float) -> Optional[Dict]:
@@ -332,6 +339,7 @@ class Orchestrator:
                     needs_tools=False,
                     mode=mode,
                     run_id=run_id,
+                    model=getattr(self.settings, "event_resolver_model", None) or None,
                 )
                 return res
             except Exception as e:

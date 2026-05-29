@@ -479,6 +479,10 @@ class Settings(BaseSettings):
     event_min_confidence: float = Field(
         default=0.7, description="Min LLM confidence (0-1) that a post is a bullish, correctly-resolved ticker"
     )
+    event_resolver_model: str = Field(
+        default="haiku",
+        description="Claude model for the per-post ticker resolver (cheap; runs on every new post)",
+    )
 
     # Agent trace settings
     trace_retention_days: int = Field(

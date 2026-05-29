@@ -175,8 +175,13 @@ def run_agent(
     external_servers: Optional[List[str]] = None,
     mode: str = "",
     run_id: str = "",
+    model: Optional[str] = None,
 ) -> Tuple[Optional[BaseModel], AgentTrace]:
     """Run a single agent via the claude CLI subprocess.
+
+    `model` optionally pins the Claude model (e.g. "haiku") — used for cheap,
+    high-frequency calls like the event ticker resolver. Defaults to the CLI's
+    configured model.
 
     Returns (parsed conclusion or None, trace).
     """
@@ -201,6 +206,8 @@ def run_agent(
         "--output-format", "json",
         "--max-turns", str(max_turns),
     ]
+    if model:
+        cmd.extend(["--model", model])
 
     if needs_tools:
         cmd.extend(["--mcp-config", get_mcp_config(ctx)])

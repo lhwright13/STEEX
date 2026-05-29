@@ -288,3 +288,4 @@ event_truth_social_enabled: true              # Primary source: Truth Social (no
 event_truth_social_account_id: "107780257626128497"  # @realDonaldTrump
 event_truth_lookback_hours: 24                # How far back to consider posts per poll
 event_min_confidence: 0.7                     # Min LLM confidence to act on a resolved ticker
+event_resolver_model: "haiku"                 # Cheap model for per-post ticker resolution
