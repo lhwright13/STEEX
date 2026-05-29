@@ -130,6 +130,31 @@ def test_already_held_skipped(tmp_path):
     assert res["executed"] == []
 
 
+def test_daily_cap_enforced_on_real_trades(tmp_path):
+    mgr = StubMgr()
+    trig, s = _trigger(mgr, tmp_path)
+    s.max_event_trades_per_day = 1
+    trig.source = FixtureSource([
+        _truth_event("1", "buy a Dell"),
+        _truth_event("2", "buy some Acme"),
+    ])
+    res = trig.run(dry_run=False, resolver=_resolver({
+        "Dell": ("DELL", True, 0.9), "Acme": ("ACME", True, 0.9),
+    }))
+    # Only the first should fill; the cap stops the second.
+    assert len(res["executed"]) == 1
+    assert any("daily event cap" in s.get("reason", "") for s in res["skipped"])
+
+
+def test_dry_run_does_not_pollute_ledger(tmp_path):
+    mgr = StubMgr()
+    trig, _ = _trigger(mgr, tmp_path)
+    trig.source = FixtureSource([_truth_event("1", "buy a Dell")])
+    trig.run(dry_run=True, resolver=_resolver({"Dell": ("DELL", True, 0.9)}))
+    # Ledger must stay empty after a dry run so the first live session isn't throttled.
+    assert trig._load_trades() == []
+
+
 def test_no_resolver_skips_untickered(tmp_path):
     mgr = StubMgr()
     trig, _ = _trigger(mgr, tmp_path)

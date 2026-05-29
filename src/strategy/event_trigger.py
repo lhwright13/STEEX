@@ -211,9 +211,12 @@ class EventTrigger:
             # Execute (reuses broker.buy + server stop inside execute_entries).
             executed = self.mgr.execute_entries([actionable], dry_run=dry_run, auto_confirm=True)
             if executed:
-                trades.append({"ticker": ticker, "ts": now.isoformat(),
-                               "headline": ev.headline, "dry_run": dry_run})
                 result["executed"].append(actionable)
+                # Only real fills go in the cooldown/daily-cap ledger — recording
+                # dry-run "trades" would wrongly throttle the first live session.
+                if not dry_run:
+                    trades.append({"ticker": ticker, "ts": now.isoformat(),
+                                   "headline": ev.headline})
 
         self._save_trades(trades)
         return result
