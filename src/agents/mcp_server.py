@@ -629,7 +629,9 @@ def get_regime_screening_params() -> str:
             "error": "Call get_regime first to populate regime data"
         })
 
-    regime_name = _regime.get("regime_name", "unknown")
+    # Manager.get_regime() returns dict with "name"/"confidence" keys
+    # (legacy code here previously looked for "regime_name"/"regime_confidence").
+    regime_name = _regime.get("name") or _regime.get("regime_name", "unknown")
     if regime_name not in REGIME_PARAMS:
         return _safe_json({
             "error": f"Unknown regime: {regime_name}",
@@ -639,7 +641,7 @@ def get_regime_screening_params() -> str:
     params = REGIME_PARAMS[regime_name]
     return _safe_json({
         "regime": regime_name,
-        "regime_confidence": _regime.get("regime_confidence", 0),
+        "regime_confidence": _regime.get("confidence", _regime.get("regime_confidence", 0)),
         "rationale": params.get("rationale", ""),
         "param_overrides": {k: v for k, v in params.items() if k != "rationale"},
     })

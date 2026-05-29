@@ -38,6 +38,24 @@ from ..regime.detector import RegimeDetector, MacroRegime
 console = Console()
 
 
+def _normalize_date_key(raw: Optional[str]) -> Optional[str]:
+    """Coerce a filing/transaction date string to canonical YYYY-MM-DD.
+
+    The insider cache historically mixed YYYYMMDD and YYYY-MM-DD keys (plus a
+    few garbage values like '4'), which silently broke the loader's lex-compare
+    lookback filter. Normalize on write so future lookbacks behave.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    s = raw.strip()[:10]
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
 class QuantManager:
     """Automated trading orchestrator.
 
@@ -254,9 +272,13 @@ class QuantManager:
 
         dates = existing.get("dates", {})
 
-        # Convert transactions to cache format, grouped by filing_date
+        # Convert transactions to cache format, grouped by filing_date.
+        # Normalize date_key to ISO (YYYY-MM-DD) so the loader's lex-compare
+        # against an ISO cutoff actually filters by date instead of silently
+        # passing every YYYYMMDD key through.
         for tx in transactions:
-            date_key = tx.filing_date or tx.transaction_date
+            raw = tx.filing_date or tx.transaction_date
+            date_key = _normalize_date_key(raw)
             if not date_key:
                 continue
             if date_key not in dates:
@@ -289,9 +311,17 @@ class QuantManager:
             if not is_dup:
                 dates[date_key].append(entry)
 
-        # Prune dates older than 90 days
+        # Prune dates older than 90 days. Normalize legacy keys first so the
+        # lex-compare against the ISO cutoff is correct, and drop unparseable
+        # garbage keys (we have historical entries like '4' in the cache).
+        normalized: Dict[str, list] = {}
+        for d, txs in dates.items():
+            nd = _normalize_date_key(d)
+            if not nd:
+                continue
+            normalized.setdefault(nd, []).extend(txs)
         cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-        dates = {d: txs for d, txs in dates.items() if d >= cutoff}
+        dates = {d: txs for d, txs in normalized.items() if d >= cutoff}
 
         existing["dates"] = dates
         existing["last_updated"] = datetime.now().isoformat()

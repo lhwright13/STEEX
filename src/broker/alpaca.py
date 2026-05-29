@@ -167,12 +167,22 @@ class AlpacaBroker(Broker):
             return OrderResult(status="failed", error=error_str)
 
     def cancel_stop_for_ticker(self, ticker: str) -> bool:
-        """Cancel the active GTC stop order for a ticker."""
-        stop = self.get_stop_order(ticker)
-        if stop is None:
+        """Cancel any open sell-side stop order (STOP or TRAILING_STOP) for a ticker.
+
+        Previously this only cancelled `OrderType.STOP` orders, so when a
+        trailing-stop order was already holding the position's qty, the
+        follow-up `place_stop_order` would be rejected by Alpaca with
+        `insufficient qty available - held_for_orders == existing_qty`.
+        """
+        stops = self._get_open_sell_stops(ticker)
+        if not stops:
             logger.debug("No active stop order found for %s", ticker)
             return True
-        return self.cancel_order(stop["order_id"])
+        ok = True
+        for s in stops:
+            if not self.cancel_order(s["order_id"]):
+                ok = False
+        return ok
 
     def update_stop_order(
         self, ticker: str, qty: int, new_stop_price: float
@@ -181,8 +191,9 @@ class AlpacaBroker(Broker):
         self.cancel_stop_for_ticker(ticker)
         return self.place_stop_order(ticker, qty, new_stop_price)
 
-    def get_stop_order(self, ticker: str) -> Optional[Dict]:
-        """Find the open GTC stop sell order for a symbol."""
+    def _get_open_sell_stops(self, ticker: str) -> List[Dict]:
+        """Return all open GTC sell-side stop orders (STOP + TRAILING_STOP) for a ticker."""
+        out: List[Dict] = []
         try:
             request = GetOrdersRequest(
                 status=QueryOrderStatus.OPEN,
@@ -190,41 +201,62 @@ class AlpacaBroker(Broker):
             )
             orders = self.client.get_orders(filter=request)
             for order in orders:
-                if (
-                    order.order_type == OrderType.STOP
-                    and order.side == OrderSide.SELL
-                    and order.time_in_force == TimeInForce.GTC
-                ):
-                    return {
-                        "order_id": str(order.id),
-                        "ticker": order.symbol,
-                        "qty": float(order.qty),
-                        "stop_price": float(order.stop_price),
-                        "status": order.status.value,
-                    }
+                if order.side != OrderSide.SELL or order.time_in_force != TimeInForce.GTC:
+                    continue
+                if order.order_type not in (OrderType.STOP, OrderType.TRAILING_STOP):
+                    continue
+                stop_price = float(order.stop_price) if order.stop_price else None
+                out.append({
+                    "order_id": str(order.id),
+                    "ticker": order.symbol,
+                    "qty": float(order.qty),
+                    "stop_price": stop_price,
+                    "order_type": order.order_type.value,
+                    "status": order.status.value,
+                })
         except APIError as e:
-            logger.error("Failed to get stop order for %s: %s", ticker, e)
-        return None
+            logger.error("Failed to get stop orders for %s: %s", ticker, e)
+        return out
+
+    def get_stop_order(self, ticker: str) -> Optional[Dict]:
+        """Find the open GTC stop sell order for a symbol.
+
+        Prefers a fixed-price STOP; falls back to a TRAILING_STOP if that's
+        all that exists. Returning either lets callers see that the position
+        is protected.
+        """
+        stops = self._get_open_sell_stops(ticker)
+        if not stops:
+            return None
+        for s in stops:
+            if s["order_type"] == OrderType.STOP.value:
+                return s
+        return stops[0]
 
     def get_all_stop_orders(self) -> List[Dict]:
-        """List all open GTC stop sell orders."""
+        """List all open GTC sell-side stop orders (STOP + TRAILING_STOP).
+
+        The heartbeat health check uses this to flag positions missing a
+        protective stop; if we ignore trailing stops, every trailing-stopped
+        position falsely appears unprotected.
+        """
         try:
             request = GetOrdersRequest(status=QueryOrderStatus.OPEN)
             orders = self.client.get_orders(filter=request)
             stops = []
             for order in orders:
-                if (
-                    order.order_type == OrderType.STOP
-                    and order.side == OrderSide.SELL
-                    and order.time_in_force == TimeInForce.GTC
-                ):
-                    stops.append({
-                        "order_id": str(order.id),
-                        "ticker": order.symbol,
-                        "qty": float(order.qty),
-                        "stop_price": float(order.stop_price),
-                        "status": order.status.value,
-                    })
+                if order.side != OrderSide.SELL or order.time_in_force != TimeInForce.GTC:
+                    continue
+                if order.order_type not in (OrderType.STOP, OrderType.TRAILING_STOP):
+                    continue
+                stops.append({
+                    "order_id": str(order.id),
+                    "ticker": order.symbol,
+                    "qty": float(order.qty),
+                    "stop_price": float(order.stop_price) if order.stop_price else None,
+                    "order_type": order.order_type.value,
+                    "status": order.status.value,
+                })
             return stops
         except APIError as e:
             logger.error("Failed to list stop orders: %s", e)

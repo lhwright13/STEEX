@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Understanding STEEX</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/common.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css" />
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1d212b; --border: #2a2f3a;
+    --text: #d7dbe2; --muted: #8b93a1; --accent: #5b9bf3; --accent2: #7ee3c0;
+    --code-bg: #11151c; --sidebar-w: 280px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Layout */
+  .wrap { display: flex; min-height: 100vh; }
+  nav.side {
+    width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+    background: var(--panel); border-right: 1px solid var(--border);
+    position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 18px;
+  }
+  nav.side h1 { font-size: 18px; margin: 0 0 4px; color: #fff; }
+  nav.side .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 22px; }
+  nav.side .navgroup { margin-bottom: 6px; }
+  nav.side a.doc {
+    display: block; padding: 8px 12px; border-radius: 8px; color: var(--text);
+    font-weight: 600; font-size: 14.5px;
+  }
+  nav.side a.doc:hover { background: var(--panel2); text-decoration: none; }
+  nav.side a.doc.active { background: var(--accent); color: #fff; }
+  nav.side .toc { margin: 2px 0 10px 8px; border-left: 1px solid var(--border); }
+  nav.side .toc a {
+    display: block; padding: 4px 12px; font-size: 13px; color: var(--muted);
+  }
+  nav.side .toc a:hover { color: var(--text); text-decoration: none; }
+
+  main { flex: 1 1 auto; max-width: 920px; margin: 0 auto; padding: 48px 56px 120px; }
+  section.doc { display: none; }
+  section.doc.active { display: block; animation: fade .18s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px);} to {opacity:1;transform:none;} }
+
+  h1.title { font-size: 30px; margin: 0 0 6px; color: #fff; letter-spacing: -0.3px; }
+  h2 { font-size: 22px; margin: 38px 0 12px; color: #fff; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 17px; margin: 26px 0 8px; color: var(--accent2); }
+  h4 { font-size: 15px; margin: 20px 0 6px; color: #fff; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 24px; }
+  li { margin: 5px 0; }
+  blockquote {
+    margin: 14px 0; padding: 10px 16px; background: var(--panel2);
+    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; color: var(--text);
+  }
+  blockquote p { margin: 4px 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 30px 0; }
+
+  code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  :not(pre) > code { background: var(--panel2); padding: 2px 6px; border-radius: 5px; color: var(--accent2); }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; overflow-x: auto; margin: 14px 0; font-size: 13px; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); color: #fff; }
+  tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+
+  .mermaid { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin: 16px 0; text-align: center; }
+
+  .lead { color: var(--muted); font-size: 16px; }
+  .pill { display:inline-block; background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:2px 10px; font-size:12px; color:var(--muted); margin-right:6px; }
+  .note { font-size: 13px; color: var(--muted); }
+
+  @media (max-width: 880px) {
+    .wrap { flex-direction: column; }
+    nav.side { width: 100%; height: auto; position: static; }
+    main { padding: 28px 20px 80px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="side">
+    <h1>Understanding STEEX</h1>
+    <div class="sub">Multi-agent trading system — how it works &amp; how to improve it</div>
+
+    <div class="navgroup">
+      <a class="doc" data-target="d0">Overview</a>
+    </div>
+    <div class="navgroup">
+      <a class="doc" data-target="d1">1 · LangGraph</a>
+      <div class="toc" data-for="d1"></div>
+    </div>
+    <div class="navgroup">
+      <a class="doc" data-target="d2">2 · Evaluation</a>
+      <div class="toc" data-for="d2"></div>
+    </div>
+    <div class="navgroup">
+      <a class="doc" data-target="d3">3 · Memory</a>
+      <div class="toc" data-for="d3"></div>
+    </div>
+    <div class="navgroup">
+      <a class="doc" data-target="d4">4 · Orchestration</a>
+      <div class="toc" data-for="d4"></div>
+    </div>
+    <div class="navgroup">
+      <a class="doc" data-target="d5">5 · Cron, Tools &amp; MCP</a>
+      <div class="toc" data-for="d5"></div>
+    </div>
+  </nav>
+
+  <main>
+    <!-- ===================== OVERVIEW ===================== -->
+    <section class="doc" id="d0">
+      <h1 class="title">Understanding STEEX</h1>
+      <p class="lead">Explainers for how the STEEX multi-agent trading system works, plus proposals for improving it. Written against branch <code>fix/langgraph-parallel-traces</code>.</p>
+
+      <h2 id="d0-model">The one-paragraph mental model</h2>
+      <p>A cron job fires <code>scheduler/run.sh</code>, which (after market/lock gates) calls <code>run_manager.py</code>, which builds a <strong>LangGraph</strong> graph from <code>config/agents.yaml</code> for the requested mode. LangGraph orchestrates the flow <em>between</em> agents — running prep agents sequentially, fanning out three analysis variants in parallel, merging them via a meta-agent, and handing everything to a supervisor <code>manager</code> that makes the final trade decision. Each agent is itself a <strong>Claude CLI subprocess</strong> running its own tool-use loop, where every tool is delivered over <strong>MCP</strong> by our <code>steex</code> server (wrapping the real trading code). If a critical agent fails, the graph falls back to deterministic rules-based logic. Results are traced to <code>data/agents/sessions/</code>, surfaced on a dashboard, and a weekly <strong>learning loop</strong> post-mortems the trades and re-tunes the scoring weights.</p>
+
+      <h2 id="d0-flow">Whole-system flow</h2>
+      <div class="mermaid">
+flowchart TB
+  cron([cron]) --> sh[scheduler/run.sh]
+  sh --> gate{market &amp; lock<br/>gates}
+  gate -->|skip| done1([exit])
+  gate -->|ok| rm[run_manager.py]
+  rm --> orch[Orchestrator.run_mode]
+  orch --> bg[build_graph from agents.yaml]
+  bg --> gi[graph.invoke]
+  gi --> agents[per-agent nodes<br/>= claude CLI subprocess]
+  agents --> mcp[(MCP tools<br/>steex server)]
+  gi --> trace[(data/agents/sessions)]
+  trace --> dash[dashboard]
+  trace -.weekly.-> learn[learning loop<br/>re-tunes weights]
+      </div>
+
+      <h2 id="d0-docs">The documents</h2>
+      <table>
+        <tr><th>#</th><th>Doc</th><th>Covers</th></tr>
+        <tr><td>1</td><td><a data-jump="d1">LangGraph</a></td><td>Integration, state object, graph syntax, adding a new agent.</td></tr>
+        <tr><td>2</td><td><a data-jump="d2">Evaluation</a></td><td>Current scoring + learning loop, the agent-eval gap, proposed metrics &amp; observability tie-in.</td></tr>
+        <tr><td>3</td><td><a data-jump="d3">Memory</a></td><td>What persists today, staged plan for persistent shared context.</td></tr>
+        <tr><td>4</td><td><a data-jump="d4">Orchestration</a></td><td>The supervisor + ensemble + fallback pattern, why, and alternatives.</td></tr>
+        <tr><td>5</td><td><a data-jump="d5">Cron, Tools &amp; MCP</a></td><td>Cron flow, reasoning loop, tool impl, MCP, adding a tool, tool vs skill vs MCP.</td></tr>
+      </table>
+      <p class="note">This page is a self-contained snapshot. The canonical source is the matching <code>.md</code> files in this folder; if you edit those, regenerate or update this page too.</p>
+    </section>
+
+    <!-- ===================== DOC 1 ===================== -->
+    <section class="doc" id="d1">
+      <h1 class="title">1 · How We Use LangGraph</h1>
+      <p class="lead">How LangGraph is wired into STEEX, the core syntax, and how to add a new agent.</p>
+
+      <h2 id="d1-1">1.1 What LangGraph does for us</h2>
+      <p>LangGraph builds <strong>stateful, graph-structured agent workflows</strong>. Instead of a hard-coded <code>for</code> loop calling agents in sequence (what STEEX used before commit <code>105e5df</code>), we describe the pipeline as a <strong>directed graph of nodes and edges</strong> and let LangGraph drive execution — including parallel nodes and result merging.</p>
+      <table>
+        <tr><th>Concept</th><th>In STEEX</th><th>Where</th></tr>
+        <tr><td><strong>State</strong></td><td><code>PipelineState</code> TypedDict that flows through the run; each node returns a partial update.</td><td>src/agents/state.py</td></tr>
+        <tr><td><strong>Graph</strong></td><td><code>StateGraph</code> built dynamically from the mode config.</td><td>src/agents/graph.py</td></tr>
+        <tr><td><strong>Nodes</strong></td><td>Functions that call a sub-agent and return its conclusion + trace.</td><td>src/agents/nodes.py</td></tr>
+      </table>
+      <blockquote><p><strong>Important nuance:</strong> the individual agents are <strong>not</strong> LangChain/LangGraph LLM objects. Each agent node shells out to the <code>claude</code> CLI as a subprocess. LangGraph orchestrates the <em>flow between</em> agents; the Claude CLI runs the <em>agentic loop inside</em> each agent. Deliberate — each agent gets the full Claude Code tool-use loop with MCP, while LangGraph handles fan-out/fan-in and conditional routing.</p></blockquote>
+
+      <h2 id="d1-2">1.2 The state object</h2>
+      <pre><code class="language-python">class PipelineState(TypedDict):
+    mode: str
+    task_context: str
+    today: str
+    run_id: str
+    conclusions: dict[str, dict]                       # name -> agent conclusion
+    variant_conclusions: Annotated[list[dict], add]    # parallel writes
+    traces: Annotated[list[dict], add]                 # parallel writes
+    manager_decision: Optional[dict]
+    screen_data: Optional[dict]
+    abort: bool
+    abort_reason: Optional[str]</code></pre>
+      <p>Each node returns a <strong>partial dict</strong>; LangGraph merges it into state. Most keys overwrite — but <code>variant_conclusions</code> and <code>traces</code> use the <code>add</code> reducer.</p>
+      <h3 id="d1-reducer">The <code>Annotated[list, add]</code> reducer (the thing that broke and got fixed)</h3>
+      <p>When three variants run <strong>in parallel in the same superstep</strong>, they all write <code>traces</code> at once. A normal channel raises <code>InvalidUpdateError</code> on the second concurrent write. The <code>add</code> reducer <strong>concatenates</strong> instead of overwriting.</p>
+      <blockquote><p><strong>Rule for node authors:</strong> a parallel node returns <em>only its own new entry</em> — <code>return {"traces": [my_trace]}</code> — never the accumulated list, or entries duplicate. This was the root cause fixed in commit <code>cffe950</code>.</p></blockquote>
+
+      <h2 id="d1-3">1.3 How the graph is built</h2>
+      <p><code>build_graph()</code> constructs the graph at runtime from the <code>ModeConfig</code> for the running mode.</p>
+      <h4>Core syntax we use</h4>
+      <pre><code class="language-python">from langgraph.graph import StateGraph, END
+from langgraph.types import Send
+
+graph = StateGraph(PipelineState)            # graph typed over our state
+graph.add_node("risk", risk_node_fn)         # register a node
+graph.add_edge("data", "risk")               # unconditional edge
+graph.set_entry_point("data")                # where execution starts
+
+graph.add_conditional_edges(                 # router fn -> destination
+    "risk", route_after_agent,
+    {"continue": "fan_out", "fallback": "fallback"},
+)
+graph.add_edge("report", END)                # terminal edge</code></pre>
+      <h4>Fan-out / fan-in (the parallel variants)</h4>
+      <pre><code class="language-python"># fan-out node returns a list of Send objects -> run concurrently
+def node(state):
+    return [Send(agent_name, state) for agent_name in parallel_agents]</code></pre>
+      <p>All variants write into <code>variant_conclusions</code> (via the reducer). <code>merge_variants</code> runs after all complete (fan-in) and asks the <code>meta_analysis</code> agent to synthesize consensus.</p>
+
+      <h2 id="d1-4">1.4 The graph for <code>screen</code> mode</h2>
+      <div class="mermaid">
+flowchart LR
+  data --> risk
+  risk -->|ok| fan_out
+  risk -->|critical fail| fallback
+  fan_out --> c[analysis_conservative]
+  fan_out --> a[analysis_aggressive]
+  fan_out --> m[analysis_momentum]
+  c --> merge[merge_variants<br/>meta_analysis]
+  a --> merge
+  m --> merge
+  merge --> manager
+  manager --> save[save_screen]
+  save --> report --> EN([END])
+  fallback --> EN
+      </div>
+      <ul>
+        <li><strong>data → risk</strong>: sequential sub-agents.</li>
+        <li><strong>risk is critical</strong>: on failure, routes to deterministic <code>fallback</code>.</li>
+        <li><strong>fan_out</strong>: emits three <code>Send</code>s → variants run in parallel.</li>
+        <li><strong>merge_variants</strong>: fan-in; runs the meta-agent over all variant conclusions.</li>
+        <li><strong>manager</strong>: synthesizes the final decision; post-actions run at the end.</li>
+      </ul>
+
+      <h2 id="d1-5">1.5 How a node runs an agent</h2>
+      <pre><code class="language-python">cmd = [
+    claude_bin,
+    "-p", f"{system_prompt}\n\n---\n\n{task_message}",
+    "--output-format", "json",
+    "--max-turns", str(max_turns),
+]
+if needs_tools:
+    cmd.extend(["--mcp-config", get_mcp_config(ctx)])
+    tool_perms = [f"mcp__steex__{t}" for t in allowed_tools] or ["mcp__steex__*"]
+    cmd.extend(["--allowedTools", ",".join(tool_perms)])</code></pre>
+      <p>So the full chain is <strong>LangGraph node → Claude CLI subprocess → MCP tools</strong>.</p>
+
+      <h2 id="d1-6">1.6 Adding a new agent — step by step</h2>
+      <p>The system is <strong>declarative</strong>: agents are defined in YAML, not code. Four places.</p>
+      <h4>Step 1 — define it in <code>config/agents.yaml</code></h4>
+      <pre><code class="language-yaml">agents:
+  sentiment_scout:
+    prompt: "sentiment_scout"
+    conclusion: "SentimentConclusion"
+    max_turns: 12
+    needs_tools: true
+    allowed_tools:
+      - get_signal_confidence
+      - run_screening_variant
+    external_servers: [alphavantage]</code></pre>
+      <h4>Step 2 — add its conclusion model in <code>src/agents/conclusions.py</code></h4>
+      <pre><code class="language-python">class SentimentConclusion(BaseModel):
+    bullish_tickers: List[str]
+    bearish_tickers: List[str]
+    market_mood: str
+    reasoning: str</code></pre>
+      <h4>Step 3 — write the prompt</h4>
+      <p>Disk override <code>data/agents/prompts/sentiment_scout.md</code> (preferred for iteration), or code default <code>src/agents/prompts/sentiment_scout.py</code> exporting <code>SENTIMENT_SCOUT_AGENT_PROMPT</code>. Instruct it to output JSON matching the model.</p>
+      <h4>Step 4 — wire it into a mode</h4>
+      <pre><code class="language-yaml">modes:
+  screen:
+    sub_agents: [data, risk, sentiment_scout]   # runs after risk, before fan_out
+    parallel_agents: [analysis_conservative, analysis_aggressive, analysis_momentum]</code></pre>
+      <p><strong>No graph code changes needed</strong> — <code>build_graph()</code> wires it from config. Add it to <code>critical_agents</code> if its failure should abort the run.</p>
+
+      <h2 id="d1-7">1.7 Gotchas</h2>
+      <ul>
+        <li>State must be JSON-serializable (also what LangSmith would trace). Conclusions stored as <code>.model_dump()</code> dicts.</li>
+        <li>Parallel nodes return only their own slice of <code>variant_conclusions</code>/<code>traces</code>.</li>
+        <li><code>max_turns</code> is per-agent (caps the Claude tool-use loop, not the graph).</li>
+        <li>A failed critical agent routes the whole run to the deterministic fallback.</li>
+        <li>The graph is rebuilt every run from config — change <code>agents.yaml</code>, no redeploy.</li>
+      </ul>
+    </section>
+
+    <!-- ===================== DOC 2 ===================== -->
+    <section class="doc" id="d2">
+      <h1 class="title">2 · Evaluation — Current State &amp; Upgrades</h1>
+      <p class="lead">Two notions of "evaluation" are easy to conflate here.</p>
+      <ol>
+        <li><strong>Strategy evaluation</strong> — <em>is the strategy making money?</em> Backtests, post-mortems, the learning loop. Mature.</li>
+        <li><strong>Agent evaluation</strong> — <em>are the agents behaving well?</em> Largely <strong>absent</strong> today — the biggest opportunity.</li>
+      </ol>
+
+      <h2 id="d2-1">2.1 Current strategy evaluation</h2>
+      <h3>Composite score</h3>
+      <pre><code class="language-python">score = (w_momentum  * momentum_score
+       + w_insider    * insider_score
+       + w_volume     * volume_score
+       + w_sentiment  * sentiment_score
+       + w_fundamental* fundamental_score
+       + w_options    * options_score)</code></pre>
+      <p>Weights (after <code>cffe950</code>) sum to exactly 1.0:</p>
+      <table>
+        <tr><th>Weight</th><th>Value</th></tr>
+        <tr><td>momentum</td><td>0.2804</td></tr>
+        <tr><td>insider</td><td>0.2336</td></tr>
+        <tr><td>volume</td><td>0.1402</td></tr>
+        <tr><td>sentiment</td><td>0.1402</td></tr>
+        <tr><td>fundamental</td><td>0.0935</td></tr>
+        <tr><td>options</td><td>0.1121</td></tr>
+      </table>
+      <h3>The weekly learning loop (the real eval engine)</h3>
+      <div class="mermaid">
+flowchart TB
+  p1[1. Post-mortem<br/>classify losses, score↔return corr] --> p2[2. Alpha decay<br/>per-signal hit rate]
+  p2 --> p3{degrading or<br/>corr &lt; 0.10?}
+  p3 -->|yes| p4[3. Signal research<br/>IC, t-tests, redundancy]
+  p3 -->|no| p6
+  p4 --> p5{OOS Sharpe &gt; 0<br/>&amp; win &gt; 50%?}
+  p5 -->|yes| p5a[4. Apply config<br/>cap 10%, renormalize]
+  p5 -->|no| p6
+  p5a --> p6[6. Gap identification<br/>flag for human]
+      </div>
+
+      <h3>Where results are stored</h3>
+      <table>
+        <tr><th>File</th><th>Contents</th></tr>
+        <tr><td>learning_journal.json</td><td>Log of every learning action</td></tr>
+        <tr><td>weight_recommendations.json</td><td>Latest proposed weights + OOS</td></tr>
+        <tr><td>config_history.json</td><td>Audit trail of applied changes</td></tr>
+        <tr><td>gaps.json</td><td>Unresolved gaps for human review</td></tr>
+        <tr><td>data/agents/sessions/*.json</td><td>Per-run agent traces</td></tr>
+      </table>
+
+      <h2 id="d2-2">2.2 The gap: we don't evaluate the agents</h2>
+      <p>An agent run is "successful" if the subprocess exits 0 and output parses. That's a <strong>liveness check, not a quality check.</strong> No systematic answer to: did it call the right tools in order? Are variants actually diverse? Did the manager hallucinate a ticker no agent proposed? How often does each agent fall back? Are prompts improving after evolution?</p>
+
+      <h2 id="d2-3">2.3 Proposed evaluation process</h2>
+      <h4>Layer 1 — per-run automatic assertions (cheap, every run, no LLM)</h4>
+      <table>
+        <tr><th>Check</th><th>Signal</th></tr>
+        <tr><td>Conclusion schema valid (record as metric)</td><td>—</td></tr>
+        <tr><td>Required tool called first (e.g. <code>sync_broker</code>)</td><td>Prompt adherence</td></tr>
+        <tr><td>Manager buys ⊆ union of variant candidates</td><td>Grounding (no hallucinated tickers)</td></tr>
+        <tr><td>Variant diversity (Jaccard overlap)</td><td>Are variants different?</td></tr>
+        <tr><td>Turn count vs cap</td><td>Agent struggled?</td></tr>
+        <tr><td>Latency vs baseline / tool error rate</td><td>Regression / health</td></tr>
+      </table>
+      <h4>Layer 2 — LLM-as-judge (periodic)</h4>
+      <p>Separate Claude call with a rubric: <strong>groundedness</strong>, <strong>decision quality</strong>, <strong>instruction adherence</strong> (1–5). Store alongside the trace.</p>
+      <h4>Layer 3 — golden-set regression suite (on every prompt change)</h4>
+      <p>~20–30 frozen scenarios with expected behaviors. Replay whenever a prompt is edited or evolved — catches regressions before production. Critical since <code>evolve_prompts</code> can auto-rewrite prompts.</p>
+      <h4>Layer 4 — outcome attribution</h4>
+      <p>Tag each executed trade with the agent/variant that produced it, so the post-mortem can say which <em>variant</em> performed best. No such link exists today.</p>
+
+      <h2 id="d2-4">2.4 Relation to observability</h2>
+      <p>Evaluation and observability are two views of the same trace data. <strong>Observability</strong> = "what happened" (the dashboard). <strong>Evaluation</strong> = "was it good" (scores derived from the same traces). Practical upgrade: compute Layer-1 metrics in trace post-processing and store them in <code>dashboard.db</code>, so the dashboard shows <em>trend lines</em> (fallback rate, judge score, diversity) rather than just the latest snapshot. Longer term, <strong>LangSmith</strong> gives proper trace trees + dataset evals; state is already JSON-serializable for it.</p>
+    </section>
+
+    <!-- ===================== DOC 3 ===================== -->
+    <section class="doc" id="d3">
+      <h1 class="title">3 · Memory Strategies</h1>
+      <p class="lead">What persists today, and how to build persistent context that survives across sessions and is shared across agents.</p>
+
+      <h2 id="d3-1">3.1 What we have today</h2>
+      <p>Memory exists but is a patchwork of files with different lifetimes and no shared "what do we know" layer agents read at run start.</p>
+      <table>
+        <tr><th>Tier</th><th>What</th><th>Lifetime</th></tr>
+        <tr><td>1 · In-run state</td><td><code>PipelineState</code> + MCP module globals</td><td>Ephemeral (discarded at run end)</td></tr>
+        <tr><td>2 · Per-run traces</td><td><code>data/agents/sessions/*.json</code></td><td>30 days; <em>write-only</em> — agents don't read past runs</td></tr>
+        <tr><td>3 · Domain state</td><td>positions/trades/screen_results, cache.db</td><td>Indefinite</td></tr>
+        <tr><td>4 · Learning knowledge</td><td>learning_journal / config_history / gaps</td><td>Indefinite</td></tr>
+        <tr><td>5 · Prompt memory</td><td>evolved prompts (<code>evolution_enabled: false</code>)</td><td>Disabled</td></tr>
+      </table>
+      <blockquote><p><strong>There is no LangGraph checkpointer.</strong> <code>graph.compile()</code> is called with no <code>checkpointer=</code>, so LangGraph persists nothing between runs.</p></blockquote>
+      <table>
+        <tr><th>Boundary</th><th>Carries over</th><th>Mechanism</th></tr>
+        <tr><td>tool → tool (same agent)</td><td>intermediate results</td><td>MCP module globals</td></tr>
+        <tr><td>agent → agent (same run)</td><td>conclusions</td><td><code>PipelineState.conclusions</code></td></tr>
+        <tr><td>screen → enter run</td><td>the buy list</td><td><code>screen_results/latest.json</code></td></tr>
+        <tr><td>run → run (general)</td><td><strong>nothing</strong></td><td>—</td></tr>
+      </table>
+      <p>The big hole: <strong>agents start every run with a blank slate.</strong></p>
+
+      <h2 id="d3-2">3.2 Goal: persistent, shared context</h2>
+      <h3>Option A — turn on LangGraph checkpointing (lowest effort, biggest immediate win)</h3>
+      <pre><code class="language-python">from langgraph.checkpoint.sqlite import SqliteSaver
+checkpointer = SqliteSaver.from_conn_string("data/checkpoints.db")
+graph = build_graph(...).compile(checkpointer=checkpointer)
+final_state = graph.invoke(initial_state,
+    config={"configurable": {"thread_id": f"{mode}-{today}"}})</code></pre>
+      <p>Gives resumable runs, cross-run threads, and time-travel debugging.</p>
+      <h3>Option B — shared memory store as MCP tools (best for cross-agent semantic memory)</h3>
+      <pre><code class="language-python">@mcp.tool()
+def recall_memory(topic: str, limit: int = 5) -> str:
+    """Retrieve relevant learned facts. Call at the start of reasoning."""
+    return _safe_json(memory_store.search(topic, limit))
+
+@mcp.tool()
+def remember(fact: str, kind: str, tickers: list[str] | None = None) -> str:
+    """Persist a durable observation for future runs and other agents."""
+    memory_store.add(fact=fact, kind=kind, tickers=tickers, ts=now())
+    return _safe_json({"stored": True})</code></pre>
+      <p>Back with SQLite (structured/auditable) + optional vector index for semantic recall. LangGraph's <code>Store</code> abstraction also fits.</p>
+      <h3>Option C — pre-run "context brief" node (cheap glue, high leverage)</h3>
+      <p>A front node assembling a compact brief from existing artifacts (recent sessions, open gaps, recent config changes, current regime) into <code>task_context</code>. No new storage; just stop discarding what we already write.</p>
+
+      <h2 id="d3-3">3.3 Recommended path</h2>
+      <ol>
+        <li><strong>Now:</strong> Option C (context brief) — immediate, no new infra.</li>
+        <li><strong>Next:</strong> Option A (SQLite checkpointer) — resumability + run-to-run threads.</li>
+        <li><strong>Then:</strong> Option B (MCP memory tools, vector-backed) — true shared semantic memory, with writes visible in traces.</li>
+      </ol>
+      <p class="note">Design notes: make memory writes appear in traces (auditable/evaluable); scope by kind; set TTL/decay (markets change); let the weekly learning loop curate — promote transient observations, expire stale ones.</p>
+    </section>
+
+    <!-- ===================== DOC 4 ===================== -->
+    <section class="doc" id="d4">
+      <h1 class="title">4 · Multi-Agent Orchestration Pattern</h1>
+      <p class="lead">The pattern, why it was chosen, and alternatives worth considering.</p>
+
+      <h2 id="d4-1">4.1 Current pattern: Supervisor + Parallel Fan-out/Fan-in + deterministic fallback</h2>
+      <p>A deliberate <strong>hybrid</strong>, expressed declaratively in <code>agents.yaml</code> and assembled by <code>build_graph()</code>.</p>
+      <ol>
+        <li><strong>Sequential sub-agents</strong> — prep runs in order (<code>data</code> → <code>risk</code>).</li>
+        <li><strong>Parallel fan-out/fan-in</strong> — three analysis variants (conservative, aggressive, momentum) run concurrently; a meta-agent synthesizes.</li>
+        <li><strong>Supervisor / manager</strong> — one accountable agent makes the final decision.</li>
+        <li><strong>Conditional execution gate</strong> — <code>execution</code> runs only if the manager approved trades.</li>
+        <li><strong>Critical-agent abort → deterministic fallback</strong> — the safety net that makes an LLM trading system tolerable.</li>
+      </ol>
+      <h3>The consensus mechanism (why three variants)</h3>
+      <p>The meta-agent looks for <strong>agreement</strong>, not averages: all 3 = high-conviction; 2 of 3 = consensus (included); 1 = speculative (excluded). It's an <strong>ensemble for robustness</strong> — three investing personalities voting.</p>
+      <div class="mermaid">
+flowchart LR
+  data --> risk
+  risk --> fan[fan_out]
+  risk -->|critical fail| fb[deterministic fallback]
+  fan --> v1[conservative]
+  fan --> v2[aggressive]
+  fan --> v3[momentum]
+  v1 --> mg[merge / meta]
+  v2 --> mg
+  v3 --> mg
+  mg --> man[manager · supervisor]
+  man -->|approved| ex[execution]
+  man -->|no| rep[report]
+  ex --> rep
+  fb --> EN([END])
+  rep --> EN
+      </div>
+
+      <h2 id="d4-2">4.2 Why this pattern</h2>
+      <p>It's a <strong>money-handling, autonomous, scheduled</strong> system:</p>
+      <ul>
+        <li><strong>Supervisor</strong> → one accountable decision-maker; only the manager can approve orders.</li>
+        <li><strong>Ensemble</strong> → counters LLM variance and single-strategy bias; a pick must survive disagreement.</li>
+        <li><strong>Parallel, not sequential</strong> variants → independent inputs, no priming.</li>
+        <li><strong>Deterministic fallback</strong> → non-negotiable for unattended autonomy; arguably the most important decision.</li>
+        <li><strong>Declarative topology</strong> → other modes reuse the machinery; a new mode is a YAML edit.</li>
+      </ul>
+      <p><strong>Supervisor for accountability, ensemble for robustness, fallback for safety.</strong></p>
+
+      <h2 id="d4-3">4.3 Alternatives</h2>
+      <table>
+        <tr><th>Pattern</th><th>Pro</th><th>Con / verdict</th></tr>
+        <tr><td>A · Hierarchical (team-of-teams)</td><td>Scales as agents multiply</td><td>More layers/latency; only if agent count grows a lot</td></tr>
+        <tr><td>B · Swarm / handoff</td><td>Flexible emergent routing</td><td>Hard to audit/bound; not for the trade path</td></tr>
+        <tr><td>C · Plan-and-execute</td><td>Adapts to novelty</td><td>Non-deterministic; pilot inside <code>learning</code> only</td></tr>
+        <tr><td>D · Debate / reflection</td><td>Better decisions, surfaces disagreement</td><td>More cost; needs the eval harness to prove it helps</td></tr>
+        <tr><td>E · Deterministic-by-default, LLM-on-exception</td><td>Big cost savings; agents focus where they matter</td><td>Needs an "is this ambiguous?" trigger; strong candidate</td></tr>
+      </table>
+
+      <h2 id="d4-4">4.4 Recommendation</h2>
+      <p>Keep the supervisor + ensemble + fallback core. Highest-value evolutions: <strong>(E)</strong> deterministic-by-default, then <strong>(D)</strong> a manager reflection pass (gated by the eval harness), then <strong>(C)</strong> plan-and-execute inside <code>learning</code> only. Hold off on (A) and (B) until task diversity demands them.</p>
+    </section>
+
+    <!-- ===================== DOC 5 ===================== -->
+    <section class="doc" id="d5">
+      <h1 class="title">5 · Cron Jobs, Tools &amp; MCP</h1>
+      <p class="lead">The scheduled-run flow, the agent reasoning loop, how tools are implemented, MCP, and tool vs skill vs MCP.</p>
+
+      <h2 id="d5-1">5.1 End-to-end cron flow</h2>
+      <p>Nothing about the orchestration is special to cron — cron just invokes the same entry points a human would.</p>
+      <div class="mermaid">
+flowchart TB
+  ct([crontab]) --> sh[scheduler/run.sh mode]
+  sh --> prof[source profile · API keys]
+  prof --> gate[market_gate.py]
+  gate -->|skip| ex0([exit 0])
+  gate -->|ok| lock[acquire lockfile]
+  lock --> start[ingest_run.py --start]
+  start --> route{mode}
+  route -->|heartbeat| hc[health_check.py]
+  route -->|learning| ll[run_learning.py · 6-phase]
+  route -->|other| rm[run_manager.py mode]
+  hc --> fin
+  ll --> fin
+  rm --> fin[ingest_run.py --finish]
+  fin --> prune[prune logs &gt; 30d]
+      </div>
+      <table>
+        <tr><th>Mode</th><th>Time (ET)</th><th>Purpose</th></tr>
+        <tr><td>heartbeat</td><td>7:00 AM</td><td>liveness/health</td></tr>
+        <tr><td>screen</td><td>8:15 AM</td><td>pre-open: build buy list (big ensemble run)</td></tr>
+        <tr><td>enter</td><td>9:45 AM</td><td>post-open: place approved entries</td></tr>
+        <tr><td>monitor</td><td>11:00 AM, 1:30 PM</td><td>midday: exits/risk</td></tr>
+        <tr><td>post_market</td><td>4:30 PM</td><td>EOD: exits + research + report</td></tr>
+        <tr><td>learning</td><td>Fri 6:00 PM</td><td>weekly self-optimization</td></tr>
+      </table>
+      <p class="note">Gates that keep cron safe: market gate (enter/monitor need market open; defaults to "run anyway" if Alpaca unreachable), lockfile (no overlapping runs), dashboard ingestion (start/finish → dashboard.db).</p>
+
+      <h2 id="d5-2">5.2 What an agent's reasoning loop looks like</h2>
+      <p>Each node calls <code>run_agent()</code>, launching the <code>claude</code> CLI as a subprocess. Inside, Claude runs its <strong>standard tool-use loop</strong>: read → call tool → receive result → reason → … → final answer, bounded by <code>--max-turns</code>. On finish, STEEX parses the JSON envelope, extracts tool calls into the trace, and validates the output against the agent's Pydantic conclusion model; failures write a <code>failures/*.log</code> and (for a critical agent) trigger the fallback.</p>
+      <div class="mermaid">
+flowchart LR
+  subgraph outer [LangGraph · agent → agent]
+    n1[node A] --> n2[node B]
+  end
+  subgraph inner [Claude CLI · tool → tool]
+    t1[reason] --> t2[call tool] --> t3[result] --> t1
+  end
+  n1 -.spawns.-> inner
+      </div>
+      <p>Two nested loops: LangGraph's outer graph and Claude's inner tool-use loop.</p>
+
+      <h2 id="d5-3">5.3 Tools and how they're implemented</h2>
+      <p>All STEEX tools live in one FastMCP server, <code>src/agents/mcp_server.py</code>. Each is a function decorated with <code>@mcp.tool()</code> wrapping a <code>QuantManager</code> method, returning JSON.</p>
+      <pre><code class="language-python">from mcp.server.fastmcp import FastMCP
+mcp = FastMCP("steex")
+
+@mcp.tool()
+def get_regime() -> str:
+    """Detect current market regime (risk_on / cautious / risk_off / crisis)."""
+    mgr = _init_manager()          # lazy-init on first call
+    _regime = mgr.get_regime()
+    return _safe_json(_regime)</code></pre>
+      <ul>
+        <li>Runs as a <strong>stdio subprocess</strong> started by the CLI (JSON-RPC over stdin/stdout → rich output goes to stderr).</li>
+        <li><strong>Lazy init</strong> — builds <code>QuantManager</code> only on the first tool call.</li>
+        <li><strong>Per-call config</strong> — <code>--paper</code>/<code>--dry-run</code> decide paper/live and simulated orders.</li>
+        <li><strong>~40 tools</strong>: data, risk, analysis, execution, research/learning, reporting.</li>
+        <li><strong>Per-agent allowlist</strong> restricts what each agent can touch (only <code>execution</code> places orders).</li>
+      </ul>
+      <p>External MCP servers add market data: <strong>alpaca</strong>, <strong>alphavantage</strong>, <strong>polygon</strong> — granted via <code>external_servers</code>.</p>
+
+      <h2 id="d5-4">5.4 What MCP is</h2>
+      <p><strong>MCP (Model Context Protocol)</strong> is an open standard connecting an LLM to external capabilities. A <strong>server</strong> advertises tools, resources, and prompts; a <strong>client</strong> (the Claude CLI) discovers them and routes tool calls. "USB-C for AI tools."</p>
+      <div class="mermaid">
+flowchart LR
+  cli[Claude CLI · MCP client] --> s1[(steex · 40 tools)]
+  cli --> s2[(alpaca · quotes/orders)]
+  cli --> s3[(alphavantage · indicators)]
+  cli --> s4[(polygon · aggregates/news)]
+      </div>
+      <p>The agent never imports our Python directly — it asks (via MCP) for <code>run_screening</code>, the CLI forwards it, our server runs the real pipeline and returns JSON. Keeps the LLM sandboxed behind an explicit, allowlisted interface — what you want when a "function" can place a real trade.</p>
+
+      <h2 id="d5-5">5.5 Worked example: adding a tool</h2>
+      <pre><code class="language-python">@mcp.tool()
+def get_sector_exposure() -> str:
+    """Return portfolio exposure by sector as a fraction of equity.
+    Use this to check concentration before approving new buys."""
+    mgr = _init_manager()
+    positions = mgr.position_manager.get_all_positions()
+    equity = mgr._get_portfolio_value()
+    by_sector = {}
+    for pos in positions:
+        sector = mgr.get_sector(pos.ticker)
+        by_sector[sector] = by_sector.get(sector, 0.0) + pos.market_value
+    weights = {s: round(v / equity, 4) for s, v in by_sector.items()}
+    top = max(weights, key=weights.get) if weights else None
+    return _safe_json({"by_sector": weights, "most_concentrated": top})</code></pre>
+      <pre><code class="language-yaml">risk:
+  allowed_tools:
+    - sync_broker
+    - get_regime
+    - assess_portfolio_risk
+    - get_sector_exposure      # &lt;-- new</code></pre>
+      <p>The docstring is what the model sees (write it for the model); the return must be JSON-serializable; the allowlist entry is what actually exposes it. Mention it in the agent's prompt so it knows when to use it.</p>
+
+      <h2 id="d5-6">5.6 Tool vs Skill vs MCP</h2>
+      <table>
+        <tr><th></th><th>Tool</th><th>Skill</th><th>MCP</th></tr>
+        <tr><td><strong>What</strong></td><td>A single callable function (name + description + schema)</td><td>A bundle of instructions/knowledge teaching <em>how</em> to do a task</td><td>A protocol/transport delivering tools (and resources/prompts)</td></tr>
+        <tr><td><strong>Granularity</strong></td><td>One action</td><td>A whole workflow</td><td>A connection exposing many tools</td></tr>
+        <tr><td><strong>In STEEX</strong></td><td><code>run_screening</code>, <code>execute_entries</code></td><td>The agent prompts (procedural know-how)</td><td>The <code>steex</code> server + alpaca/polygon/alphavantage</td></tr>
+        <tr><td><strong>Analogy</strong></td><td>A verb</td><td>A playbook</td><td>The plumbing delivering the verbs</td></tr>
+      </table>
+      <p>A <strong>tool</strong> is capability ("you can do X"). A <strong>skill</strong> is procedure ("how/when to do X well") — it may use tools but adds none. <strong>MCP</strong> is delivery (the portable way a tool reaches the model).</p>
+      <h4>Better ways to give agents abilities?</h4>
+      <ul>
+        <li><strong>Actions:</strong> tools, delivered via MCP — gives reuse, sandboxing, allowlisting (the boundary that stops an unintended trade). Our case.</li>
+        <li><strong>Know-how:</strong> a skill/prompt beats more tools. If the manager mis-weights consensus, fix the guidance, not the tools.</li>
+        <li><strong>Read-only context:</strong> MCP <strong>resources</strong> (unused today) are lighter than wrapping every read in a tool.</li>
+      </ul>
+      <p>For STEEX: keep MCP-delivered tools for anything touching the broker/pipeline, lean on prompts/skills for reasoning quality, consider MCP resources for pure-read context. This connects to the memory plan, where <code>recall</code>/<code>remember</code> are MCP tools precisely so memory access shows up in traces.</p>
+    </section>
+  </main>
+</div>
+
+<script>
+  // ---- Mermaid ----
+  mermaid.initialize({ startOnLoad: true, theme: "dark", themeVariables: {
+    fontSize: "14px", primaryColor: "#1d212b", primaryBorderColor: "#2a2f3a",
+    primaryTextColor: "#d7dbe2", lineColor: "#5b9bf3", secondaryColor: "#171a21"
+  }});
+
+  // ---- Build per-doc TOC from h2 headings ----
+  document.querySelectorAll("section.doc").forEach(sec => {
+    const tocEl = document.querySelector('.toc[data-for="' + sec.id + '"]');
+    if (!tocEl) return;
+    sec.querySelectorAll("h2[id]").forEach(h => {
+      const a = document.createElement("a");
+      a.href = "#" + h.id;
+      a.textContent = h.textContent.replace(/^[\d.]+\s*/, "");
+      a.dataset.section = sec.id;
+      tocEl.appendChild(a);
+    });
+  });
+
+  // ---- Doc switching ----
+  const docLinks = document.querySelectorAll("nav .doc");
+  function show(id) {
+    document.querySelectorAll("section.doc").forEach(s => s.classList.toggle("active", s.id === id));
+    docLinks.forEach(l => l.classList.toggle("active", l.dataset.target === id));
+    // show only the TOC for the active doc
+    document.querySelectorAll(".toc").forEach(t => {
+      t.style.display = t.dataset.for === id ? "block" : "none";
+    });
+    window.scrollTo({ top: 0 });
+  }
+  docLinks.forEach(l => l.addEventListener("click", e => { e.preventDefault(); show(l.dataset.target); location.hash = l.dataset.target; }));
+
+  // jump links inside content (overview table + cross-refs)
+  document.querySelectorAll("[data-jump]").forEach(a => {
+    a.style.cursor = "pointer";
+    a.addEventListener("click", e => { e.preventDefault(); show(a.dataset.jump); location.hash = a.dataset.jump; });
+  });
+
+  // TOC anchor clicks: switch doc first, then scroll
+  document.addEventListener("click", e => {
+    const a = e.target.closest(".toc a");
+    if (!a) return;
+    e.preventDefault();
+    show(a.dataset.section);
+    const target = document.getElementById(a.getAttribute("href").slice(1));
+    if (target) setTimeout(() => target.scrollIntoView({ behavior: "smooth" }), 60);
+  });
+
+  // ---- Highlight code ----
+  hljs.highlightAll();
+
+  // ---- Initial doc from hash ----
+  const initial = (location.hash || "#d0").slice(1);
+  show(document.getElementById(initial) ? initial : "d0");
+</script>
+</body>
+</html>

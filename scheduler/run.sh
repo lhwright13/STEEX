@@ -210,11 +210,8 @@ echo "[$TIMESTAMP] Run ID: $RUN_ID"
 
 cd "$PROJECT_DIR"
 
-# Record run start in dashboard DB
-INGEST_FLAGS=""
-if [ "$DRY_RUN" = "True" ] || [ "$DRY_RUN" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --dry-run"; fi
-if [ "$PAPER" = "True" ] || [ "$PAPER" = "true" ]; then INGEST_FLAGS="$INGEST_FLAGS --paper"; fi
-"$VENV_PYTHON" scripts/ingest_run.py --start --run-id "$RUN_ID" --mode "$MANAGER_MODE" --log-path "$LOGFILE" $INGEST_FLAGS || true
+# Dashboard run records are written directly by the agent orchestrator
+# (src/agents/run_log.py -> data/runs/*.jsonl), read by frontend/services.py.
 
 # Route to the correct Python command based on mode
 case "$MANAGER_MODE" in
@@ -234,9 +231,6 @@ esac
 EXIT_CODE=${PIPESTATUS[0]}
 echo "[$TIMESTAMP] $MODE completed with exit code $EXIT_CODE"
 
-# Record run finish in dashboard DB
-"$VENV_PYTHON" scripts/ingest_run.py --finish --run-id "$RUN_ID" --exit-code "$EXIT_CODE" || true
-
 # ---------------------------------------------------------------------------
 # Prune old logs
 # ---------------------------------------------------------------------------
@@ -244,5 +238,12 @@ echo "[$TIMESTAMP] $MODE completed with exit code $EXIT_CODE"
 if [ -n "$MAX_LOG_DAYS" ] && [ "$MAX_LOG_DAYS" -gt 0 ] 2>/dev/null; then
     find "$LOG_DIR" -name "*.log" -mtime +"$MAX_LOG_DAYS" -delete 2>/dev/null || true
 fi
+
+# The per-mode cron_*.log files are appended to on every run (crontab `>>`),
+# so -mtime never ages them out and they grow without bound (cron_learning.log
+# once hit 300MB+). Cap each at ~5MB by keeping only the last 5000 lines.
+find "$LOG_DIR" -name "cron_*.log" -size +5M 2>/dev/null | while read -r f; do
+    tail -n 5000 "$f" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+done
 
 exit "$EXIT_CODE"

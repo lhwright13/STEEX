@@ -102,17 +102,13 @@ Verifies:
 - Configuration validity
 - Agent registry status
 
-#### `ingest_run.py`
-Ingest and parse a pipeline run from disk.
-
-```bash
-python scripts/ingest_run.py data/runs/run_20260524_143200.jsonl
-```
-
-Useful for:
-- Analyzing completed runs
-- Debugging agent outputs
-- Auditing trade decisions
+#### Run logs (`data/runs/run_*.jsonl`)
+The agent orchestrator writes a JSONL log per run directly
+(`src/agents/run_log.py`): one `running` line at start and a consolidated final
+line at finish. The dashboard (`frontend/services.py`) reads the most recent file
+and parses its last line. There is no separate ingest step — the old
+`ingest_run.py` (which populated a SQLite `dashboard.db`) was removed when the
+pipeline moved to LangGraph.
 
 #### `analyze_holdings.py`
 Analyze current portfolio holdings.
@@ -196,7 +192,7 @@ python scripts/run_learning.py --agent --num-trades 30
 python scripts/health_check.py
 
 # Inspect a completed run
-python scripts/ingest_run.py data/runs/run_latest.jsonl
+cat "$(ls -t data/runs/run_*.jsonl | head -1)" | tail -1 | python -m json.tool
 
 # See current market conditions
 python scripts/market_gate.py
@@ -217,7 +213,6 @@ scripts/
 ├── run_manager.py             # Main pipeline executor
 ├── run_learning.py            # Learning mode runner
 ├── health_check.py            # System health check
-├── ingest_run.py              # Parse completed runs
 ├── analyze_holdings.py        # Portfolio analysis
 └── market_gate.py             # Market regime check
 ```

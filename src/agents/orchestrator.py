@@ -34,6 +34,7 @@ from .evolution import PromptEvolver
 from .graph import build_graph
 from .nodes import cleanup_mcp
 from .registry import AgentRegistry, ModeConfig
+from .run_log import start_run_log, finish_run_log
 from .state import PipelineState, RunnerContext
 from .trace import AgentSession, AgentTrace, extract_tool_calls_from_envelope
 
@@ -316,6 +317,9 @@ class Orchestrator:
 
         console.print("\n[bold]1. Sub-Agent Analysis & Manager Synthesis[/bold]")
 
+        # Open the dashboard run log (frontend/services.py reads data/runs/*.jsonl)
+        run_file = start_run_log(self.settings.data_dir, run_id, mode)
+
         # Build and invoke graph
         graph = build_graph(
             mode,
@@ -328,6 +332,12 @@ class Orchestrator:
         final_state = graph.invoke(
             initial_state,
             config={"run_name": f"steex_{mode}_{run_id}"},
+        )
+
+        # Append the consolidated final line to the dashboard run log.
+        finish_run_log(
+            run_file, self.settings.data_dir, run_id, mode, final_state,
+            status="failed" if final_state.get("abort") else "complete",
         )
 
         # Reconstruct session from traces

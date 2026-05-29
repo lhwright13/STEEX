@@ -247,6 +247,12 @@ def main():
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s %(message)s")
+        # --verbose means "detailed STEEX output", not "every HTTP call yfinance
+        # and peewee make". Left unmuted, the root DEBUG level turned the weekly
+        # learning log into 300MB+ of yfinance/peewee chatter. Cap noisy
+        # third-party loggers at WARNING.
+        for noisy in ("yfinance", "peewee", "urllib3", "requests", "httpx", "httpcore"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
     else:
         logging.basicConfig(level=logging.WARNING)
 
