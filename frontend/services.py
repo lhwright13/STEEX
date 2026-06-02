@@ -367,16 +367,40 @@ class DashboardService:
             paper = os.environ.get("STEEX_BROKER_PAPER", "true").lower() == "true"
             broker = AlpacaBroker(paper=paper)
             bpos = {bp.ticker: bp for bp in broker.get_positions()}
+            # The Alpaca paper feed sometimes caches a stale/garbage per-share
+            # price (e.g. BNY showing $10 vs a real $142). The trading logic
+            # always uses PriceProvider, so cross-check here: when the broker
+            # price diverges >25% from the live quote, trust the quote and
+            # recompute market value / P&L from it.
+            from src.data.price import PriceProvider
+            price_provider = PriceProvider()
             for r in rows:
                 bp = bpos.get(r["ticker"])
                 if not bp:
                     continue
-                r["market_value"] = round(bp.market_value, 2)
-                r["unrealized_pnl"] = round(bp.unrealized_pnl, 2)
-                if bp.qty:
-                    r["current_price"] = round(bp.market_value / bp.qty, 2)
+                broker_price = (bp.market_value / bp.qty) if bp.qty else None
+                quote = None
+                try:
+                    quote = price_provider.get_latest_price(r["ticker"])
+                except Exception:
+                    pass
+                use_quote = (
+                    quote and broker_price
+                    and abs(broker_price - quote) / quote > 0.25
+                )
+                if use_quote:
+                    qty = bp.qty or r.get("shares") or 0
+                    r["current_price"] = round(quote, 2)
+                    r["market_value"] = round(quote * qty, 2)
+                    r["unrealized_pnl"] = round((quote * qty) - (r.get("cost_basis") or 0), 2)
+                    r["price_source"] = "quote (broker stale)"
+                else:
+                    r["market_value"] = round(bp.market_value, 2)
+                    r["unrealized_pnl"] = round(bp.unrealized_pnl, 2)
+                    if broker_price is not None:
+                        r["current_price"] = round(broker_price, 2)
                 if r["cost_basis"]:
-                    r["unrealized_pct"] = round(100 * bp.unrealized_pnl / r["cost_basis"], 2)
+                    r["unrealized_pct"] = round(100 * r["unrealized_pnl"] / r["cost_basis"], 2)
             acct = broker.get_account()
             summary = {
                 "equity": acct.equity,
@@ -435,7 +459,6 @@ class DashboardService:
                 "name": agent_name,
                 "display_name": self._DISPLAY_NAMES.get(agent_name, agent_name),
                 "role": agent_config.prompt_key or agent_name,
-                "status": self._get_agent_status(agent_name),
                 "max_turns": agent_config.max_turns,
                 "needs_tools": agent_config.needs_tools,
                 "tool_count": len(tools),
@@ -608,7 +631,6 @@ class DashboardService:
         return {
             "name": agent_name,
             "role": agent_config.prompt_key or agent_name,
-            "status": self._get_agent_status(agent_name),
             "preprompt": prompt_text,
             "tools": self._get_agent_tools(agent_name),
             "external_servers": agent_config.external_servers or [],
@@ -737,11 +759,6 @@ class DashboardService:
             "execution": 1.0,
         }
         return stage_progress_map.get(stage, 0.5)
-
-    def _get_agent_status(self, agent_name: str) -> str:
-        """Get agent status (ready, running, complete, failed)."""
-        # TODO: Check actual agent state from orchestrator
-        return "ready"
 
     def _get_agent_tools(self, agent_name: str) -> List[Dict[str, str]]:
         """Get tools available to agent."""
@@ -877,101 +894,8 @@ class DashboardService:
         }
 
     # ====================================================================
-    # Agents & Schedules (for system transparency UI)
+    # Per-mode run history (helper for get_system_schedules)
     # ====================================================================
-
-    def get_agents_summary(self) -> Dict[str, Any]:
-        """Get all agents with their current config and recent stats."""
-        agents_list = []
-
-        for agent_name, agent_config in self.registry.agents.items():
-            # Get recent run data for this agent
-            run_file = self._get_latest_run_file()
-            last_run_info = None
-            recent_output = None
-
-            if run_file:
-                run_data = self._load_json(run_file)
-                if run_data:
-                    conclusions = run_data.get("conclusions", {})
-                    if agent_name in conclusions:
-                        last_run_info = {
-                            "timestamp": run_data.get("started_at"),
-                            "status": "passed",
-                        }
-                        recent_output = conclusions[agent_name]
-
-            agent_info = {
-                "name": agent_name,
-                "role": agent_config.prompt_key,
-                "type": getattr(agent_config, 'agent_type', 'agent'),
-                "max_turns": agent_config.max_turns,
-                "tools": agent_config.allowed_tools or [],
-                "external_servers": agent_config.external_servers or [],
-                "last_run": last_run_info,
-                "recent_output": recent_output,
-                "prompt_file": f"src/agents/prompts/{agent_config.prompt_key}.py",
-            }
-            agents_list.append(agent_info)
-
-        return {
-            "agents": agents_list,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
-
-    def get_schedules_status(self) -> Dict[str, Any]:
-        """Get current schedule status and recent runs."""
-        schedules = []
-
-        # Get modes and their schedule info
-        for mode_name, mode_config in self.registry.modes.items():
-            # Find recent runs for this mode
-            recent_runs = self._get_runs_for_mode(mode_name, limit=3)
-
-            schedule_info = {
-                "mode": mode_name,
-                "status": "configured",
-                "recent_runs": recent_runs,
-            }
-            schedules.append(schedule_info)
-
-        return {
-            "schedules": schedules,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
-
-    def get_agent_trace(self, agent_name: str) -> Dict[str, Any]:
-        """Get recent execution trace for a specific agent."""
-        run_file = self._get_latest_run_file()
-        if not run_file or not run_file.exists():
-            return {
-                "agent": agent_name,
-                "trace": None,
-                "message": "No recent run data",
-            }
-
-        run_data = self._load_json(run_file)
-        if not run_data:
-            return {
-                "agent": agent_name,
-                "trace": None,
-                "message": "No recent run data",
-            }
-
-        # Extract agent conclusion and trace
-        conclusions = run_data.get("conclusions", {})
-        agent_conclusion = conclusions.get(agent_name)
-
-        traces = run_data.get("traces", [])
-        agent_trace = next((t for t in traces if t.get("agent") == agent_name), None)
-
-        return {
-            "agent": agent_name,
-            "conclusion": agent_conclusion,
-            "trace_summary": agent_trace.get("summary") if agent_trace else None,
-            "timestamp": run_data.get("started_at"),
-            "run_id": run_data.get("run_id"),
-        }
 
     def _get_runs_for_mode(self, mode: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Get recent runs for a specific mode."""
