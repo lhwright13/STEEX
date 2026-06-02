@@ -2,9 +2,12 @@
 # Kill any running STEEX dashboard and start a fresh one.
 #
 # Usage:
-#   ./start_dash.sh              # default port 5000
+#   ./start_dash.sh              # default port 5055
 #   ./start_dash.sh 8080         # custom port
 #   PORT=8080 ./start_dash.sh    # custom port via env
+#
+# Default is 5055 (not 5000) because macOS reserves :5000 for the AirPlay /
+# Control Center receiver, which silently shadows a Flask dev server there.
 #
 # Logs to data/logs/dashboard.log; PID written to data/logs/dashboard.pid.
 set -euo pipefail
@@ -12,7 +15,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
-PORT="${1:-${PORT:-5000}}"
+PORT="${1:-${PORT:-5055}}"
 HOST="${HOST:-127.0.0.1}"
 VENV_PY="$PROJECT_DIR/venv/bin/python"
 LOG_DIR="$PROJECT_DIR/data/logs"

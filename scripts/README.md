@@ -6,7 +6,7 @@ Operational scripts for running, testing, and monitoring the STEEX trading syste
 
 ```bash
 # Start the dashboard (HTTP API + web interface)
-bash scripts/run_dashboard.sh
+./start_dash.sh
 
 # Run the screening pipeline
 python run_manager.py screen --agent
@@ -19,13 +19,15 @@ python run_manager.py learning --agent --paper
 
 ### Dashboard & Monitoring
 
-#### `run_dashboard.sh`
-Start the Flask dashboard server on localhost:5000.
+#### `start_dash.sh` (project root)
+Kill any running dashboard and start a fresh one on localhost:5055, waiting
+for a healthcheck before returning. Logs to `data/logs/dashboard.log`.
 
 ```bash
-bash scripts/run_dashboard.sh                    # localhost:5000
-bash scripts/run_dashboard.sh --port 8080        # custom port
-bash scripts/run_dashboard.sh --host 0.0.0.0     # bind all interfaces
+./start_dash.sh                 # localhost:5055
+./start_dash.sh 8080            # custom port
+PORT=8080 ./start_dash.sh       # custom port via env
+HOST=0.0.0.0 ./start_dash.sh    # bind all interfaces
 ```
 
 Serves:
@@ -156,12 +158,12 @@ Stages:
 ### Daily Screening Run
 ```bash
 # Start dashboard
-bash scripts/run_dashboard.sh &
+./start_dash.sh
 
 # Run screening pipeline
 python run_manager.py screen --agent --paper
 
-# Check results at http://localhost:5000
+# Check results at http://localhost:5055
 ```
 
 ### Testing New Variant
@@ -207,7 +209,6 @@ python scripts/analyze_holdings.py
 scripts/
 ├── README.md                    # This file
 ├── __init__.py                  # Python package marker
-├── run_dashboard.sh            # Start web dashboard
 ├── verify_dashboard.sh         # Quick dashboard check
 ├── test_tier_1_2.sh           # Comprehensive test suite
 ├── run_manager.py             # Main pipeline executor

@@ -246,12 +246,12 @@ scheduler/run.sh screen       # Manual run of a specific mode
 STEEX ships with a Flask web dashboard at `frontend/` that provides real-time visibility into the trading pipeline. All data is fetched live from REST APIs backed by run history and system configuration.
 
 ```bash
-# Start the dashboard on http://127.0.0.1:5000
-venv/bin/python -m flask --app frontend.app:create_app run
+# Start the dashboard on http://127.0.0.1:5055
+# (kills any running instance, restarts fresh, waits for healthcheck)
+./start_dash.sh
 
-# Or use the wrapper script (forwards extra args to flask run)
-scripts/run_dashboard.py
-scripts/run_dashboard.py --host 0.0.0.0 --port 8080
+# Custom port
+./start_dash.sh 8080
 ```
 
 Available views:

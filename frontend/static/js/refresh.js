@@ -84,32 +84,12 @@
     }
   }
 
-  async function fetchScreening() {
-    try {
-      const r = await fetch('/api/v1/screening/stats');
-      return await r.json();
-    } catch (e) {
-      console.error('Error fetching screening:', e);
-      return null;
-    }
-  }
-
   async function fetchRegime() {
     try {
       const r = await fetch('/api/v1/regime');
       return await r.json();
     } catch (e) {
       console.error('Error fetching regime:', e);
-      return null;
-    }
-  }
-
-  async function fetchManagerDecision() {
-    try {
-      const r = await fetch('/api/v1/manager/decision');
-      return await r.json();
-    } catch (e) {
-      console.error('Error fetching manager decision:', e);
       return null;
     }
   }
@@ -487,13 +467,11 @@
   async function refreshAll() {
     updateHeaderTime();
 
-    const [pipeline, variants, consensus, screening, regime, decision, holdings, events, trades, timeline, controls] = await Promise.allSettled([
+    const [pipeline, variants, consensus, regime, holdings, events, trades, timeline, controls] = await Promise.allSettled([
       fetchPipeline(),
       fetchVariants(),
       fetchConsensus(),
-      fetchScreening(),
       fetchRegime(),
-      fetchManagerDecision(),
       fetchHoldings(),
       fetchEvents(),
       fetchJSON('/api/v1/trades/history'),
@@ -511,7 +489,6 @@
     if (trades.status === 'fulfilled') updateTradesDOM(trades.value);
     if (timeline.status === 'fulfilled') updateTimelineDOM(timeline.value);
     if (controls.status === 'fulfilled') renderControls(controls.value);
-    // screening and decision updates would go here if DOM has those elements
   }
 
   // ── Refresh Mode Management ─────────────────────────────────────────────

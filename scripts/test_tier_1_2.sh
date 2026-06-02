@@ -115,7 +115,7 @@ echo -e "${GREEN}✓ Tier 1 + Tier 2 Trading Upgrades: READY FOR PRODUCTION${NC}
 echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
 echo ""
 echo -e "Next steps:"
-echo -e "  • Start dashboard:  ${YELLOW}scripts/run_dashboard.sh${NC}"
+echo -e "  • Start dashboard:  ${YELLOW}./start_dash.sh${NC}"
 echo -e "  • Test system:      ${YELLOW}python run_manager.py screen --agent${NC}"
 echo -e "  • Run learning:     ${YELLOW}python run_manager.py learning --agent --paper${NC}"
 echo ""

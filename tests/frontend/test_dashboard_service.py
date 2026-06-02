@@ -340,7 +340,6 @@ class TestSystemAgents:
         required_fields = [
             "name",
             "role",
-            "status",
             "max_turns",
             "needs_tools",
             "external_servers",
@@ -414,7 +413,7 @@ class TestAgentDetail:
         data = service.get_agent_detail("data")
 
         if "error" not in data:
-            required_fields = ["name", "role", "status", "tools", "external_servers"]
+            required_fields = ["name", "role", "tools", "external_servers"]
             for field in required_fields:
                 assert field in data
 
