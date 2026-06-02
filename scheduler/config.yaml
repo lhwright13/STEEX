@@ -63,9 +63,9 @@ modes:
   # settings.event_trigger_enabled must both be true to act. Starts disabled +
   # dry_run; flip dry_run off (and event_trigger_enabled on) once validated.
   event_scan:
-    enabled: false
+    enabled: true
     schedule: "* 6-12 * * 1-5"    # every minute, 6:30 AM-1:00 PM PST market hours, weekdays
-    dry_run: true
+    dry_run: false                # LIVE (paper): places real paper auto-buys on actionable posts
 
 # ---------------------------------------------------------------------------
 # Log retention

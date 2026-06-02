@@ -190,7 +190,9 @@ def run_agent(
 
     claude_bin = shutil.which("claude")
     if not claude_bin:
-        for path in ["/usr/local/bin/claude", os.path.expanduser("~/.claude/local/claude")]:
+        # Include the Homebrew path: cron's minimal PATH can omit it.
+        for path in ["/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+                     os.path.expanduser("~/.claude/local/claude")]:
             if os.path.isfile(path):
                 claude_bin = path
                 break

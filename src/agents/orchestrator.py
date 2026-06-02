@@ -110,11 +110,20 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def _find_claude(self) -> str:
-        """Locate the claude CLI binary."""
+        """Locate the claude CLI binary.
+
+        Checks PATH first, then common install locations. The Homebrew path
+        (/opt/homebrew/bin) is included because cron's minimal PATH can omit it,
+        which made event_scan fail to find claude even though it was installed.
+        """
         claude = shutil.which("claude")
         if claude:
             return claude
-        for path in ["/usr/local/bin/claude", os.path.expanduser("~/.claude/local/claude")]:
+        for path in [
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude",
+            os.path.expanduser("~/.claude/local/claude"),
+        ]:
             if os.path.isfile(path):
                 return path
         raise FileNotFoundError(
