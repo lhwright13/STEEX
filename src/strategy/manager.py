@@ -838,6 +838,15 @@ class QuantManager:
         if not buy_list:
             return executed
 
+        # Kill switch: a disarmed system places NO real entries (screen/enter
+        # and event-trigger all funnel through here). Dry runs still preview.
+        if not dry_run:
+            from .control import trading_armed
+            if not trading_armed(self.settings.data_dir):
+                console.print("[bold red]Trading DISARMED — skipping all entries.[/bold red]")
+                self._log("execution", "Trading disarmed via kill switch; entries skipped")
+                return executed
+
         if dry_run:
             console.print("\n[bold yellow]DRY RUN - No entries will be executed[/bold yellow]")
             for entry in buy_list:

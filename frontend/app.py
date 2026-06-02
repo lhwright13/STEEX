@@ -189,13 +189,59 @@ def create_app():
             logger.error(f"Error fetching agent last output for {agent_name}: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/control", methods=["GET"])
+    def get_control():
+        """Current kill-switch state."""
+        try:
+            return jsonify(get_dashboard_service().get_controls())
+        except Exception as e:
+            logger.error(f"Error reading controls: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/v1/control", methods=["POST"])
+    def set_control():
+        """Update kill-switch flags. Body: {trading_armed?: bool, event_armed?: bool}."""
+        from flask import request
+        try:
+            body = request.get_json(silent=True) or {}
+            data = get_dashboard_service().set_controls(
+                trading_armed=body.get("trading_armed"),
+                event_armed=body.get("event_armed"),
+            )
+            return jsonify(data)
+        except Exception as e:
+            logger.error(f"Error setting controls: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/v1/trades/history")
+    def trades_history():
+        """Closed trades and realized-P&L summary."""
+        try:
+            return jsonify(get_dashboard_service().get_trade_history(limit=50))
+        except Exception as e:
+            logger.error(f"Error fetching trade history: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/v1/agents/timeline")
+    @app.route("/api/v1/agents/timeline/<run_id>")
+    def agents_timeline(run_id=None):
+        """Per-run multi-agent execution timeline."""
+        try:
+            return jsonify(get_dashboard_service().get_agent_timeline(run_id))
+        except Exception as e:
+            logger.error(f"Error fetching agent timeline: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/pipeline/cancel", methods=["POST"])
     def pipeline_cancel():
-        """Send abort signal to current pipeline run."""
-        return jsonify({
-            "status": "cancel_requested",
-            "message": "Abort signal sent to orchestrator"
-        })
+        """Disarm trading (kill switch) — halts all real entries on next attempt."""
+        try:
+            data = get_dashboard_service().set_controls(trading_armed=False)
+            return jsonify({"status": "disarmed", "controls": data,
+                            "message": "Trading DISARMED — no entries will execute."})
+        except Exception as e:
+            logger.error(f"Error disarming: {e}")
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/v1/learning/apply", methods=["POST"])
     def learning_apply():
@@ -216,11 +262,14 @@ def create_app():
 
     @app.route("/api/v1/system/schedules/pause", methods=["POST"])
     def pause_schedules():
-        """Pause all scheduled runs."""
-        return jsonify({
-            "status": "paused",
-            "message": "All schedules paused (manual management required)"
-        })
+        """Disarm trading via the kill switch (cron keeps running but places no orders)."""
+        try:
+            data = get_dashboard_service().set_controls(trading_armed=False)
+            return jsonify({"status": "disarmed", "controls": data,
+                            "message": "Trading disarmed. Scheduled runs still execute but place no orders."})
+        except Exception as e:
+            logger.error(f"Error pausing: {e}")
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/v1/system/schedules/<schedule_name>/run", methods=["POST"])
     def run_schedule(schedule_name):

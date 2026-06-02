@@ -44,7 +44,8 @@ class TestCancelPipelineEndpoint:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert "status" in data
-        assert data["status"] == "cancel_requested"
+        # Cancel now triggers the kill switch (disarm trading).
+        assert data["status"] == "disarmed"
 
     def test_cancel_has_message(self, client):
         """Cancel response should include message."""
@@ -52,7 +53,7 @@ class TestCancelPipelineEndpoint:
 
         data = json.loads(response.data)
         assert "message" in data
-        assert "abort" in data["message"].lower()
+        assert "disarm" in data["message"].lower()
 
     def test_cancel_method_post_only(self, client):
         """Cancel endpoint should only accept POST."""
@@ -201,7 +202,8 @@ class TestScheduleActionEndpoints:
         response = client.post("/api/v1/system/schedules/pause")
 
         data = json.loads(response.data)
-        assert data["status"] == "paused"
+        # Pause now disarms trading via the kill switch.
+        assert data["status"] == "disarmed"
 
     def test_run_schedule_returns_json(self, client):
         """Run schedule endpoint should return JSON."""
@@ -233,6 +235,7 @@ class TestActionEndpointResponses:
         """All action endpoints should return valid JSON."""
         mock_service = Mock()
         mock_service.get_agent_last_output.return_value = {"agent": "data"}
+        mock_service.set_controls.return_value = {"trading_armed": False, "event_armed": True}
         mock_get_service.return_value = mock_service
 
         endpoints = [

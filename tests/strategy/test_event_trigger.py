@@ -161,3 +161,14 @@ def test_no_resolver_skips_untickered(tmp_path):
     trig.source = FixtureSource([_truth_event("1", "buy a Dell")])
     res = trig.run(dry_run=True, resolver=None)
     assert res["executed"] == []
+
+
+def test_kill_switch_disarms_event_path(tmp_path):
+    from src.strategy.control import set_controls
+    mgr = StubMgr()
+    trig, s = _trigger(mgr, tmp_path)
+    set_controls(str(tmp_path), event_armed=False)
+    trig.source = FixtureSource([_truth_event("1", "buy a Dell")])
+    res = trig.run(dry_run=False, resolver=_resolver({"Dell": ("DELL", True, 0.9)}))
+    assert res["executed"] == []
+    assert any("disarmed" in x.get("reason", "") for x in res["skipped"])

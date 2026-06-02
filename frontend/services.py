@@ -1295,6 +1295,144 @@ class DashboardService:
 
         return {"run_id": run_id, "traces": [], "message": f"Run {run_id} not found"}
 
+    # ====================================================================
+    # Kill switch / runtime controls
+    # ====================================================================
+
+    def get_controls(self) -> Dict[str, Any]:
+        """Current kill-switch state (trading_armed, event_armed)."""
+        from src.strategy.control import get_controls
+        return get_controls(self.data_dir)
+
+    def set_controls(self, trading_armed=None, event_armed=None) -> Dict[str, Any]:
+        """Update kill-switch flags and persist."""
+        from src.strategy.control import set_controls
+        return set_controls(
+            self.data_dir,
+            trading_armed=trading_armed,
+            event_armed=event_armed,
+            updated_at=datetime.utcnow().isoformat() + "Z",
+        )
+
+    # ====================================================================
+    # Closed-trade ledger / realized P&L
+    # ====================================================================
+
+    def get_trade_history(self, limit: int = 50) -> Dict[str, Any]:
+        """Closed trades from data/trades.json plus realized-P&L summary stats.
+
+        Surfaces realized performance (win rate, avg win/loss, hold time,
+        exit-reason breakdown) that the unrealized-only holdings view misses.
+        """
+        trades = self._load_json_file(self.data_dir / "trades.json") or []
+        if not isinstance(trades, list):
+            trades = []
+
+        # Newest first by exit date.
+        trades = sorted(trades, key=lambda t: t.get("exit_date") or "", reverse=True)
+
+        wins = [t for t in trades if (t.get("pnl_dollars") or 0) > 0]
+        losses = [t for t in trades if (t.get("pnl_dollars") or 0) < 0]
+        total_pnl = round(sum(t.get("pnl_dollars") or 0 for t in trades), 2)
+        avg_win = round(sum(t["pnl_dollars"] for t in wins) / len(wins), 2) if wins else 0.0
+        avg_loss = round(sum(t["pnl_dollars"] for t in losses) / len(losses), 2) if losses else 0.0
+        avg_hold = round(sum(t.get("hold_days") or 0 for t in trades) / len(trades), 1) if trades else 0.0
+
+        # Exit-reason breakdown (e.g. surfaces a high server_stop rate).
+        reasons: Dict[str, int] = {}
+        for t in trades:
+            r = t.get("exit_reason") or "unknown"
+            reasons[r] = reasons.get(r, 0) + 1
+
+        rows = [{
+            "ticker": t.get("ticker"),
+            "entry_date": t.get("entry_date"),
+            "exit_date": t.get("exit_date"),
+            "entry_price": round(t["entry_price"], 2) if t.get("entry_price") is not None else None,
+            "exit_price": round(t["exit_price"], 2) if t.get("exit_price") is not None else None,
+            "shares": t.get("shares"),
+            "pnl_dollars": round(t.get("pnl_dollars") or 0, 2),
+            "pnl_pct": round((t.get("pnl_pct") or 0) * 100, 2),
+            "hold_days": t.get("hold_days"),
+            "exit_reason": t.get("exit_reason"),
+        } for t in trades[:limit]]
+
+        return {
+            "trades": rows,
+            "summary": {
+                "count": len(trades),
+                "wins": len(wins),
+                "losses": len(losses),
+                "win_rate": round(100 * len(wins) / len(trades), 1) if trades else None,
+                "total_realized_pnl": total_pnl,
+                "avg_win": avg_win,
+                "avg_loss": avg_loss,
+                "profit_factor": round(abs(sum(t["pnl_dollars"] for t in wins) /
+                                            sum(t["pnl_dollars"] for t in losses)), 2)
+                                 if losses and sum(t["pnl_dollars"] for t in losses) else None,
+                "avg_hold_days": avg_hold,
+                "exit_reasons": reasons,
+            },
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    # ====================================================================
+    # Multi-agent observability
+    # ====================================================================
+
+    def get_agent_timeline(self, run_id: str = None) -> Dict[str, Any]:
+        """Per-run agent execution timeline: the sequence of agents with
+        status, duration, tools called, and a short summary/conclusion.
+
+        Defaults to the latest non-event_scan run. Normalizes the run-log
+        traces (role/success/error/duration_seconds/tools_called/summary) into
+        an ordered timeline the dashboard renders as a step list.
+        """
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.exists():
+            return {"run_id": None, "steps": [], "message": "No run data available"}
+
+        run_data = None
+        if run_id:
+            for f in sorted(runs_dir.glob("run_*.jsonl"), reverse=True):
+                d = self._load_json(f)
+                if d and d.get("run_id") == run_id:
+                    run_data = d
+                    break
+        else:
+            f = self._get_latest_run_file()
+            run_data = self._load_json(f) if f else None
+
+        if not run_data:
+            return {"run_id": run_id, "steps": [], "message": "Run not found"}
+
+        steps = []
+        for i, t in enumerate(run_data.get("traces", []) or []):
+            steps.append({
+                "order": i + 1,
+                "agent": t.get("agent") or t.get("role"),
+                "role": t.get("role"),
+                "success": t.get("success"),
+                "duration_seconds": t.get("duration_seconds"),
+                "tools_called": t.get("tools_called") or [],
+                "summary": t.get("summary") or (t.get("error") if not t.get("success") else "ok"),
+                "has_conclusion": t.get("conclusion") is not None,
+            })
+
+        return {
+            "run_id": run_data.get("run_id"),
+            "mode": run_data.get("mode"),
+            "status": run_data.get("status"),
+            "started_at": run_data.get("started_at"),
+            "completed_at": run_data.get("completed_at"),
+            "abort": run_data.get("abort"),
+            "abort_reason": run_data.get("abort_reason"),
+            "steps": steps,
+            "agent_count": len(steps),
+            "failed_count": sum(1 for s in steps if s["success"] is False),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
 
 # Singleton instance
 _service_instance: Optional[DashboardService] = None

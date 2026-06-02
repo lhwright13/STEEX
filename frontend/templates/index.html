@@ -443,6 +443,23 @@
     </div>
   </header>
 
+  <!-- ============ KILL SWITCH ============ -->
+  <div id="killswitch" style="display:flex;align-items:center;justify-content:space-between;gap:14px;border:2px solid #000;padding:10px 16px;margin-bottom:14px;font-family:var(--mono);background:#fff;">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <span style="font-weight:700;font-size:13px;letter-spacing:0.08em;">SYSTEM:
+        <span id="ks-master" style="padding:2px 8px;border:1px solid #000;">—</span>
+      </span>
+      <span style="font-size:12px;color:var(--muted);">Event auto-buy:
+        <span id="ks-event" style="padding:2px 6px;border:1px solid var(--border);">—</span>
+      </span>
+      <span id="ks-updated" class="dim" style="font-size:11px;"></span>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn" id="ks-toggle-master">Toggle Trading</button>
+      <button class="btn" id="ks-toggle-event">Toggle Events</button>
+    </div>
+  </div>
+
   <!-- ============ 3.2 PIPELINE STATUS ============ -->
   <section class="panel">
     <header>
@@ -674,6 +691,73 @@
           <tr><td colspan="6" style="text-align:center;padding:12px;color:#999;">No event-triggered trades yet.</td></tr>
         </tbody>
       </table>
+    </div>
+  </section>
+
+  <!-- ============ 3.46 TRADE HISTORY (REALIZED) ============ -->
+  <section class="panel">
+    <header>
+      <h2>Trade History <span class="sub" id="trades-sub">closed positions &amp; realized P&amp;L</span></h2>
+      <div class="tools"><span id="trades-stats">—</span></div>
+    </header>
+    <div class="body">
+      <!-- Realized stats strip -->
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:0;border:1px solid var(--border);font-family:var(--mono);background:#fff;margin-bottom:12px;">
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Realized P&amp;L</div>
+          <div style="font-size:16px;font-weight:700;" id="th-pnl">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Win Rate</div>
+          <div style="font-size:16px;font-weight:700;" id="th-winrate">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Avg Win</div>
+          <div style="font-size:16px;font-weight:700;" id="th-avgwin">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Avg Loss</div>
+          <div style="font-size:16px;font-weight:700;" id="th-avgloss">—</div>
+        </div>
+        <div style="padding:10px 12px;border-right:1px solid var(--border);">
+          <div class="dim" style="font-size:11px;">Profit Factor</div>
+          <div style="font-size:16px;font-weight:700;" id="th-pf">—</div>
+        </div>
+        <div style="padding:10px 12px;">
+          <div class="dim" style="font-size:11px;">Avg Hold</div>
+          <div style="font-size:16px;font-weight:700;" id="th-hold">—</div>
+        </div>
+      </div>
+      <div id="th-exitreasons" class="dim" style="font-family:var(--mono);font-size:11px;margin-bottom:8px;"></div>
+      <table class="data" id="trades-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th class="num">Entry</th>
+            <th class="num">Exit</th>
+            <th class="num">P&amp;L $</th>
+            <th class="num">P&amp;L %</th>
+            <th class="num">Held</th>
+            <th>Exit Reason</th>
+          </tr>
+        </thead>
+        <tbody id="trades-table-body">
+          <tr><td colspan="7" style="text-align:center;padding:12px;color:#999;">No closed trades yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 3.47 AGENT EXECUTION TIMELINE ============ -->
+  <section class="panel">
+    <header>
+      <h2>Agent Execution <span class="sub" id="timeline-sub">latest run · per-agent status</span></h2>
+      <div class="tools"><span id="timeline-stats">—</span></div>
+    </header>
+    <div class="body">
+      <div id="timeline-host" style="font-family:var(--mono);font-size:12px;">
+        <div style="text-align:center;padding:20px;color:#999;">Loading agent timeline…</div>
+      </div>
     </div>
   </section>
 

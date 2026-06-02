@@ -134,6 +134,11 @@
     }
   }
 
+  async function fetchJSON(url) {
+    try { const r = await fetch(url); return await r.json(); }
+    catch (e) { console.error('fetch failed', url, e); return null; }
+  }
+
   // ── DOM Updaters ───────────────────────────────────────────────────────
 
   function formatTime(seconds) {
@@ -380,10 +385,109 @@
     }
   }
 
+  // ── Kill switch ──────────────────────────────────────────────────────
+  function renderControls(c) {
+    if (!c) return;
+    const master = document.getElementById('ks-master');
+    const event = document.getElementById('ks-event');
+    if (master) {
+      const armed = c.trading_armed;
+      master.textContent = armed ? 'ARMED' : 'DISARMED';
+      master.style.background = armed ? 'var(--ok)' : 'var(--bad)';
+      master.style.color = '#fff';
+      master.style.borderColor = armed ? 'var(--ok)' : 'var(--bad)';
+    }
+    if (event) {
+      const ea = c.event_armed;
+      event.textContent = ea ? 'on' : 'off';
+      event.style.color = ea ? 'var(--ok)' : 'var(--bad)';
+    }
+    const up = document.getElementById('ks-updated');
+    if (up) up.textContent = c.updated_at ? ('updated ' + new Date(c.updated_at).toLocaleString()) : '';
+  }
+
+  async function loadControls() { renderControls(await fetchJSON('/api/v1/control')); }
+
+  async function toggleControl(which) {
+    const cur = await fetchJSON('/api/v1/control');
+    if (!cur) return;
+    const body = which === 'master'
+      ? { trading_armed: !cur.trading_armed }
+      : { event_armed: !cur.event_armed };
+    if (which === 'master' && cur.trading_armed && !confirm('Disarm trading? No real entries will execute until re-armed.')) return;
+    const r = await fetch('/api/v1/control', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    });
+    renderControls(await r.json());
+  }
+
+  // ── Trade history ────────────────────────────────────────────────────
+  function money(v) { return v == null ? '—' : (v >= 0 ? '+$' : '-$') + Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0}); }
+  function updateTradesDOM(d) {
+    if (!d) return;
+    const s = d.summary || {};
+    const set = (id, val, cls) => {
+      const el = document.getElementById(id); if (!el) return;
+      el.textContent = val; el.classList.remove('ok','bad');
+      if (cls) el.classList.add(cls);
+    };
+    set('th-pnl', money(s.total_realized_pnl), (s.total_realized_pnl||0) >= 0 ? 'ok' : 'bad');
+    set('th-winrate', s.win_rate != null ? s.win_rate + '%' : '—');
+    set('th-avgwin', money(s.avg_win), 'ok');
+    set('th-avgloss', money(s.avg_loss), 'bad');
+    set('th-pf', s.profit_factor != null ? s.profit_factor : '—');
+    set('th-hold', s.avg_hold_days != null ? s.avg_hold_days + 'd' : '—');
+    const stats = document.getElementById('trades-stats');
+    if (stats) stats.textContent = `${s.count||0} closed · ${s.wins||0}W/${s.losses||0}L`;
+    const er = document.getElementById('th-exitreasons');
+    if (er) er.textContent = 'exits: ' + Object.entries(s.exit_reasons||{}).map(([k,v])=>`${k} ${v}`).join(' · ');
+    const body = document.getElementById('trades-table-body');
+    const rows = d.trades || [];
+    if (body) {
+      body.innerHTML = rows.length ? rows.map(t => {
+        const cls = (t.pnl_dollars||0) >= 0 ? 'ok' : 'bad';
+        return `<tr>
+          <td class="t"><b>${t.ticker||'—'}</b></td>
+          <td class="num">${t.entry_price!=null?'$'+t.entry_price:'—'}</td>
+          <td class="num">${t.exit_price!=null?'$'+t.exit_price:'—'}</td>
+          <td class="num ${cls}">${money(t.pnl_dollars)}</td>
+          <td class="num ${cls}">${t.pnl_pct!=null?t.pnl_pct+'%':'—'}</td>
+          <td class="num">${t.hold_days!=null?t.hold_days+'d':'—'}</td>
+          <td>${t.exit_reason||'—'}</td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="7" style="text-align:center;padding:12px;color:#999;">No closed trades yet.</td></tr>';
+    }
+  }
+
+  // ── Agent timeline ───────────────────────────────────────────────────
+  function updateTimelineDOM(d) {
+    const host = document.getElementById('timeline-host');
+    if (!host || !d) return;
+    const steps = d.steps || [];
+    const stats = document.getElementById('timeline-stats');
+    if (stats) stats.textContent = `${d.mode||'—'} · ${d.agent_count||0} agents` + (d.failed_count ? ` · ${d.failed_count} failed` : '');
+    const sub = document.getElementById('timeline-sub');
+    if (sub && d.started_at) sub.textContent = `run ${d.run_id||''} · ${new Date(d.started_at).toLocaleString()}`;
+    if (!steps.length) { host.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">No agent run yet.</div>'; return; }
+    host.innerHTML = steps.map(s => {
+      const ok = s.success === true, fail = s.success === false;
+      const dot = fail ? 'var(--bad)' : (ok ? 'var(--ok)' : 'var(--muted)');
+      const mark = fail ? '✗' : (ok ? '✓' : '•');
+      const dur = s.duration_seconds != null ? s.duration_seconds.toFixed(1)+'s' : '';
+      const tools = (s.tools_called||[]).length ? ` · ${s.tools_called.length} tools` : '';
+      return `<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--grid);">
+        <span style="color:${dot};font-weight:700;width:14px;">${mark}</span>
+        <span style="min-width:160px;font-weight:700;">${s.order}. ${s.agent||s.role||'—'}</span>
+        <span class="dim" style="min-width:50px;">${dur}</span>
+        <span class="dim" style="flex:1;">${(s.summary||'').slice(0,80)}${tools}</span>
+      </div>`;
+    }).join('');
+  }
+
   async function refreshAll() {
     updateHeaderTime();
 
-    const [pipeline, variants, consensus, screening, regime, decision, holdings, events] = await Promise.allSettled([
+    const [pipeline, variants, consensus, screening, regime, decision, holdings, events, trades, timeline, controls] = await Promise.allSettled([
       fetchPipeline(),
       fetchVariants(),
       fetchConsensus(),
@@ -392,6 +496,9 @@
       fetchManagerDecision(),
       fetchHoldings(),
       fetchEvents(),
+      fetchJSON('/api/v1/trades/history'),
+      fetchJSON('/api/v1/agents/timeline'),
+      fetchJSON('/api/v1/control'),
     ]);
 
     // Extract values from PromiseSettledResult
@@ -401,6 +508,9 @@
     if (regime.status === 'fulfilled') updateRegimeDOM(regime.value);
     if (holdings.status === 'fulfilled') updateHoldingsDOM(holdings.value);
     if (events.status === 'fulfilled') updateEventsDOM(events.value);
+    if (trades.status === 'fulfilled') updateTradesDOM(trades.value);
+    if (timeline.status === 'fulfilled') updateTimelineDOM(timeline.value);
+    if (controls.status === 'fulfilled') renderControls(controls.value);
     // screening and decision updates would go here if DOM has those elements
   }
 
@@ -527,6 +637,11 @@
     if (applyRecsBtn) applyRecsBtn.addEventListener('click', applyRecs);
     if (runLearningBtn) runLearningBtn.addEventListener('click', runLearning);
     if (dismissBtn) dismissBtn.addEventListener('click', dismissSignal);
+
+    const ksMaster = q('#ks-toggle-master');
+    const ksEvent = q('#ks-toggle-event');
+    if (ksMaster) ksMaster.addEventListener('click', () => toggleControl('master'));
+    if (ksEvent) ksEvent.addEventListener('click', () => toggleControl('event'));
 
     // Session history tabs
     qa('[data-period]').forEach(tab => {

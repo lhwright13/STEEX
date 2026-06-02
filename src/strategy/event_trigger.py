@@ -100,7 +100,15 @@ class EventTrigger:
             "regime": None, "dry_run": dry_run, "timestamp": now.isoformat(),
         }
 
-        # Kill-switch: regime first, before any work.
+        # Kill switch: a disarmed event path does no work at all (dry runs still
+        # scan so you can watch it without arming).
+        if not dry_run:
+            from .control import event_armed
+            if not event_armed(self.settings.data_dir):
+                result["skipped"].append({"reason": "event trigger disarmed (kill switch)"})
+                return result
+
+        # Regime kill-switch next, before any polling.
         regime = self.mgr.get_regime()
         result["regime"] = regime.get("name")
         if regime.get("name") == "crisis" or not regime.get("entries_allowed", True):

@@ -463,3 +463,63 @@ class TestHelperMethods:
         for run_data, expected in test_cases:
             progress = service._calculate_stage_progress(run_data)
             assert progress == expected
+
+
+# ========================================================================
+# Test: Kill switch, trade history, agent timeline
+# ========================================================================
+
+
+class TestControlsTradesTimeline:
+    """Tests for the kill switch, realized-P&L, and agent-timeline readers."""
+
+    def test_controls_roundtrip(self, service, tmp_path):
+        service.data_dir = tmp_path
+        assert service.get_controls()["trading_armed"] is True
+        service.set_controls(trading_armed=False)
+        assert service.get_controls()["trading_armed"] is False
+
+    def test_trade_history_summary(self, service, tmp_path):
+        service.data_dir = tmp_path
+        (tmp_path / "trades.json").write_text(json.dumps([
+            {"ticker": "AAA", "entry_price": 10, "exit_price": 12, "shares": 5,
+             "pnl_dollars": 10.0, "pnl_pct": 0.2, "hold_days": 4, "exit_reason": "trailing_stop",
+             "exit_date": "2026-05-01"},
+            {"ticker": "BBB", "entry_price": 20, "exit_price": 18, "shares": 5,
+             "pnl_dollars": -10.0, "pnl_pct": -0.1, "hold_days": 6, "exit_reason": "stop_loss",
+             "exit_date": "2026-05-02"},
+        ]))
+        d = service.get_trade_history()
+        s = d["summary"]
+        assert s["count"] == 2 and s["wins"] == 1 and s["losses"] == 1
+        assert s["win_rate"] == 50.0
+        assert s["total_realized_pnl"] == 0.0
+        assert s["exit_reasons"] == {"trailing_stop": 1, "stop_loss": 1}
+        # newest exit_date first
+        assert d["trades"][0]["ticker"] == "BBB"
+
+    def test_trade_history_empty(self, service, tmp_path):
+        service.data_dir = tmp_path
+        d = service.get_trade_history()
+        assert d["trades"] == []
+        assert d["summary"]["count"] == 0
+
+    def test_agent_timeline(self, service, tmp_path):
+        service.data_dir = tmp_path
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        rec = {"run_id": "r1", "mode": "screen", "status": "complete",
+               "started_at": "2026-05-01T10:00:00Z",
+               "traces": [
+                   {"role": "DataAgent", "agent": "data", "success": True,
+                    "duration_seconds": 8.0, "tools_called": ["x"], "summary": "ok", "conclusion": {}},
+                   {"role": "RiskAgent", "agent": "risk", "success": False,
+                    "duration_seconds": 5.0, "tools_called": [], "error": "boom", "summary": "boom",
+                    "conclusion": None},
+               ]}
+        (runs / "run_20260501T100000_r1.jsonl").write_text(json.dumps(rec))
+        tl = service.get_agent_timeline("r1")
+        assert tl["agent_count"] == 2
+        assert tl["failed_count"] == 1
+        assert tl["steps"][0]["agent"] == "data" and tl["steps"][0]["success"] is True
+        assert tl["steps"][1]["success"] is False
