@@ -17,7 +17,7 @@ import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # av-mcp installs a conflicting top-level `src/` into site-packages and
 # Python's PathFinder wins over the editable-install finder.  Inserting the
@@ -785,6 +785,29 @@ def size_buy_list() -> str:
     if _buy_list is None:
         return _safe_json({"error": "Call load_screen_results first"})
 
+    sized, skipped = _size_unsized_entries(mgr, _buy_list)
+    _buy_list = sized
+    return _safe_json({
+        "sized": [e["ticker"] for e in sized],
+        "skipped": skipped,
+        "count": len(sized),
+    })
+
+
+def _size_unsized_entries(mgr, entries: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
+    """Fill price/shares/cost/stop for any entry whose price is null.
+
+    Returns (sized, skipped). Shared by size_buy_list and execute_entries so a
+    skipped size_buy_list step can't silently zero out execution — execute_entries
+    sizes on demand and drops only the entries that genuinely can't be sized.
+    Idempotent: already-sized entries pass through unchanged.
+    """
+    # Fast path: nothing to size -> skip the broker portfolio/cash calls entirely.
+    if all(
+        e.get("price") is not None and e.get("shares") is not None for e in entries
+    ):
+        return list(entries), []
+
     # Merge defaults so a partial regime (e.g. {"name": ...} from the screen
     # save node) can't drop sizing_multiplier/entries_allowed and crash sizing.
     regime = {"sizing_multiplier": 1.0, "entries_allowed": True, **(_regime or {})}
@@ -800,7 +823,7 @@ def size_buy_list() -> str:
     sized: List[Dict] = []
     skipped: List[Dict] = []
 
-    for entry in _buy_list:
+    for entry in entries:
         ticker = entry.get("ticker")
         if entry.get("price") is not None and entry.get("shares") is not None:
             sized.append(entry)
@@ -834,12 +857,7 @@ def size_buy_list() -> str:
         sized.append(entry)
         cash -= cost
 
-    _buy_list = sized
-    return _safe_json({
-        "sized": [e["ticker"] for e in sized],
-        "skipped": skipped,
-        "count": len(sized),
-    })
+    return sized, skipped
 
 
 @mcp.tool()
@@ -852,22 +870,25 @@ def execute_entries() -> str:
     Must call generate_buy_list (or size_buy_list after load_screen_results)
     first so each entry has price/shares/stop populated.
     """
+    global _buy_list
     mgr = _init_manager()
 
     if _buy_list is None:
         return _safe_json({"error": "Call generate_buy_list or size_buy_list first"})
 
-    missing = [
-        e.get("ticker") for e in _buy_list
-        if any(e.get(k) is None for k in ("price", "shares", "stop"))
-    ]
-    if missing:
+    # Size on demand rather than hard-failing the whole batch: if the agent
+    # skipped size_buy_list, every entry would be unsized and execution would
+    # silently place zero orders. Size any unsized entries now and drop only the
+    # ones that genuinely can't be sized (no quote / <1 share / over cash).
+    sized, skipped = _size_unsized_entries(mgr, _buy_list)
+    _buy_list = sized
+    if not sized:
         return _safe_json({
-            "error": (
-                "Buy list has entries with null price/shares/stop: "
-                f"{missing}. Call size_buy_list first to populate sizing."
-            ),
-            "unsized_tickers": missing,
+            "error": "No entries could be sized for execution.",
+            "skipped": skipped,
+            "executed": [],
+            "count": 0,
+            "dry_run": _dry_run,
         })
 
     executed = mgr.execute_entries(
@@ -878,6 +899,7 @@ def execute_entries() -> str:
     return _safe_json({
         "executed": executed,
         "count": len(executed),
+        "skipped": skipped,
         "dry_run": _dry_run,
     })
 

@@ -142,26 +142,53 @@ def parse_conclusion(
         except (json.JSONDecodeError, Exception):
             pass
 
-    last_brace = text.rfind("}")
-    if last_brace == -1:
+    # Try every balanced {...} object in the text, largest first. The old code
+    # walked back from the LAST "}" only, so a trailing stray brace (a "meta"
+    # example, a brace in prose) shadowed the real conclusion. The real object is
+    # almost always the biggest one that validates against the model.
+    spans = _balanced_json_spans(text)
+    if not spans:
         logger.warning("%s: no JSON object found in output", role)
         return None
 
-    depth, start = 0, last_brace
-    for i in range(last_brace, -1, -1):
-        if text[i] == "}":
-            depth += 1
-        elif text[i] == "{":
-            depth -= 1
+    last_err = None
+    for start, end in sorted(spans, key=lambda s: s[1] - s[0], reverse=True):
+        try:
+            return model_class.model_validate(json.loads(text[start:end]))
+        except (json.JSONDecodeError, Exception) as e:
+            last_err = e
+            continue
+
+    logger.warning(
+        "%s: found %d JSON object(s) but none validated as %s: %s",
+        role, len(spans), model_class.__name__, last_err,
+    )
+    return None
+
+
+def _balanced_json_spans(text: str) -> List[Tuple[int, int]]:
+    """Return (start, end) slices of every top-level balanced {...} object.
+
+    Tracks brace depth so nested objects are kept whole and only complete
+    top-level objects are returned. (Braces inside string literals are not
+    special-cased — same limitation as the prior rfind approach, but this no
+    longer lets a trailing stray object hide the real one.)
+    """
+    spans: List[Tuple[int, int]] = []
+    depth = 0
+    start: Optional[int] = None
+    for i, ch in enumerate(text):
+        if ch == "{":
             if depth == 0:
                 start = i
-                break
-
-    try:
-        return model_class.model_validate(json.loads(text[start:last_brace + 1]))
-    except (json.JSONDecodeError, Exception) as e:
-        logger.warning("%s: failed to parse extracted JSON: %s", role, e)
-        return None
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start is not None:
+                    spans.append((start, i + 1))
+                    start = None
+    return spans
 
 
 def _classify_transient_cli_error(

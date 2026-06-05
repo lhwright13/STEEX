@@ -246,15 +246,44 @@ class TestExecution:
         result = _parse(mcp_mod.execute_entries())
         assert result["dry_run"] is True
 
-    def test_execute_entries_rejects_unsized(self, inject_manager):
-        """execute_entries must refuse a buy list with null price/shares/stop."""
+    def test_execute_entries_sizes_unsized_on_demand(self, inject_manager):
+        """If size_buy_list was skipped, execute_entries sizes on demand rather
+        than silently placing zero orders."""
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._buy_list = [{"ticker": "AAPL", "score": 60.0}]
+        mcp_mod._buy_list = [{"ticker": "AAPL", "score": 60.0}]  # unsized
+        inject_manager._get_portfolio_value.return_value = 50000.0
+        inject_manager._get_cash.return_value = 20000.0
+        inject_manager.settings.min_cash_reserve_pct = 0.1
+        inject_manager.settings.initial_stop_pct = 0.05
+        inject_manager.price_provider.get_latest_price.return_value = 150.0
+        inject_manager._calculate_position_size_pct.return_value = 0.05
+        inject_manager.execute_entries.return_value = [
+            {"ticker": "AAPL", "status": "filled", "qty": 16}
+        ]
+
+        result = _parse(mcp_mod.execute_entries())
+
+        assert result["count"] == 1
+        inject_manager.execute_entries.assert_called_once()
+        # the entry was sized in place before execution
+        assert mcp_mod._buy_list[0]["shares"] >= 1
+        assert mcp_mod._buy_list[0]["price"] == 150.0
+
+    def test_execute_entries_skips_unsizable(self, inject_manager):
+        """An entry that genuinely can't be sized (no quote) is dropped, and with
+        nothing left to execute the call reports it instead of placing orders."""
+        import src.agents.mcp_server as mcp_mod
+        mcp_mod._buy_list = [{"ticker": "AAPL", "score": 60.0}]  # unsized
+        inject_manager._get_portfolio_value.return_value = 50000.0
+        inject_manager._get_cash.return_value = 20000.0
+        inject_manager.settings.min_cash_reserve_pct = 0.1
+        inject_manager.price_provider.get_latest_price.return_value = None  # no quote
 
         result = _parse(mcp_mod.execute_entries())
 
         assert "error" in result
-        assert result["unsized_tickers"] == ["AAPL"]
+        assert result["count"] == 0
+        assert any(s["ticker"] == "AAPL" for s in result["skipped"])
         inject_manager.execute_entries.assert_not_called()
 
     def test_execute_exits_requires_sell_list(self, inject_manager):
