@@ -14,6 +14,7 @@ from .nodes import (
     make_agent_node,
     make_manager_node,
     make_execution_node,
+    make_reconcile_exits_node,
     make_load_screen_node,
     make_save_screen_node,
     make_evolve_prompts_node,
@@ -173,8 +174,17 @@ def build_graph(
     # Manager → executor or post-actions
     if mode_config.executor:
         first_after_manager = _get_first_post_action(mode_config)
+        # Deterministic exit/stop reconciliation floor before the execution gate.
+        # monitor/post_market only — the LLM's `sells` are advisory and have come
+        # back empty while real exit signals were live (fail-open). enter is
+        # entry-driven and needs no exit floor.
+        gate_source = "manager"
+        if mode in ("monitor", "post_market"):
+            graph.add_node("reconcile_exits", make_reconcile_exits_node(ctx))
+            graph.add_edge("manager", "reconcile_exits")
+            gate_source = "reconcile_exits"
         graph.add_conditional_edges(
-            "manager",
+            gate_source,
             route_execution_gate,
             {"execute": "execution", "skip_execution": first_after_manager or END},
         )

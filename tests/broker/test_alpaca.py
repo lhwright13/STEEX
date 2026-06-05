@@ -333,9 +333,51 @@ class TestPlaceStopOrder:
 # ---------------------------------------------------------------------------
 
 class TestUpdateStopOrder:
-    def test_cancel_and_replace(self, broker, mock_client):
-        """Update cancels existing stop, then places a new one."""
-        _mock_position_above_stop(mock_client, 150.00)  # price above new stop of 140
+    def test_existing_fixed_stop_uses_atomic_replace(self, broker, mock_client):
+        """An existing fixed STOP is moved via Alpaca's native replace — never
+        cancelled — so the position is never left unprotected (H1)."""
+        existing_stop = _make_order(
+            order_id="old-stop",
+            order_type=OrderType.STOP,
+            side=OrderSide.SELL,
+            time_in_force=TimeInForce.GTC,
+            stop_price=130.00,
+        )
+        replaced = _make_order(order_id="replaced-stop", status=OrderStatus.ACCEPTED)
+        mock_client.get_orders.return_value = [existing_stop]
+        mock_client.replace_order_by_id.return_value = replaced
+
+        result = broker.update_stop_order("AAPL", 10, 140.00)
+
+        assert result.order_id == "replaced-stop"
+        # The race-prone cancel-then-place path must NOT be used here.
+        mock_client.cancel_order_by_id.assert_not_called()
+        mock_client.submit_order.assert_not_called()
+        called_id = mock_client.replace_order_by_id.call_args.args[0]
+        assert called_id == "old-stop"
+
+    def test_idempotent_when_stop_already_at_target(self, broker, mock_client):
+        """If the live fixed stop already equals the target, do nothing."""
+        existing_stop = _make_order(
+            order_id="same-stop",
+            order_type=OrderType.STOP,
+            side=OrderSide.SELL,
+            time_in_force=TimeInForce.GTC,
+            stop_price=140.00,
+        )
+        mock_client.get_orders.return_value = [existing_stop]
+
+        result = broker.update_stop_order("AAPL", 10, 140.00)
+
+        assert result.order_id == "same-stop"
+        mock_client.replace_order_by_id.assert_not_called()
+        mock_client.cancel_order_by_id.assert_not_called()
+        mock_client.submit_order.assert_not_called()
+
+    def test_replace_failure_falls_back_to_cancel_then_place(self, broker, mock_client):
+        """If the atomic replace errors, fall back to cancel-wait-place."""
+        from alpaca.common.exceptions import APIError
+        _mock_position_above_stop(mock_client, 150.00)
         existing_stop = _make_order(
             order_id="old-stop",
             order_type=OrderType.STOP,
@@ -344,12 +386,11 @@ class TestUpdateStopOrder:
             stop_price=130.00,
         )
         new_stop = _make_order(order_id="new-stop", status=OrderStatus.ACCEPTED)
-
-        # get_stop_order finds the old one
-        mock_client.get_orders.return_value = [existing_stop]
-        # cancel succeeds
+        # get_orders sequence: (1) get_stop_order finds it, (2) cancel-and-wait
+        # initial query still sees it -> cancels, (3) poll sees it cleared.
+        mock_client.get_orders.side_effect = [[existing_stop], [existing_stop], []]
+        mock_client.replace_order_by_id.side_effect = APIError("cannot replace")
         mock_client.cancel_order_by_id.return_value = None
-        # new stop placed
         mock_client.submit_order.return_value = new_stop
 
         result = broker.update_stop_order("AAPL", 10, 140.00)
@@ -358,7 +399,7 @@ class TestUpdateStopOrder:
         mock_client.cancel_order_by_id.assert_called_once_with("old-stop")
 
     def test_update_when_no_existing_stop(self, broker, mock_client):
-        """If no existing stop, just places a new one."""
+        """If no existing stop, just places a new one (no cancel, no replace)."""
         _mock_position_above_stop(mock_client, 150.00)  # price above new stop of 140
         mock_client.get_orders.return_value = []  # no stops found
         new_stop = _make_order(order_id="new-stop", status=OrderStatus.ACCEPTED)
@@ -368,6 +409,7 @@ class TestUpdateStopOrder:
 
         assert result.order_id == "new-stop"
         mock_client.cancel_order_by_id.assert_not_called()
+        mock_client.replace_order_by_id.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

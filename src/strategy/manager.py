@@ -522,8 +522,17 @@ class QuantManager:
                 new_server_stop = round(
                     pos.current_stop * (1 - self.settings.server_stop_offset_pct), 2
                 )
-                self.broker.update_stop_order(ticker, pos.shares, new_server_stop)
-                self._log("risk", f"Server stop updated for {ticker} @ ${new_server_stop:.2f}")
+                result = self.broker.update_stop_order(ticker, pos.shares, new_server_stop)
+                if result.status == "failed":
+                    # The local stop was already ratcheted+persisted; if the broker
+                    # didn't take it, surface the divergence instead of swallowing it
+                    # (this is how positions silently ended up in missing_stops).
+                    self._log(
+                        "risk",
+                        f"SERVER STOP NOT UPDATED for {ticker} @ ${new_server_stop:.2f}: {result.error}",
+                    )
+                else:
+                    self._log("risk", f"Server stop updated for {ticker} @ ${new_server_stop:.2f}")
 
         # Portfolio summary
         port_summary = self.position_manager.get_portfolio_summary(current_prices)
@@ -687,7 +696,7 @@ class QuantManager:
                 else:
                     base_pct = self.settings.vol_high_position_pct
 
-        base_pct *= regime["sizing_multiplier"]
+        base_pct *= regime.get("sizing_multiplier", 1.0)
         return min(base_pct, self.settings.max_single_position_pct)
 
     def generate_buy_list(
@@ -697,7 +706,7 @@ class QuantManager:
 
         Uses broker account data for portfolio value and cash.
         """
-        if not regime["entries_allowed"]:
+        if not regime.get("entries_allowed", True):
             self._log("execution", "Entries blocked by regime")
             return []
 

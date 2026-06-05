@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -163,6 +164,32 @@ def parse_conclusion(
         return None
 
 
+def _classify_transient_cli_error(
+    stdout: Optional[str], stderr: Optional[str]
+) -> Optional[str]:
+    """Return a short label if a non-zero CLI exit looks transient (retryable), else None.
+
+    The claude CLI surfaces upstream API failures in its JSON stdout
+    (e.g. an error envelope carrying "401") and/or stderr. Auth blips (401),
+    rate limits (429) and 5xx/overloaded are worth a bounded retry; everything
+    else (bad request, config, parse) is terminal. A single un-retried 401 took
+    out all five 06-01 agents and silently laundered the day onto the fallback.
+    """
+    blob = f"{stdout or ''}\n{stderr or ''}".lower()
+    if not blob.strip():
+        return None
+    for code, label in (
+        ("401", "auth 401"), ("403", "auth 403"), ("429", "rate-limit 429"),
+        ("500", "server 500"), ("502", "server 502"), ("503", "server 503"),
+        ("529", "overloaded 529"),
+    ):
+        if code in blob:
+            return label
+    if any(k in blob for k in ("overloaded", "rate limit", "econnreset", "etimedout")):
+        return "transient"
+    return None
+
+
 def run_agent(
     ctx: RunnerContext,
     role: str,
@@ -228,17 +255,36 @@ def run_agent(
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)
 
-        result = subprocess.run(
-            cmd,
-            text=True,
-            timeout=ctx.settings.agent_timeout_seconds,
-            cwd=str(ctx.project_root),
-            env=env,
-            **({"stdout": subprocess.PIPE, "stderr": None} if ctx.verbose
-               else {"capture_output": True}),
-        )
+        # Bounded retry on transient upstream errors (401/429/5xx/overloaded).
+        # Without this a single auth blip aborts a critical agent and launders the
+        # whole run onto the deterministic fallback, mislabeled as a logic failure.
+        max_attempts = 3
+        result = None
+        for attempt in range(1, max_attempts + 1):
+            result = subprocess.run(
+                cmd,
+                text=True,
+                timeout=ctx.settings.agent_timeout_seconds,
+                cwd=str(ctx.project_root),
+                env=env,
+                **({"stdout": subprocess.PIPE, "stderr": None} if ctx.verbose
+                   else {"capture_output": True}),
+            )
 
-        if result.returncode != 0:
+            if result.returncode == 0:
+                break
+
+            transient = _classify_transient_cli_error(result.stdout, result.stderr)
+            if transient and attempt < max_attempts:
+                wait = 2 ** attempt
+                logger.warning(
+                    "%s transient CLI error (%s) — retry %d/%d after %ds",
+                    role, transient, attempt, max_attempts - 1, wait,
+                )
+                console.print(f"  [yellow]{role} transient {transient}, retrying...[/yellow]")
+                time.sleep(wait)
+                continue
+
             stderr_text = result.stderr or ""
             stdout_text = result.stdout or ""
             fail_dir = Path(ctx.settings.data_dir) / "agents" / "failures"
@@ -255,10 +301,12 @@ def run_agent(
                 role, result.returncode, stderr_text[:500], stdout_text[:500], fail_path,
             )
             console.print(f"  [red]{role} failed[/red] (see {fail_path})")
-            trace.finish(
-                success=False,
-                error=f"exit code {result.returncode}: {fail_path}",
+            # Distinct label so an outage isn't mislabeled as a risk-logic failure.
+            label = (
+                f"{transient} outage (exhausted retries)" if transient
+                else f"exit code {result.returncode}"
             )
+            trace.finish(success=False, error=f"{label}: {fail_path}")
             return None, trace
 
         try:
@@ -278,6 +326,29 @@ def run_agent(
 
         for tc in extract_tool_calls_from_envelope(envelope):
             trace.add_tool_call(tc)
+
+        # Observability: the --output-format json envelope does NOT carry per-message
+        # tool_use blocks, so tools_called is empty for every tool-using agent.
+        # Full telemetry needs an --output-format stream-json migration (rewrites the
+        # trading-critical parse path — do that as a separately validated change).
+        # In the meantime, surface the two failure modes that data IS in the envelope:
+        #   1. a tool-using agent that finished in <=1 turn never actually called a tool
+        #   2. permission denials silently blocked tools the agent tried to use
+        if needs_tools and not trace.tools_called:
+            num_turns = envelope.get("num_turns", 0)
+            if num_turns is not None and num_turns <= 1:
+                logger.warning(
+                    "%s needs_tools but finished in %s turn(s) with no tool calls — "
+                    "likely emitted JSON without using MCP tools",
+                    role, num_turns,
+                )
+        denials = envelope.get("permission_denials") or []
+        if denials:
+            logger.warning(
+                "%s had %d permission denial(s): %s",
+                role, len(denials),
+                [d.get("tool_name", d) if isinstance(d, dict) else d for d in denials][:5],
+            )
 
         agent_text = envelope.get("result", "")
         trace.raw_output = agent_text
@@ -524,6 +595,82 @@ def make_execution_node(executor_name: str, ctx: RunnerContext) -> Callable:
     return node
 
 
+# Cached deterministic manager for the reconcile node, so monitor/post_market
+# runs don't reconnect to the broker on every invocation.
+_reconcile_manager = None
+
+
+def _get_reconcile_manager(ctx: RunnerContext):
+    """Build (once) the deterministic QuantManager used for exit/stop reconciliation.
+
+    Mirrors Orchestrator._fallback: the runner already constructs an in-process
+    QuantManager for the deterministic/fallback paths, so this introduces no new
+    broker coupling.
+    """
+    global _reconcile_manager
+    if _reconcile_manager is None:
+        from src.strategy.manager import QuantManager
+        try:
+            _reconcile_manager = QuantManager(settings=ctx.settings)
+        except RuntimeError:
+            ctx.settings.broker_enabled = False
+            _reconcile_manager = QuantManager(settings=ctx.settings)
+    return _reconcile_manager
+
+
+def make_reconcile_exits_node(ctx: RunnerContext) -> Callable:
+    """Factory: deterministic exit + stop-sync floor for monitor/post_market.
+
+    The LLM ManagerAgent's `sells` are advisory and have repeatedly come back
+    empty while hard-stop / max-hold / dead-money / VIX exit signals were live —
+    a fail-open exit gate. This node runs the deterministic exit engine and
+    force-merges its signals into manager_decision['sells'] so route_execution_gate
+    cannot skip a real exit, then re-syncs server-side stops (the agent monitor
+    path otherwise never reconciles them — the cause of the rotating
+    `missing_stops` in the heartbeat).
+
+    Defensive: any failure returns {} (decision unchanged), preserving prior
+    behavior rather than breaking a monitor run.
+    """
+    def node(state: PipelineState) -> dict:
+        decision = dict(state.get("manager_decision") or {})
+        try:
+            mgr = _get_reconcile_manager(ctx)
+            mgr._sync_broker()
+            det_sells = mgr.generate_sell_list(mgr.get_exit_signals())
+        except Exception as e:
+            logger.error("Exit reconciliation failed (%s); leaving decision unchanged", e)
+            return {}
+
+        if det_sells:
+            # Union by ticker; the deterministic signal wins (real reason/urgency/shares).
+            existing = {s.get("ticker"): s for s in (decision.get("sells") or [])}
+            for s in det_sells:
+                existing[s["ticker"]] = {**existing.get(s["ticker"], {}), **s}
+            decision["sells"] = list(existing.values())
+            logger.warning(
+                "Deterministic exits force-merged into %s decision: %s",
+                state["mode"], [s["ticker"] for s in det_sells],
+            )
+
+        # Re-sync server-side stops in the agent path. update_stop_order is now
+        # idempotent (skips when the live stop already matches), so this is cheap.
+        if mgr.broker and ctx.settings.server_stops_enabled and not ctx.dry_run:
+            for pos in mgr.position_manager.get_all_positions():
+                try:
+                    server_stop = round(
+                        pos.current_stop * (1 - ctx.settings.server_stop_offset_pct), 2
+                    )
+                    res = mgr.broker.update_stop_order(pos.ticker, pos.shares, server_stop)
+                    if res.status == "failed":
+                        logger.warning("Stop sync failed for %s: %s", pos.ticker, res.error)
+                except Exception as e:
+                    logger.warning("Stop sync error for %s: %s", pos.ticker, e)
+
+        return {"manager_decision": decision}
+    return node
+
+
 def make_load_screen_node(ctx: RunnerContext) -> Callable:
     """Factory: create a node that loads screen results from disk."""
     def node(state: PipelineState) -> dict:
@@ -551,9 +698,28 @@ def make_save_screen_node(ctx: RunnerContext) -> Callable:
         screen_path = Path(ctx.settings.data_dir) / "screen_results"
         screen_path.mkdir(parents=True, exist_ok=True)
 
+        buys = decision_dict.get("buys", [])
+        # Persist the FULL regime, not just its name: the enter phase sizes
+        # positions with sizing_multiplier and gates entries on entries_allowed.
+        # A name-only regime would drop those keys and crash size_buy_list
+        # (KeyError) / silently bypass the entries_allowed freeze. Source from
+        # the RiskAgent conclusion; fall back to safe, trade-permitting defaults.
+        risk = state.get("conclusions", {}).get("risk") or {}
+        regime = {
+            "name": risk.get("regime_name") or decision_dict.get("regime_name"),
+            "sizing_multiplier": risk.get("sizing_multiplier", 1.0),
+            "entries_allowed": risk.get("entries_allowed", True),
+            "vix": risk.get("vix_level"),
+        }
+        # Write both keys so every loader agrees: make_load_screen_node reads
+        # "entries", while the MCP load_screen_results tool (used by the
+        # enter-phase ExecutionAgent) reads "buy_list". Writing only one
+        # silently dropped every enter-phase buy.
         screen_data = {
             "timestamp": datetime.now().isoformat(),
-            "entries": decision_dict.get("buys", []),
+            "entries": buys,
+            "buy_list": buys,
+            "regime": regime,
         }
 
         (screen_path / "latest.json").write_text(json.dumps(screen_data, indent=2))

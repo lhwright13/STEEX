@@ -785,7 +785,9 @@ def size_buy_list() -> str:
     if _buy_list is None:
         return _safe_json({"error": "Call load_screen_results first"})
 
-    regime = _regime or {"sizing_multiplier": 1.0, "entries_allowed": True}
+    # Merge defaults so a partial regime (e.g. {"name": ...} from the screen
+    # save node) can't drop sizing_multiplier/entries_allowed and crash sizing.
+    regime = {"sizing_multiplier": 1.0, "entries_allowed": True, **(_regime or {})}
     portfolio_value = mgr._get_portfolio_value()
     cash = mgr._get_cash()
 
@@ -1042,7 +1044,10 @@ def load_screen_results() -> str:
         })
 
     global _regime
-    _buy_list = screen_data.get("buy_list", [])
+    # Accept either key: the LangGraph save node (make_save_screen_node) writes
+    # candidates under "entries", while the MCP/orchestrator savers use
+    # "buy_list". Reading only one silently dropped every enter-phase buy.
+    _buy_list = screen_data.get("buy_list") or screen_data.get("entries") or []
     _regime = screen_data.get("regime", {}) or _regime
     return _safe_json({
         "buy_list": _buy_list,

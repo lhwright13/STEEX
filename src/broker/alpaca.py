@@ -14,6 +14,7 @@ from alpaca.trading.requests import (
     GetOrdersRequest,
     LimitOrderRequest,
     MarketOrderRequest,
+    ReplaceOrderRequest,
     StopOrderRequest,
     TrailingStopOrderRequest,
 )
@@ -187,9 +188,101 @@ class AlpacaBroker(Broker):
     def update_stop_order(
         self, ticker: str, qty: int, new_stop_price: float
     ) -> OrderResult:
-        """Cancel existing stop and place a new one at the new price."""
-        self.cancel_stop_for_ticker(ticker)
-        return self.place_stop_order(ticker, qty, new_stop_price)
+        """Move a position's stop to a new price without ever leaving it unprotected.
+
+        Previously this did `cancel_stop_for_ticker(); place_stop_order()` back to
+        back. Alpaca's cancel is asynchronous, so the shares were still
+        `held_for_orders` when the new stop was submitted → rejected with
+        `insufficient qty available` (40310000); and if the cancel landed first but
+        the place failed, the position was left with NO stop. This caused the
+        rotating `missing_stops` seen in the heartbeat.
+
+        Strategy:
+          1. If a fixed-price STOP already exists, use Alpaca's native atomic
+             replace (the order is never cancelled, so protection is continuous).
+          2. Otherwise (no stop yet, or a TRAILING_STOP that can't be replaced in
+             place) cancel, WAIT for the cancel to reach a terminal state, then
+             place — with one retry if the held-qty race still bites.
+        """
+        new_stop_price = round(new_stop_price, 2)
+        existing = self.get_stop_order(ticker)
+
+        # Idempotent: live fixed stop already at target → nothing to do.
+        if (
+            existing
+            and existing.get("order_type") == OrderType.STOP.value
+            and existing.get("stop_price") is not None
+            and abs(existing["stop_price"] - new_stop_price) < 0.01
+        ):
+            return OrderResult(order_id=existing["order_id"], status="accepted")
+
+        # 1. Atomic native replace for an existing fixed STOP.
+        if existing and existing.get("order_type") == OrderType.STOP.value:
+            try:
+                order = self.client.replace_order_by_id(
+                    existing["order_id"],
+                    ReplaceOrderRequest(stop_price=new_stop_price),
+                )
+                logger.info(
+                    "Stop replaced (atomic): %s @ $%.2f (id=%s)",
+                    ticker, new_stop_price, order.id,
+                )
+                return OrderResult(order_id=str(order.id), status="accepted")
+            except APIError as e:
+                logger.warning(
+                    "Atomic stop replace failed for %s (%s) — falling back to cancel+place",
+                    ticker, e,
+                )
+
+        # 2. Cancel + wait-for-terminal + place, with one retry on the held-qty race.
+        self._cancel_stops_and_wait(ticker)
+        result = self.place_stop_order(ticker, qty, new_stop_price)
+        if result.status == "failed" and self._is_held_qty_error(result.error):
+            logger.warning(
+                "Stop place hit held-qty race for %s — retrying after re-confirming cancel",
+                ticker,
+            )
+            self._cancel_stops_and_wait(ticker, timeout=4.0)
+            result = self.place_stop_order(ticker, qty, new_stop_price)
+        if result.status == "failed":
+            logger.error(
+                "update_stop_order left %s WITHOUT a server stop: %s",
+                ticker, result.error,
+            )
+        return result
+
+    @staticmethod
+    def _is_held_qty_error(error: Optional[str]) -> bool:
+        """True if a place_stop failure is the cancel-then-place race (shares still held)."""
+        if not error:
+            return False
+        e = error.lower()
+        return (
+            "insufficient qty" in e
+            or "held_for_orders" in e
+            or "40310000" in e
+        )
+
+    def _cancel_stops_and_wait(
+        self, ticker: str, timeout: float = 3.0, poll: float = 0.25
+    ) -> bool:
+        """Cancel all open sell stops for a ticker and block until they clear.
+
+        Returns True once no open sell stop remains, False on timeout. Polling for
+        the terminal state is what closes the async-cancel race in update_stop_order.
+        """
+        stops = self._get_open_sell_stops(ticker)
+        if not stops:
+            return True
+        for s in stops:
+            self.cancel_order(s["order_id"])
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self._get_open_sell_stops(ticker):
+                return True
+            time.sleep(poll)
+        logger.warning("Stops for %s did not clear within %.1fs", ticker, timeout)
+        return False
 
     def _get_open_sell_stops(self, ticker: str) -> List[Dict]:
         """Return all open GTC sell-side stop orders (STOP + TRAILING_STOP) for a ticker."""
