@@ -36,7 +36,7 @@ from .nodes import cleanup_mcp, run_agent
 from .registry import AgentRegistry, ModeConfig
 from .run_log import start_run_log, finish_run_log
 from .state import PipelineState, RunnerContext
-from .trace import AgentSession, AgentTrace, extract_tool_calls_from_envelope
+from .trace import AgentSession, AgentTrace
 
 logger = logging.getLogger("steex.orchestrator")
 console = Console()

@@ -25,7 +25,7 @@ from rich.console import Console
 from .conclusions import LearningConclusion, LearningManagerDecision, ManagerDecision
 from .registry import ModeConfig
 from .state import PipelineState, RunnerContext
-from .trace import AgentTrace, extract_tool_calls_from_envelope
+from .trace import AgentTrace, parse_stream_json_output
 
 logger = logging.getLogger("steex.nodes")
 console = Console()
@@ -259,7 +259,11 @@ def run_agent(
     cmd = [
         claude_bin,
         "-p", f"{system_prompt}\n\n---\n\n{task_message}",
-        "--output-format", "json",
+        # stream-json (+ --verbose, required) emits one NDJSON line per turn,
+        # including the tool_use blocks needed for tool-call telemetry. The
+        # terminal {"type":"result"} line is the same envelope --output-format
+        # json produced, so downstream handling is unchanged.
+        "--output-format", "stream-json", "--verbose",
         "--max-turns", str(max_turns),
     ]
     if model:
@@ -294,6 +298,7 @@ def run_agent(
                 timeout=ctx.settings.agent_timeout_seconds,
                 cwd=str(ctx.project_root),
                 env=env,
+                stdin=subprocess.DEVNULL,  # -p needs no stdin; avoids a 3s wait/warning
                 **({"stdout": subprocess.PIPE, "stderr": None} if ctx.verbose
                    else {"capture_output": True}),
             )
@@ -336,12 +341,13 @@ def run_agent(
             trace.finish(success=False, error=f"{label}: {fail_path}")
             return None, trace
 
-        try:
-            envelope = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            logger.error("%s: invalid CLI JSON output", role)
+        # stream-json: collect tool_use calls from the assistant turns and the
+        # terminal result line (same envelope shape the json format produced).
+        envelope, tool_calls = parse_stream_json_output(result.stdout)
+        if envelope is None:
+            logger.error("%s: no result envelope in CLI output", role)
             console.print(f"  [red]{role}: invalid CLI output[/red]")
-            trace.finish(success=False, error="invalid JSON output")
+            trace.finish(success=False, error="invalid CLI output (no result line)")
             return None, trace
 
         if envelope.get("is_error"):
@@ -351,14 +357,10 @@ def run_agent(
             trace.finish(success=False, error=str(error_msg))
             return None, trace
 
-        for tc in extract_tool_calls_from_envelope(envelope):
+        for tc in tool_calls:
             trace.add_tool_call(tc)
 
-        # Observability: the --output-format json envelope does NOT carry per-message
-        # tool_use blocks, so tools_called is empty for every tool-using agent.
-        # Full telemetry needs an --output-format stream-json migration (rewrites the
-        # trading-critical parse path — do that as a separately validated change).
-        # In the meantime, surface the two failure modes that data IS in the envelope:
+        # Observability: surface two failure modes even when tool_calls is empty —
         #   1. a tool-using agent that finished in <=1 turn never actually called a tool
         #   2. permission denials silently blocked tools the agent tried to use
         if needs_tools and not trace.tools_called:

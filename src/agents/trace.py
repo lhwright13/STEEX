@@ -165,35 +165,57 @@ class AgentSession:
             logger.info("Pruned %d old session files", removed)
 
 
-def extract_tool_calls_from_envelope(envelope: Dict) -> List[ToolCall]:
-    """Extract tool call info from the claude CLI JSON envelope.
+def parse_stream_json_output(stdout: str) -> "tuple[Optional[Dict], List[ToolCall]]":
+    """Parse `claude --output-format stream-json --verbose` NDJSON output.
 
-    The envelope may contain tool use info in various formats depending
-    on the CLI version. We extract what we can.
+    Returns (envelope, tool_calls):
+      - envelope: the terminal {"type": "result"} line, which has the SAME shape
+        as the old --output-format json envelope (is_error / result / num_turns /
+        permission_denials / usage), or None if no result line was found.
+      - tool_calls: ToolCall for every tool_use block across all assistant turns.
+
+    The --output-format json envelope carried no per-message tool_use blocks, so
+    tool telemetry was always empty; stream-json emits an "assistant" line per
+    turn whose message.content[] holds the tool_use blocks.
+
+    Fallback: if no result line is found (e.g. a CLI/format change, or output is
+    actually single-json), try to parse the whole stdout as one JSON object so a
+    regression degrades to the prior behavior instead of breaking.
     """
-    calls = []
+    envelope: Optional[Dict] = None
+    tool_calls: List[ToolCall] = []
 
-    # The claude CLI --output-format json returns a "result" field with
-    # the agent's text output. Tool calls aren't always in the envelope,
-    # but some versions include them in a "tool_uses" or "messages" field.
-    messages = envelope.get("messages", [])
-    for msg in messages:
-        if isinstance(msg, dict) and msg.get("type") == "tool_use":
-            calls.append(ToolCall(
-                tool=msg.get("name", "unknown"),
-                input_summary=_summarize(msg.get("input", {})),
-            ))
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        otype = obj.get("type")
+        if otype == "assistant":
+            content = (obj.get("message") or {}).get("content") or []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    tool_calls.append(ToolCall(
+                        tool=block.get("name", "unknown"),
+                        input_summary=_summarize(block.get("input", {})),
+                    ))
+        elif otype == "result":
+            envelope = obj  # last result line wins (there is exactly one)
 
-    # Also check for tool_uses at top level
-    tool_uses = envelope.get("tool_uses", [])
-    for tu in tool_uses:
-        if isinstance(tu, dict):
-            calls.append(ToolCall(
-                tool=tu.get("name", "unknown"),
-                input_summary=_summarize(tu.get("input", {})),
-            ))
+    if envelope is None:
+        try:
+            parsed = json.loads(stdout)
+            if isinstance(parsed, dict):
+                envelope = parsed
+        except json.JSONDecodeError:
+            envelope = None
 
-    return calls
+    return envelope, tool_calls
 
 
 def _summarize(obj: Any, max_len: int = 200) -> str:
