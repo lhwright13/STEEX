@@ -1772,7 +1772,10 @@ class QuantManager:
             self.save_report(report)
             return report
 
-        buy_list = screen_data.get("buy_list", [])
+        # Accept either key: the agent screen save node writes candidates under
+        # "entries" (and now also "buy_list"); reading only "buy_list" would drop
+        # an entries-only file. Mirrors the MCP load_screen_results fallback.
+        buy_list = screen_data.get("buy_list") or screen_data.get("entries") or []
         console.print(f"   Loaded {len(buy_list)} candidates from {screen_ts.strftime('%H:%M')}")
 
         # 3. Execute entries

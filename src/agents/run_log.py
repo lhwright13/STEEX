@@ -59,8 +59,28 @@ def start_run_log(data_dir, run_id: str, mode: str) -> Optional[Path]:
 
 
 def _derive_screening(conclusions: dict) -> dict:
-    """Map the analysis conclusion's funnel into the keys the dashboard reads."""
-    analysis = (conclusions or {}).get("analysis") or {}
+    """Map a run's conclusion into the funnel keys the dashboard reads.
+
+    event_scan writes its conclusion under "event_scan" (not "analysis"), so the
+    analysis path leaves every funnel field at 0 — the dashboard then shows
+    universe_size:0 for a perfectly healthy scan. Map the event-scan counts
+    instead when that's the mode that ran.
+    """
+    conclusions = conclusions or {}
+    event = conclusions.get("event_scan")
+    if event is not None:
+        actionable = event.get("actionable") or []
+        executed = event.get("executed") or []
+        return {
+            "universe_size": event.get("scanned", 0),
+            "volume_filtered": event.get("scanned", 0),
+            "sentiment_filtered": len(actionable),
+            "technical_filtered": len(actionable),
+            "insider_filtered": len(actionable),
+            "final_count": len(executed),
+        }
+
+    analysis = conclusions.get("analysis") or {}
     funnel = analysis.get("screening_funnel") or {}
     return {
         "universe_size": analysis.get("universe_size", 0),
