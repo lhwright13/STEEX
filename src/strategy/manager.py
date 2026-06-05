@@ -1069,6 +1069,28 @@ class QuantManager:
 
     def generate_daily_report(self, mode: str) -> Dict:
         """Compile everything from the current run into a structured report."""
+        # In agent mode the ReportAgent runs in its own subprocess with a fresh
+        # manager, so self.report is empty and the saved report was a near-empty
+        # stub (regime/portfolio/data_health = {}). Re-derive those core sections
+        # in-process when missing. Best-effort: a backfill failure must never
+        # break report generation. (entries/exits/screening stay mode-specific
+        # and are legitimately empty in post_market.)
+        if not self.report.get("regime"):
+            try:
+                self.get_regime()
+            except Exception as e:
+                self._log("report", f"regime backfill failed: {e}")
+        if not self.report.get("portfolio"):
+            try:
+                self.assess_portfolio_risk()
+            except Exception as e:
+                self._log("report", f"portfolio backfill failed: {e}")
+        if not self.report.get("data_health"):
+            try:
+                self.check_data_health()
+            except Exception as e:
+                self._log("report", f"data_health backfill failed: {e}")
+
         # Performance metrics from trade history
         metrics = self.trade_tracker.calculate_metrics()
 
