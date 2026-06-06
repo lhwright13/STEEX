@@ -406,6 +406,72 @@ class TestAgentDetailAPI:
         assert response.status_code == 404
 
 
+class TestUserUpdatesAPI:
+    """Test the Today's Events (user_updates) API endpoints (P3-3)."""
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_user_updates_returns_feed(self, mock_get_service, client):
+        """Feed endpoint returns the user_updates stream newest-first."""
+        mock_service = Mock()
+        mock_service.get_user_updates.return_value = {
+            "updates": [
+                {"id": "u2", "type": "event_trade", "title": "Bought DELL",
+                 "summary": "…", "ts": "2026-06-06T03:35:49Z"},
+            ],
+            "count": 1,
+            "timestamp": "2026-06-06T04:00:00Z",
+        }
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/user_updates?limit=50")
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["count"] == 1
+        assert data["updates"][0]["title"] == "Bought DELL"
+        # query params parsed through to the service
+        _, kwargs = mock_service.get_user_updates.call_args
+        assert kwargs["limit"] == 50
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_user_updates_parses_types_and_day(self, mock_get_service, client):
+        """types/day query params are forwarded to the reader."""
+        mock_service = Mock()
+        mock_service.get_user_updates.return_value = {"updates": [], "count": 0}
+        mock_get_service.return_value = mock_service
+
+        client.get("/api/v1/user_updates?types=buy,sell&day=2026-06-06")
+
+        _, kwargs = mock_service.get_user_updates.call_args
+        assert kwargs["types"] == ["buy", "sell"]
+        assert kwargs["day"] == "2026-06-06"
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_user_update_detail_returns_record(self, mock_get_service, client):
+        """Detail endpoint returns a single record by id."""
+        mock_service = Mock()
+        mock_service.get_user_update.return_value = {
+            "id": "u2", "type": "event_trade", "title": "Bought DELL",
+        }
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/user_updates/u2")
+
+        assert response.status_code == 200
+        assert json.loads(response.data)["id"] == "u2"
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_user_update_detail_404_for_unknown(self, mock_get_service, client):
+        """Unknown update id returns 404."""
+        mock_service = Mock()
+        mock_service.get_user_update.return_value = None
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/user_updates/nope")
+
+        assert response.status_code == 404
+
+
 # ========================================================================
 # Test: JSON Response Format
 # ========================================================================

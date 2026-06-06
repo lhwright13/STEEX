@@ -121,6 +121,40 @@ def create_app():
             logger.error(f"Error fetching event activity: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/user_updates")
+    def user_updates():
+        """Today's Events feed — the user_updates stream (P0-3), newest-first.
+
+        The same records delivered to the user via Telegram back this panel.
+        """
+        from flask import request
+        try:
+            limit = int(request.args.get("limit", 50))
+        except (TypeError, ValueError):
+            limit = 50
+        types_arg = request.args.get("types")
+        types = [t for t in types_arg.split(",") if t] if types_arg else None
+        day = request.args.get("day")
+        try:
+            service = get_dashboard_service()
+            return jsonify(service.get_user_updates(limit=limit, types=types, day=day))
+        except Exception as e:
+            logger.error(f"Error fetching user updates: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/v1/user_updates/<update_id>")
+    def user_update_detail(update_id):
+        """A single user_update by id — the clickable detail view."""
+        try:
+            service = get_dashboard_service()
+            rec = service.get_user_update(update_id)
+            if rec is None:
+                return jsonify({"error": "not found"}), 404
+            return jsonify(rec)
+        except Exception as e:
+            logger.error(f"Error fetching user update {update_id}: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/system/workflow-graph")
     @app.route("/api/v1/system/workflow-graph/<mode>")
     def workflow_graph(mode=None):

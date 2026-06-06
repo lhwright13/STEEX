@@ -547,29 +547,16 @@
     </div>
   </section>
 
-  <!-- ============ 3.4 TODAY'S TRADES ============ -->
+  <!-- ============ 3.4 TODAY'S EVENTS ============ -->
   <section class="panel">
     <header>
-      <h2>Today's Executions <span class="sub" id="executions-info">no runs yet</span></h2>
-      <div class="tools">
-        <button class="btn" id="btn-filter-all">All</button>
-        <button class="btn on" id="btn-filter-today">Today</button>
-        <button class="btn" id="btn-export-csv">Export CSV</button>
-      </div>
+      <h2>Today's Events <span class="sub">buys, sells, event trades &amp; big moves — what the system did today</span></h2>
     </header>
     <div class="body">
-    <div style="text-align:center;padding:24px;color:#999;">
-      No executions yet. Run screening to generate trade candidates.
-    </div>
-
-      <div class="row" style="font-family:var(--mono);font-size:12px;color:var(--dim);margin-bottom:10px;gap:22px;">
-        <span><b style="color:#000">—</b> screen runs</span>
-        <span><b style="color:#000">—</b> candidates identified</span>
-        <span><b style="color:#000">—</b> consensus picks</span>
-        <span><b style="color:#000">—</b> entry orders approved</span>
-        <span><b style="color:#000">—</b> entries executed</span>
-        <span><b style="color:#000">—</b> pending</span>
-        <span><b style="color:#000">—</b> exits executed</span>
+      <!-- P3-3: user_updates feed (the same stream sent to Telegram),
+           newest-first, each row clickable to a detail modal. -->
+      <div id="today-events" class="te-feed">
+        <div class="te-empty">Loading events…</div>
       </div>
 
       <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin:6px 0 4px;display:flex;justify-content:space-between;">
@@ -1021,6 +1008,49 @@
 
 </div>
 
+<style id="p3-styles">
+/* P3-3 Today's Events feed */
+.te-feed { display:flex; flex-direction:column; margin-bottom:14px; }
+.te-empty { text-align:center; padding:20px; color:#999; font-size:13px; }
+.te-row { display:flex; align-items:flex-start; gap:10px; width:100%; text-align:left;
+  background:#fff; border:0; border-bottom:1px solid var(--border); padding:10px 6px;
+  cursor:pointer; font-family:var(--sans); }
+.te-row:hover { background:#f6f6f6; }
+.te-icon { flex:0 0 auto; width:20px; text-align:center; font-size:13px; line-height:1.4; }
+.te-buy .te-icon { color:#00772a; }
+.te-sell .te-icon { color:#b80000; }
+.te-event .te-icon { color:#a05a00; }
+.te-move .te-icon { color:#3458b8; }
+.te-system .te-icon { color:#888; }
+.te-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.te-title { font-weight:600; font-size:13px; color:#000; }
+.te-summary { font-size:12px; color:var(--muted); overflow:hidden;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.te-time { flex:0 0 auto; font-family:var(--mono); font-size:11px; color:var(--dim); white-space:nowrap; }
+.te-event { border-left:3px solid #a05a00; }
+
+/* Modal (clickable detail) */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4);
+  display:flex; align-items:center; justify-content:center; z-index:1000; }
+.modal-card { position:relative; background:#fff; border:1px solid var(--border);
+  max-width:560px; width:92%; max-height:80vh; overflow:auto; padding:22px 24px;
+  box-shadow:0 8px 40px rgba(0,0,0,0.25); }
+.modal-close { position:absolute; top:8px; right:12px; border:0; background:none;
+  font-size:24px; line-height:1; cursor:pointer; color:#888; }
+.md-head { display:flex; gap:10px; align-items:flex-start; margin-bottom:12px; }
+.md-title { font-weight:700; font-size:16px; }
+.md-time { font-family:var(--mono); font-size:11px; color:var(--dim); }
+.md-post { border-left:3px solid #a05a00; background:#faf7f2; margin:0 0 12px;
+  padding:10px 12px; font-style:italic; font-size:13px; color:#333; }
+.md-summary { font-size:13px; line-height:1.5; color:#222; margin:0 0 14px; }
+.md-grid { display:grid; grid-template-columns:auto 1fr; gap:4px 14px;
+  font-family:var(--mono); font-size:12px; border-top:1px solid var(--border); padding-top:10px; }
+.md-k { color:var(--dim); }
+.md-v { color:#000; }
+.md-links { margin-top:12px; }
+.md-link { font-family:var(--mono); font-size:12px; color:#3458b8; margin-right:12px; }
+</style>
+<script type="module" src="/static/js/pages/dashboard.js"></script>
 <script src="/static/js/refresh.js"></script>
 <script src="/static/js/perf-chart.js"></script>
 </body>
