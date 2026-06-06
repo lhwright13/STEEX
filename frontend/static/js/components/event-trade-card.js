@@ -20,12 +20,13 @@ export function cardHtml(card) {
 
   const cell = (label, val) =>
     `<div><span class="etc-k">${label}</span><span class="etc-v">${val}</span></div>`;
+  const usd = (v) => (v == null ? "—" : "$" + Number(v).toFixed(2));
+  const stop = live && live.stop != null ? live.stop : card.stop;
   const grid = [
-    cell("Entry", card.entry_price != null ? "$" + card.entry_price : "—"),
+    cell("Entry", usd(card.entry_price)),
     cell("Shares", card.shares != null ? card.shares : "—"),
-    cell("Stop", (live && live.stop != null ? live.stop : card.stop) != null
-      ? "$" + (live && live.stop != null ? live.stop : card.stop) : "—"),
-    cell("Now", live && live.price != null ? "$" + live.price : "—"),
+    cell("Stop", usd(stop)),
+    cell("Now", live ? usd(live.price) : "—"),
   ].join("");
 
   const verdict = card.review_verdict
