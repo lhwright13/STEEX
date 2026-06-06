@@ -469,7 +469,11 @@ class TestHelperMethods:
         """Regression: _PERF_PERIODS was dropped in the P0-5 split, 500-ing the
         performance chart (it's read before the broker check). Pin it back and
         confirm an unknown period normalizes to 1M instead of raising."""
-        assert set(service._PERF_PERIODS) == {"1W", "1M", "3M", "1Y"}
+        assert set(service._PERF_PERIODS) == {"1D", "1W", "1M", "3M", "1Y", "YTD"}
+        # YTD resolves dynamically (days since Jan 1); 1D is intraday.
+        assert service._resolve_period("1D")[2] == "5Min"
+        ap, spy_days, tf = service._resolve_period("YTD")
+        assert ap.endswith("D") and tf == "1D" and spy_days >= 7
         # Force the broker path to fail so we exercise the period lookup without
         # network/credentials, then hit the graceful unavailable branch.
         with patch("alpaca.trading.client.TradingClient", side_effect=Exception("no broker")):

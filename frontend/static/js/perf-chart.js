@@ -111,12 +111,14 @@
     }));
 
     // --- x labels (first, middle, last) ---------------------------------
+    // Daily ranges label MM-DD; intraday (1D) dates are already "HH:MM".
+    const xlabel = (d) => (d && d.indexOf("-") >= 0 ? d.slice(5) : d);
     [0, Math.floor((n - 1) / 2), n - 1].forEach((i, k) => {
       svg.appendChild(el("text", {
         x: x(i), y: H - 8,
         "text-anchor": k === 0 ? "start" : k === 2 ? "end" : "middle",
         fill: "var(--muted)",
-      }, series[i].date.slice(5)));
+      }, xlabel(series[i].date)));
     });
 
     // --- alpha shading between the two lines (only where SPY exists) -----
