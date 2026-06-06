@@ -31,6 +31,20 @@ def test_master_off_disables_events_even_if_event_armed(tmp_path):
     assert event_armed(str(tmp_path)) is False
 
 
-def test_bad_control_file_defaults_armed(tmp_path):
+def test_corrupt_control_file_fails_closed(tmp_path):
+    # A control file that EXISTS but is unreadable must fail closed (disarmed):
+    # we can't confirm the intended state, so the safe default is NOT to trade.
     (tmp_path / "control.json").write_text("{not json")
+    assert trading_armed(str(tmp_path)) is False
+    assert event_armed(str(tmp_path)) is False
+
+
+def test_absent_control_file_defaults_armed(tmp_path):
+    # No file at all -> never configured -> armed (preserve existing behavior).
     assert trading_armed(str(tmp_path)) is True
+    assert event_armed(str(tmp_path)) is True
+
+
+def test_non_object_control_file_fails_closed(tmp_path):
+    (tmp_path / "control.json").write_text("[1, 2, 3]")  # valid JSON, wrong shape
+    assert trading_armed(str(tmp_path)) is False

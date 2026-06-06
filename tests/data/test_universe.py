@@ -52,6 +52,14 @@ class TestUniverseIntegration:
 
     def test_get_sp500_from_wikipedia(self):
         """Test fetching S&P 500 list from Wikipedia."""
+        # Skip cleanly when offline so the full suite stays green without network;
+        # when network is available the real assertions below still run.
+        import urllib.request
+        try:
+            urllib.request.urlopen("https://en.wikipedia.org", timeout=5).close()
+        except Exception as e:
+            pytest.skip(f"no network to Wikipedia: {e}")
+
         universe = Universe()
         tickers = universe.get_sp500(refresh=True)
 

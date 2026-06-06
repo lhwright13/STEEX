@@ -32,7 +32,7 @@ from config.settings import Settings, get_settings
 from .conclusions import LearningConclusion, LearningManagerDecision, ManagerDecision
 from .evolution import PromptEvolver
 from .graph import build_graph
-from .nodes import cleanup_mcp, run_agent
+from .nodes import cleanup_mcp, run_agent, _trace_to_dict
 from .registry import AgentRegistry, ModeConfig
 from .run_log import start_run_log, finish_run_log
 from .state import PipelineState, RunnerContext
@@ -374,9 +374,14 @@ class Orchestrator:
             project_root=self._project_root,
         )
 
+        # Collect every agent trace so the run log keeps an audit trail (the
+        # resolver runs per post, the review agent per fill). Discarding these
+        # blinded the dashboard timeline / tool trace.
+        event_traces = []
+
         def _resolve(ev):
             try:
-                res, _t = run_agent(
+                res, trace = run_agent(
                     resolver_ctx,
                     role="EventTickerResolver",
                     system_prompt=EVENT_TICKER_AGENT_PROMPT,
@@ -388,6 +393,7 @@ class Orchestrator:
                     run_id=run_id,
                     model=getattr(self.settings, "event_resolver_model", None) or None,
                 )
+                event_traces.append(_trace_to_dict(trace))
                 return res
             except Exception as e:
                 logger.error("ticker resolver failed: %s", e)
@@ -430,7 +436,7 @@ class Orchestrator:
                     f"Decide keep / exit / tighten_stop. Paper={self.paper}."
                 )
                 try:
-                    result, _trace = run_agent(
+                    result, trace = run_agent(
                         ctx,
                         role="EventReviewAgent",
                         system_prompt=self.registry.resolve_prompt("event_review", data_dir=self.settings.data_dir),
@@ -443,6 +449,7 @@ class Orchestrator:
                         mode=mode,
                         run_id=run_id,
                     )
+                    event_traces.append(_trace_to_dict(trace))
                     reviews.append(result.model_dump() if result else {"ticker": trade["ticker"], "verdict": "unknown"})
                 except Exception as e:
                     logger.error("event_review failed for %s: %s", trade["ticker"], e)
@@ -496,7 +503,7 @@ class Orchestrator:
             "event_reviews": reviews,
             "manager_decision": {"decision": "event_scan", "reasoning":
                 f"{len(scan['executed'])} event trade(s) executed, {len(reviews)} reviewed"},
-            "traces": [],
+            "traces": event_traces,
             "abort": False,
         }
         finish_run_log(run_file, self.settings.data_dir, run_id, mode, final_state, status="complete")

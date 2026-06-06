@@ -13,10 +13,14 @@ NC='\033[0m'
 echo -e "${BLUE}Dashboard Implementation Verification${NC}"
 echo ""
 
-# Run only dashboard tests (much faster than full suite)
-echo "Running dashboard tests (58 tests)..."
-if python -m pytest tests/frontend/ -q 2>&1 | grep -q "58 passed"; then
-    echo -e "${GREEN}✓ All 58 dashboard tests passing${NC}"
+# Run only dashboard tests (much faster than full suite). Use the venv python
+# (bare `python` may lack pytest) and trust pytest's own exit code rather than a
+# hardcoded pass count that drifts as tests are added.
+PYTEST="venv/bin/python -m pytest"
+[ -x "venv/bin/python" ] || PYTEST="python3 -m pytest"
+echo "Running dashboard tests..."
+if $PYTEST tests/frontend/ -q; then
+    echo -e "${GREEN}✓ Dashboard tests passing${NC}"
 else
     echo -e "${RED}✗ Dashboard tests failed${NC}"
     exit 1

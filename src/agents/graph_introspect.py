@@ -19,6 +19,12 @@ _TERMINALS = {"__start__", "__end__"}
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _CONFIG = _PROJECT_ROOT / "config" / "agents.yaml"
 
+# Modes the orchestrator runs via a special path, NOT build_graph (see
+# Orchestrator.run_mode). build_graph would still compile *a* graph for these, but
+# the runtime never executes it — so emitting it as authoritative would lie. We
+# flag them graph_backed=False instead.
+_NON_PIPELINE_MODES = {"event_scan", "test_roundtrip", "stop_sync", "heartbeat"}
+
 
 def _noop(*args, **kwargs):
     return {}
@@ -86,6 +92,21 @@ def mode_topology(
     cfg = registry.get_mode(mode)
     if cfg is None:
         raise ValueError(f"unknown mode {mode!r}")
+
+    if mode in _NON_PIPELINE_MODES:
+        # Don't present a compiled graph the runtime never runs.
+        return {
+            "mode": mode,
+            "graph_backed": False,
+            "runtime": "special",
+            "note": ("Runs via a dedicated orchestrator path, not the LangGraph "
+                     "pipeline — no agent graph to render."),
+            "nodes": [],
+            "edges": [],
+            "node_count": 0,
+            "edge_count": 0,
+        }
+
     compiled = build_graph(mode, cfg, _build_ctx(registry, _settings(settings)), _noop, _noop)
     gg = compiled.get_graph()
     nodes = [_describe_node(nid, registry, cfg) for nid in gg.nodes]
@@ -95,6 +116,7 @@ def mode_topology(
     ]
     return {
         "mode": mode,
+        "graph_backed": True,
         "nodes": nodes,
         "edges": edges,
         "node_count": len(nodes),

@@ -30,20 +30,33 @@ def _control_path(data_dir) -> Path:
 
 
 def get_controls(data_dir) -> Dict:
-    """Return the current control flags, falling back to armed defaults."""
+    """Return the current control flags.
+
+    File ABSENT -> armed defaults: a fresh install was never configured, so we
+    preserve existing behavior. File EXISTS but unreadable/corrupt -> FAIL CLOSED
+    (disarmed): we cannot confirm the intended state, and for a kill switch the
+    only safe default is to NOT trade. Re-arming via set_controls overwrites the
+    bad file, so this is recoverable.
+    """
     path = _control_path(data_dir)
-    state = dict(_DEFAULTS)
+    if not path.exists():
+        return dict(_DEFAULTS)
     try:
-        if path.exists():
-            with open(path) as f:
-                loaded = json.load(f)
-            for k in _DEFAULTS:
-                if k in loaded:
-                    state[k] = bool(loaded[k])
-            state["updated_at"] = loaded.get("updated_at")
-    except Exception as e:  # never let a bad control file block trading logic
-        logger.debug("control read failed (%s); defaulting armed", e)
-    return state
+        with open(path) as f:
+            loaded = json.load(f)
+        if not isinstance(loaded, dict):
+            raise ValueError("control.json is not a JSON object")
+        state = dict(_DEFAULTS)
+        for k in _DEFAULTS:
+            if k in loaded:
+                state[k] = bool(loaded[k])
+        state["updated_at"] = loaded.get("updated_at")
+        return state
+    except Exception as e:  # file exists but is corrupt/unreadable -> fail closed
+        logger.error(
+            "control file %s unreadable (%s); FAILING CLOSED (disarmed)", path, e
+        )
+        return {"trading_armed": False, "event_armed": False, "updated_at": None}
 
 
 def set_controls(data_dir, *, trading_armed=None, event_armed=None, updated_at=None) -> Dict:

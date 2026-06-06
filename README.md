@@ -4,8 +4,6 @@
 
 An automated trading system that screens the S&P 500 daily for momentum-driven entries, manages positions with adaptive trailing stops, and continuously optimizes its own parameters through a self-learning loop. Executes through Alpaca Markets with server-side crash protection, and optionally delegates decisions to Claude AI agents via the Claude CLI.
 
-> For the full strategy breakdown with code references, see [STRATEGY.md](STRATEGY.md).
-
 ---
 
 ## Architecture
@@ -279,7 +277,7 @@ Dashboard data is **live-API driven** (no database):
 | `/api/v1/system/agent/<name>/last-output` | Run history | Last execution output for an agent |
 | `/api/v1/system/graph/<mode>` | LangGraph structure | Agent and node definitions for a mode |
 
-The dashboard auto-refreshes every 10 seconds and displays real system data with graceful degradation (empty states, "Loading...", etc. when no run data is available). Read-only and safe to leave running 24/7. For remote access, put it behind a reverse proxy or bind to localhost only.
+The dashboard auto-refreshes every 10 seconds and displays real system data with graceful degradation (empty states, "Loading...", etc. when no run data is available). It is mostly read-only, but it does expose POST routes that mutate the kill switch (arm/disarm) — so do NOT expose it to an untrusted network. For remote access, put it behind authentication and a reverse proxy, or bind to localhost only.
 
 ### Tests
 

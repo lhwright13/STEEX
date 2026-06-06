@@ -68,8 +68,19 @@ def test_all_topologies_covers_every_mode(registry):
     topo = gi.all_topologies(registry=registry)
     assert set(topo.keys()) == set(registry.modes)
     for mode, t in topo.items():
-        # every mode either built a graph or recorded an explicit error
-        assert "error" in t or (t["node_count"] > 0 and t["edge_count"] > 0), mode
+        # each mode is either: an error, a real graph, or an honestly-flagged
+        # non-pipeline mode (event_scan/test_roundtrip run a special path).
+        assert (
+            "error" in t
+            or t.get("graph_backed") is False
+            or (t["node_count"] > 0 and t["edge_count"] > 0)
+        ), mode
+
+
+def test_special_modes_flagged_not_graph_backed(registry):
+    for mode in ("event_scan", "test_roundtrip"):
+        t = gi.mode_topology(mode, registry=registry)
+        assert t["graph_backed"] is False and t["nodes"] == []
 
 
 def test_route_returns_topology():

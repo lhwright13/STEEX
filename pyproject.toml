@@ -40,7 +40,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*", "config*", "scripts*", "dashboard*"]
+include = ["src*", "config*", "scripts*", "frontend*"]
 exclude = ["tests*", "venv*", "data*", "scheduler*"]
 
 [tool.black]
