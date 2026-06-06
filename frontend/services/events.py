@@ -64,6 +64,34 @@ class EventsMixin:
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
+    # ---- P3-5: configured figures (dropdown source) ----------------------
+
+    def _configured_figures(self) -> List[Dict[str, Any]]:
+        """The watched figures, mirroring the orchestrator's source construction.
+
+        Names here MUST equal what records are tagged with (``ev.figure`` =
+        the figure's ``name``), so the P3-5 dropdown filter actually matches.
+        In the legacy single-account case the orchestrator synthesizes the name
+        ``"realDonaldTrump"`` — replicate that exactly.
+        """
+        figs = [
+            {"name": f.get("name"), "account_id": f.get("account_id"),
+             "platform": f.get("platform"), "enabled": bool(f.get("enabled", True))}
+            for f in (self.settings.event_figures or [])
+            if isinstance(f, dict) and f.get("name")
+        ]
+        if not figs:
+            figs = [{
+                "name": "realDonaldTrump", "platform": "truth_social",
+                "account_id": getattr(self.settings, "event_truth_social_account_id", None),
+                "enabled": True,
+            }]
+        return figs
+
+    def get_event_figures(self) -> Dict[str, Any]:
+        """Watched figures for the P3-5 dropdown (name == record figure tag)."""
+        return {"figures": self._configured_figures()}
+
     # ---- P3-4: event-trigger panel aggregate -----------------------------
 
     def get_event_aggregate(self, figure: Optional[str] = None, limit: int = 30) -> Dict[str, Any]:
@@ -212,12 +240,7 @@ class EventsMixin:
             controls = self.get_controls()
         except Exception:
             controls = {}
-        figs = [
-            f.get("name") for f in (self.settings.event_figures or [])
-            if isinstance(f, dict) and f.get("enabled", True) and f.get("name")
-        ]
-        if not figs:
-            figs = ["Donald Trump (@realDonaldTrump)"]
+        figs = [f["name"] for f in self._configured_figures() if f.get("enabled", True)]
         if figure:
             figs = [f for f in figs if f == figure] or [figure]
 

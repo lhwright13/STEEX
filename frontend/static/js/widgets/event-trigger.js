@@ -4,11 +4,17 @@
 //   2. funnel        — seen → named → bullish → passed guardrails → executed (today) + drop reasons
 //   3. watching feed — recent posts with verdict chips, clickable to a detail modal
 import { register } from "../core/scheduler.js";
-import { escapeHtml } from "../core/dom.js";
+import { fetchJSON } from "../core/fetch.js";
+import { escapeHtml, attr } from "../core/dom.js";
 import { timeAgo, timeOfDay } from "../core/format.js";
 
 const ID = "event-trigger";
-const ENDPOINT = "/api/v1/events/aggregate?limit=30";
+
+// P3-5: the aggregate URL carries the dropdown-selected figure (null = All).
+let selectedFigure = null;
+const aggUrl = () =>
+  "/api/v1/events/aggregate?limit=30" +
+  (selectedFigure ? `&figure=${encodeURIComponent(selectedFigure)}` : "");
 
 function armedStrip(s) {
   if (!s) return "";
@@ -100,19 +106,57 @@ async function openFeedDetail(item) {
   );
 }
 
-function update(data, root) {
+function renderBody(data, body) {
+  if (!body) return;
   const feed = (data && data.feed) || [];
   const feedHtml = feed.length
     ? feed.map(feedRow).join("")
     : '<div class="et-empty">No posts seen yet — waiting on the next scan.</div>';
-  root.innerHTML =
+  body.innerHTML =
     armedStrip(data && data.status) +
     funnel(data && data.funnel) +
     `<div class="et-section">Watching feed</div>` +
     `<div class="et-feed">${feedHtml}</div>`;
-  root.querySelectorAll("[data-feed-idx]").forEach((el) =>
+  body.querySelectorAll("[data-feed-idx]").forEach((el) =>
     el.addEventListener("click", () => openFeedDetail(feed[Number(el.dataset.feedIdx)]))
   );
 }
 
-register({ id: ID, endpoint: ENDPOINT, update, cadence: 15000 });
+// scheduler tick → render into the stable body (the dropdown header persists).
+function update(data, root) {
+  renderBody(data, root.querySelector(".et-body"));
+}
+
+async function loadFigures(sel) {
+  try {
+    const data = await fetchJSON("/api/v1/events/figures");
+    const figs = (data && data.figures) || [];
+    if (!figs.length) return;
+    sel.innerHTML =
+      '<option value="">All figures</option>' +
+      figs.map((f) =>
+        `<option value="${attr(f.name)}">${escapeHtml(f.name)}${f.enabled ? "" : " (off)"}</option>`
+      ).join("");
+  } catch (e) {
+    console.error("[event-trigger] figures", e);
+  }
+}
+
+function mount(root) {
+  root.innerHTML =
+    '<div class="et-toolbar"><label class="et-toollabel" for="et-figure">Figure</label>' +
+    '<select id="et-figure" class="et-select"><option value="">All figures</option></select></div>' +
+    '<div class="et-body"><div class="et-empty">Loading event activity…</div></div>';
+  const sel = root.querySelector("#et-figure");
+  loadFigures(sel);
+  sel.addEventListener("change", async () => {
+    selectedFigure = sel.value || null;
+    try {
+      renderBody(await fetchJSON(aggUrl()), root.querySelector(".et-body"));
+    } catch (e) {
+      console.error("[event-trigger] filter", e);
+    }
+  });
+}
+
+register({ id: ID, endpoint: aggUrl, update, cadence: 15000, mount });

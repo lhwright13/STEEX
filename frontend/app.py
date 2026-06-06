@@ -121,6 +121,16 @@ def create_app():
             logger.error(f"Error fetching event activity: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/events/figures")
+    def events_figures():
+        """Watched figures for the P3-5 dropdown (names match record tags)."""
+        try:
+            service = get_dashboard_service()
+            return jsonify(service.get_event_figures())
+        except Exception as e:
+            logger.error(f"Error fetching event figures: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/events/aggregate")
     def events_aggregate():
         """Event-trigger panel (P3-4): Watching feed + funnel + armed strip.

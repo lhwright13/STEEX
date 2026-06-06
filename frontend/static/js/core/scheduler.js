@@ -4,7 +4,9 @@
 // A widget is the P0-1 triple's JS leg:
 //   register({ id, endpoint, update, cadence?, mount? })
 //     id       - the partial's stable root element id (owns only that subtree)
-//     endpoint - the one API it fetches (omit for static/mount-only widgets)
+//     endpoint - the one API it fetches; a string, or a () => string thunk for
+//                widgets whose URL depends on UI state (e.g. a filter dropdown).
+//                Omit for static/mount-only widgets.
 //     update(data, root) - render fetched data into root
 //     cadence  - poll interval ms (default 5000; 0 = fetch once, no polling)
 //     mount(root) - optional one-time setup (event wiring, etc.)
@@ -26,7 +28,8 @@ export function start() {
     }
     const tick = async () => {
       try {
-        const data = w.endpoint ? await fetchJSON(w.endpoint) : null;
+        const url = typeof w.endpoint === "function" ? w.endpoint() : w.endpoint;
+        const data = url ? await fetchJSON(url) : null;
         w.update(data, root);
       } catch (e) {
         console.error(`[widget ${w.id}]`, e);

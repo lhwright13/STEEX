@@ -645,3 +645,22 @@ class TestEventAggregate:
         assert agg["feed"] == []
         assert agg["funnel"]["today"]["stages"][0]["count"] == 0
         assert agg["status"]["trades_today"] == 0
+
+    def test_figures_from_config(self, service, tmp_path):
+        """get_event_figures returns configured names (== record figure tags)."""
+        self._configure(service, tmp_path)
+        figs = service.get_event_figures()["figures"]
+        assert [f["name"] for f in figs] == ["Donald Trump (@realDonaldTrump)"]
+        # armed-strip figures use the same source, so dropdown values match
+        self._write_run(tmp_path, [])
+        assert service.get_event_aggregate()["status"]["figures"] == \
+            ["Donald Trump (@realDonaldTrump)"]
+
+    def test_figures_legacy_fallback(self, service, tmp_path):
+        """Empty event_figures falls back to the legacy 'realDonaldTrump' tag."""
+        service.data_dir = tmp_path
+        service.settings.event_figures = []
+        service.settings.event_truth_social_account_id = "107780257626128497"
+        figs = service.get_event_figures()["figures"]
+        assert figs[0]["name"] == "realDonaldTrump"
+        assert figs[0]["account_id"] == "107780257626128497"

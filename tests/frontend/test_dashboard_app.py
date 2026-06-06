@@ -427,6 +427,18 @@ class TestEventAggregateAPI:
         assert kwargs["figure"] == "elonmusk" and kwargs["limit"] == 10
 
     @patch("frontend.app.get_dashboard_service")
+    def test_figures_endpoint(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.get_event_figures.return_value = {
+            "figures": [{"name": "realDonaldTrump", "enabled": True}]
+        }
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/events/figures")
+        assert response.status_code == 200
+        assert json.loads(response.data)["figures"][0]["name"] == "realDonaldTrump"
+
+    @patch("frontend.app.get_dashboard_service")
     def test_aggregate_handles_error(self, mock_get_service, client):
         mock_service = Mock()
         mock_service.get_event_aggregate.side_effect = Exception("boom")
