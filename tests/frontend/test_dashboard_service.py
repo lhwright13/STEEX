@@ -524,3 +524,124 @@ class TestControlsTradesTimeline:
         assert tl["failed_count"] == 1
         assert tl["steps"][0]["agent"] == "data" and tl["steps"][0]["success"] is True
         assert tl["steps"][1]["success"] is False
+
+
+class TestEventAggregate:
+    """P3-4: the event-trigger panel aggregate (feed + funnel + armed strip)."""
+
+    def _write_run(self, tmp_path, records, regime="cautious"):
+        from datetime import datetime, timezone
+        runs = tmp_path / "runs"
+        runs.mkdir(exist_ok=True)
+        now = datetime.now(timezone.utc).isoformat()
+        final = {
+            "run_id": "evt1", "mode": "event_scan", "status": "complete",
+            "completed_at": now,
+            "conclusions": {"event_scan": {
+                "scanned": len(records), "regime": regime, "records": records,
+            }},
+        }
+        (runs / "run_20260606T120000_evt1.jsonl").write_text(json.dumps(final))
+        return now
+
+    def _rec(self, **kw):
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        base = {
+            "id": kw.get("id", "x"), "headline": kw.get("headline", "h"),
+            "source": "truth_social", "figure": kw.get("figure", "realDonaldTrump"),
+            "published_at": now, "detected_at": now, "decided_at": now,
+            "outcome": "skipped", "classification": "noise", "stop_reason": None,
+            "ticker": None, "score": None, "verdict": None,
+        }
+        base.update(kw)
+        return base
+
+    def _configure(self, service, tmp_path):
+        service.data_dir = tmp_path
+        service.settings.event_figures = [
+            {"name": "Donald Trump (@realDonaldTrump)", "enabled": True,
+             "platform": "truth_social", "account_id": "107780257626128497"},
+        ]
+        service.settings.event_cooldown_minutes = 120
+        service.settings.max_event_trades_per_day = 3
+
+    def test_funnel_and_feed(self, service, tmp_path):
+        self._configure(service, tmp_path)
+        records = [
+            self._rec(id="a", ticker="DELL", score=88, outcome="executed",
+                      classification="executed",
+                      verdict={"mentions_company": True, "is_bullish": True,
+                               "confidence": 0.88, "reasoning": "strong mention"}),
+            self._rec(id="b", ticker="AAPL", outcome="skipped",
+                      classification="near_miss", stop_reason="already held",
+                      verdict={"mentions_company": True, "is_bullish": True}),
+            self._rec(id="c", outcome="skipped", classification="noise",
+                      stop_reason="not a bullish company signal",
+                      verdict={"mentions_company": False}),
+            self._rec(id="d", ticker="TSLA", outcome="skipped",
+                      classification="near_miss",
+                      stop_reason="low confidence 0.55 < 0.7"),
+        ]
+        self._write_run(tmp_path, records)
+
+        agg = service.get_event_aggregate()
+        stages = {s["key"]: s["count"] for s in agg["funnel"]["today"]["stages"]}
+        assert stages["seen"] == 4
+        assert stages["named"] == 3            # DELL, AAPL, TSLA
+        assert stages["bullish"] == 3          # the two near_miss + executed
+        assert stages["passed"] == 1 and stages["executed"] == 1
+        drops = {d["reason"]: d["count"] for d in agg["funnel"]["today"]["drop_reasons"]}
+        assert drops["already held"] == 1
+        assert drops["not a bullish company signal"] == 1
+        assert "low confidence 0.55 < 0.7" in drops
+
+        # feed chips: executed -> traded, near_miss -> blocked, noise -> skipped
+        chips = {f["id"]: f["chip"]["kind"] for f in agg["feed"]}
+        assert chips["a"] == "traded"
+        assert chips["b"] == "blocked"
+        assert chips["c"] == "noise"
+        # resolver reasoning surfaced for the executed trade
+        traded = next(f for f in agg["feed"] if f["id"] == "a")
+        assert traded["reasoning"] == "strong mention"
+
+    def test_armed_strip(self, service, tmp_path):
+        self._configure(service, tmp_path)
+        records = [
+            self._rec(id="a", ticker="DELL", outcome="executed",
+                      classification="executed"),
+        ]
+        self._write_run(tmp_path, records)
+
+        agg = service.get_event_aggregate()
+        st = agg["status"]
+        assert st["armed"] is True                 # no control.json -> armed default
+        assert st["figures"] == ["Donald Trump (@realDonaldTrump)"]
+        assert st["trades_today"] == 1 and st["cap"] == 3
+        assert st["last_poll_seconds"] is not None and st["last_poll_seconds"] >= 0
+        # the just-executed DELL is inside the 120m cooldown window
+        cds = {c["ticker"]: c["expires_in_min"] for c in st["cooldowns"]}
+        assert "DELL" in cds and 0 < cds["DELL"] <= 120
+
+    def test_figure_filter(self, service, tmp_path):
+        self._configure(service, tmp_path)
+        records = [
+            self._rec(id="a", ticker="DELL", figure="realDonaldTrump",
+                      outcome="executed", classification="executed"),
+            self._rec(id="b", ticker="RIVN", figure="elonmusk",
+                      outcome="skipped", classification="near_miss",
+                      stop_reason="already held"),
+        ]
+        self._write_run(tmp_path, records)
+
+        agg = service.get_event_aggregate(figure="elonmusk")
+        ids = {f["id"] for f in agg["feed"]}
+        assert ids == {"b"}
+        assert agg["funnel"]["today"]["stages"][0]["count"] == 1
+
+    def test_empty_when_no_runs(self, service, tmp_path):
+        self._configure(service, tmp_path)
+        agg = service.get_event_aggregate()
+        assert agg["feed"] == []
+        assert agg["funnel"]["today"]["stages"][0]["count"] == 0
+        assert agg["status"]["trades_today"] == 0

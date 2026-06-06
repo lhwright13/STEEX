@@ -656,28 +656,17 @@
     </div>
   </section>
 
-  <!-- ============ 3.45 EVENT TRIGGERS ============ -->
+  <!-- ============ 3.45 EVENT TRIGGER PANEL (P3-4) ============ -->
   <section class="panel">
     <header>
-      <h2>Event Triggers <span class="sub" id="events-sub">news fast-path · auto-buys on breaking posts</span></h2>
-      <div class="tools"><span id="events-lastscan">—</span></div>
+      <h2>Event Trigger <span class="sub">news fast-path · who's watched, why a trade did or didn't fire</span></h2>
     </header>
     <div class="body">
-      <table class="data" id="events-table">
-        <thead>
-          <tr>
-            <th>Ticker</th>
-            <th class="num">Entry</th>
-            <th class="num">Shares</th>
-            <th class="num">Conf</th>
-            <th>Headline</th>
-            <th>Review</th>
-          </tr>
-        </thead>
-        <tbody id="events-table-body">
-          <tr><td colspan="6" style="text-align:center;padding:12px;color:#999;">No event-triggered trades yet.</td></tr>
-        </tbody>
-      </table>
+      <!-- P3-4: armed strip + "why no trade?" funnel + watching feed,
+           rolled up from per-post verdict records (/api/v1/events/aggregate). -->
+      <div id="event-trigger">
+        <div class="et-empty">Loading event activity…</div>
+      </div>
     </div>
   </section>
 
@@ -1049,6 +1038,45 @@
 .md-v { color:#000; }
 .md-links { margin-top:12px; }
 .md-link { font-family:var(--mono); font-size:12px; color:#3458b8; margin-right:12px; }
+
+/* P3-4 Event Trigger panel */
+.et-empty { text-align:center; padding:20px; color:#999; font-size:13px; }
+.et-section { font-family:var(--sans); font-size:11px; letter-spacing:0.1em;
+  text-transform:uppercase; color:var(--dim); margin:16px 0 6px; }
+.et-dim { color:var(--dim); text-transform:none; letter-spacing:0; }
+.et-strip { display:grid; grid-template-columns:repeat(6,1fr); gap:0;
+  border:1px solid var(--border); font-family:var(--mono); background:#fff; }
+.et-cell { padding:9px 11px; border-right:1px solid var(--border); }
+.et-cell:last-child { border-right:0; }
+.et-k { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:0.05em; }
+.et-v { font-size:13px; font-weight:700; color:#000; margin-top:2px; }
+.et-badge { display:inline-block; padding:1px 7px; border-radius:3px; font-size:11px; font-weight:700; }
+.et-on { background:#e3f4e8; color:#00772a; }
+.et-off { background:#fbe4e4; color:#b80000; }
+/* funnel */
+.et-fstage { margin-bottom:5px; }
+.et-flabel { font-family:var(--mono); font-size:11px; color:#333; margin-bottom:2px; }
+.et-flabel b { color:#000; }
+.et-ftrack { height:8px; background:#eee; border:1px solid var(--border); }
+.et-fbar { height:100%; background:#3458b8; }
+.et-drops { margin-top:8px; display:flex; flex-wrap:wrap; gap:6px; }
+.et-drop { font-family:var(--mono); font-size:11px; color:#a05a00; background:#faf4ec;
+  border:1px solid #ecdcc7; padding:2px 7px; }
+.et-drop b { color:#000; }
+/* watching feed */
+.et-feed { display:flex; flex-direction:column; }
+.et-row { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  background:#fff; border:0; border-bottom:1px solid var(--border); padding:9px 6px;
+  cursor:pointer; font-family:var(--sans); }
+.et-row:hover { background:#f6f6f6; }
+.et-chip { flex:0 0 auto; font-family:var(--mono); font-size:10px; font-weight:700;
+  padding:2px 7px; border-radius:3px; white-space:nowrap; }
+.et-traded { background:#e3f4e8; color:#00772a; }
+.et-blocked { background:#faf4ec; color:#a05a00; }
+.et-noise { background:#f0f0f0; color:#888; }
+.et-headline { flex:1 1 auto; min-width:0; font-size:12px; color:#222;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.et-when { flex:0 0 auto; font-family:var(--mono); font-size:11px; color:var(--dim); white-space:nowrap; }
 </style>
 <script type="module" src="/static/js/pages/dashboard.js"></script>
 <script src="/static/js/refresh.js"></script>

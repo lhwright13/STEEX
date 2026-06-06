@@ -406,6 +406,37 @@ class TestAgentDetailAPI:
         assert response.status_code == 404
 
 
+class TestEventAggregateAPI:
+    """Test the P3-4 event-trigger panel endpoint."""
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_aggregate_returns_views(self, mock_get_service, client):
+        """Aggregate endpoint returns feed/funnel/status and forwards params."""
+        mock_service = Mock()
+        mock_service.get_event_aggregate.return_value = {
+            "feed": [], "funnel": {"today": {"stages": []}}, "status": {"armed": True},
+        }
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/events/aggregate?figure=elonmusk&limit=10")
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert "feed" in data and "funnel" in data and "status" in data
+        _, kwargs = mock_service.get_event_aggregate.call_args
+        assert kwargs["figure"] == "elonmusk" and kwargs["limit"] == 10
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_aggregate_handles_error(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.get_event_aggregate.side_effect = Exception("boom")
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/events/aggregate")
+        assert response.status_code == 500
+        assert "error" in json.loads(response.data)
+
+
 class TestUserUpdatesAPI:
     """Test the Today's Events (user_updates) API endpoints (P3-3)."""
 

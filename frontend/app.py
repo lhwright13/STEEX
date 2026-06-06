@@ -121,6 +121,25 @@ def create_app():
             logger.error(f"Error fetching event activity: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/events/aggregate")
+    def events_aggregate():
+        """Event-trigger panel (P3-4): Watching feed + funnel + armed strip.
+
+        Optional ?figure=<name> filters every view to one figure (P3-5).
+        """
+        from flask import request
+        figure = request.args.get("figure") or None
+        try:
+            limit = int(request.args.get("limit", 30))
+        except (TypeError, ValueError):
+            limit = 30
+        try:
+            service = get_dashboard_service()
+            return jsonify(service.get_event_aggregate(figure=figure, limit=limit))
+        except Exception as e:
+            logger.error(f"Error building event aggregate: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/user_updates")
     def user_updates():
         """Today's Events feed — the user_updates stream (P0-3), newest-first.
