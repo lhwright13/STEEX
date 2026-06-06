@@ -21,6 +21,7 @@ from src.agents.mcp_tools.portfolio import *  # noqa: F401,F403
 from src.agents.mcp_tools.screen import *  # noqa: F401,F403
 from src.agents.mcp_tools.trading import *  # noqa: F401,F403
 from src.agents.mcp_tools.research import *  # noqa: F401,F403
+from src.agents.mcp_tools.notify import *  # noqa: F401,F403
 
 if __name__ == "__main__":
     main()

@@ -484,6 +484,16 @@ class Settings(BaseSettings):
         description="Claude model for the per-post ticker resolver (cheap; runs on every new post)",
     )
 
+    # ---- Messaging / notifications (P1) -----------------------------------
+    messaging_enabled: bool = Field(
+        default=False,
+        description="Master switch for outbound user notifications (iMessage). Off = dry-run (log only).",
+    )
+    imessage_to: str = Field(
+        default="",
+        description="Destination iMessage handle (phone or Apple ID email). Set via IMESSAGE_TO in .env; personal, not committed.",
+    )
+
     # Agent trace settings
     trace_retention_days: int = Field(
         default=30, description="Days to keep agent session traces"

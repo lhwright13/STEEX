@@ -4,7 +4,7 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("steex")
 
 # Import domain modules AFTER `mcp` exists so their @mcp.tool() decorators register.
-from . import market, portfolio, screen, trading, research, events  # noqa: E402,F401
+from . import market, portfolio, screen, trading, research, events, notify  # noqa: E402,F401
 
 
 def main():

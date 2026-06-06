@@ -26,6 +26,7 @@ EXPECTED_TOOLS = {
     "refresh_data", "run_learning_loop", "run_postmortem", "run_screening",
     "run_screening_variant", "run_signal_research", "save_screen_results",
     "size_buy_list", "sync_broker", "validate_oos",
+    "send_user_message",  # P1-1
 }
 
 
@@ -33,8 +34,8 @@ def _registered_names():
     return {t.name for t in mcp_server.mcp._tool_manager.list_tools()}
 
 
-def test_exactly_41_tools_registered():
-    assert len(EXPECTED_TOOLS) == 41
+def test_exactly_42_tools_registered():
+    assert len(EXPECTED_TOOLS) == 42  # 41 from P0-2 + send_user_message (P1-1)
     names = _registered_names()
     assert names == EXPECTED_TOOLS, {
         "missing": EXPECTED_TOOLS - names,
