@@ -57,11 +57,13 @@ class SystemMixin:
             if prompt_file.exists():
                 with open(prompt_file) as f:
                     content = f.read()
-                # Extract the first `*_PROMPT = "..."` assignment (simple heuristic)
+                # Extract the first `*_PROMPT = "..."` assignment (simple heuristic).
+                # Return the FULL prompt (P3-8) — the popup is now scrollable, so
+                # truncating to 1500 chars + "…" only hid the real prompt.
                 if "_PROMPT = " in content:
                     body = content.split("_PROMPT = ", 1)[1].lstrip()
                     body = body.lstrip('"').lstrip("'").lstrip()  # drop opening quotes
-                    prompt_text = body[:1500] + ("..." if len(body) > 1500 else "")
+                    prompt_text = body
         except Exception as e:
             logger.debug(f"Could not load prompt for {agent_name}: {e}")
 

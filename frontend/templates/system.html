@@ -296,6 +296,9 @@
     font-size: 12px;
     white-space: pre-wrap;
     line-height: 1.55;
+    /* P3-8: show the FULL prompt, scrollable, instead of truncating with "…" */
+    max-height: 420px;
+    overflow: auto;
   }
 
   /* workflow side-by-side */
@@ -1000,8 +1003,6 @@ function renderDetail(name) {
         <button class="btn">View Full Prompt</button>
         <button class="btn">View Last Output</button>
         <button class="btn">Download Output JSON</button>
-        <button class="btn">Test Run</button>
-        <button class="btn">Rerun Agent</button>
       </div>
     </div>`;
 }
@@ -1064,7 +1065,7 @@ function wireDetailActions(host, agentName) {
   const detail = host.querySelector('.agent-detail');
   if (!detail) return;
   const btns = detail.querySelectorAll('.actions .btn');
-  if (btns.length < 5) return;
+  if (btns.length < 3) return;
 
   // [0] View Full Prompt — open the details element
   btns[0].addEventListener('click', () => {
@@ -1097,16 +1098,8 @@ function wireDetailActions(host, agentName) {
     const json = JSON.stringify(agentData, null, 2);
     downloadAgentJSON(`${agentName}_config.json`, json);
   });
-
-  // [3] Test Run — disabled, show reason
-  btns[3].disabled = true;
-  btns[3].title = 'Not available: test runs require manual execution';
-  btns[3].style.opacity = '0.5';
-
-  // [4] Rerun Agent — disabled, show reason
-  btns[4].disabled = true;
-  btns[4].title = 'Not available: reruns require manual execution';
-  btns[4].style.opacity = '0.5';
+  // Test Run / Rerun Agent buttons removed (P3-8) — they were permanently
+  // disabled no-ops (runs require manual execution).
 }
 
 function showAgentOutput(container, data) {
