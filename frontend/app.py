@@ -146,6 +146,15 @@ def create_app():
             logger.error(f"Error fetching event figures: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/signals/health")
+    def signals_health():
+        """Per-signal confidence + alpha-decay trend (P4-4)."""
+        try:
+            return jsonify(get_dashboard_service().get_signal_health())
+        except Exception as e:
+            logger.error(f"Error fetching signal health: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/events/aggregate")
     def events_aggregate():
         """Event-trigger panel (P3-4): Watching feed + funnel + armed strip.

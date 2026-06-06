@@ -33,6 +33,24 @@ class HoldingsMixin:
             return (f"{n}D", n + 5, "1D")
         return self._PERF_PERIODS[period]
 
+    def get_signal_health(self) -> Dict[str, Any]:
+        """Per-signal confidence + alpha-decay trend from AlphaDecayMonitor (P4-4).
+
+        Makes the Signal Confidence & Alpha Decay block functional: real rolling vs
+        baseline hit rates, decay trend, and alert level per scoring signal, plus
+        the overall recent win rate. ``available`` is False until there are closed
+        trades to measure against.
+        """
+        try:
+            from src.research.alpha_monitor import AlphaDecayMonitor
+            report = AlphaDecayMonitor(self.settings).generate_report()
+            report["available"] = (report.get("total_trades", 0) or 0) > 0
+            return report
+        except Exception as e:
+            logger.error("signal health unavailable: %s", e)
+            return {"available": False, "signals": [], "reason": str(e),
+                    "timestamp": datetime.utcnow().isoformat() + "Z"}
+
     def get_portfolio_performance(self, period: str = "1M") -> Dict[str, Any]:
         """Portfolio equity curve vs S&P 500, with alpha, rebased to % return.
 

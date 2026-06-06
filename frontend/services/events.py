@@ -149,15 +149,116 @@ class EventsMixin:
         }
         feed = [self._event_feed_item(r) for r in records[:limit]]
         status = self._event_status(records, last_scan, now, figure)
+        # P4-1: near-misses — named a bullish company, blocked by a guardrail.
+        near_misses = [
+            self._near_miss_item(r) for r in records
+            if r.get("classification") == "near_miss"
+        ][:limit]
+        # P4-2: reaction latency from the P1-5 timings.
+        latency = self._event_latency(records, limit)
+        # P4-3: live event-trigger knobs (read-only; edited via the agent).
+        config = self._event_config()
 
         return {
             "feed": feed,
             "funnel": funnel,
             "status": status,
+            "near_misses": near_misses,
+            "latency": latency,
+            "config": config,
             "last_scan": last_scan,
             "figure": figure,
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
+
+    @staticmethod
+    def _near_miss_item(rec: Dict[str, Any]) -> Dict[str, Any]:
+        """A blocked-but-bullish post, with the exact guardrail and would-be action."""
+        verdict = rec.get("verdict") or {}
+        return {
+            "id": rec.get("id"),
+            "headline": rec.get("headline"),
+            "ticker": rec.get("ticker"),
+            "confidence": verdict.get("confidence"),
+            "score": rec.get("score"),
+            "guardrail": rec.get("stop_reason"),       # the exact block
+            "reasoning": verdict.get("reasoning"),
+            "figure": rec.get("figure"),
+            "published_at": rec.get("published_at"),
+        }
+
+    @staticmethod
+    def _delta_seconds(a, b):
+        def parse(t):
+            try:
+                return datetime.fromisoformat(str(t).replace("Z", "+00:00"))
+            except Exception:
+                return None
+        da, db = parse(a), parse(b)
+        if not da or not db:
+            return None
+        return round((db - da).total_seconds(), 1)
+
+    @staticmethod
+    def _percentile(values, pct):
+        if not values:
+            return None
+        s = sorted(values)
+        k = (len(s) - 1) * pct
+        lo, hi = int(k), min(int(k) + 1, len(s) - 1)
+        return round(s[lo] + (s[hi] - s[lo]) * (k - lo), 1)
+
+    def _event_latency(self, records, limit) -> Dict[str, Any]:
+        """Per-event latency (published -> detected -> decided) + median/p90 (P4-2)."""
+        events, totals, detects = [], [], []
+        for r in records:
+            detect_s = self._delta_seconds(r.get("published_at"), r.get("detected_at"))
+            decide_s = self._delta_seconds(r.get("detected_at"), r.get("decided_at"))
+            total_s = self._delta_seconds(r.get("published_at"), r.get("decided_at"))
+            if total_s is None:
+                continue
+            events.append({
+                "ticker": r.get("ticker"), "headline": r.get("headline"),
+                "detect_s": detect_s, "decide_s": decide_s, "total_s": total_s,
+                "outcome": r.get("outcome"), "published_at": r.get("published_at"),
+            })
+            totals.append(total_s)
+            if detect_s is not None:
+                detects.append(detect_s)
+        return {
+            "events": events[:limit],
+            "count": len(totals),
+            "median_total_s": self._percentile(totals, 0.5),
+            "p90_total_s": self._percentile(totals, 0.9),
+            "median_detect_s": self._percentile(detects, 0.5),
+        }
+
+    def _event_config(self) -> Dict[str, Any]:
+        """The event-trigger knobs, read-only (P4-3). Edited via the agent, not here."""
+        s = self.settings
+        def pct(v):
+            return f"{round(v * 100, 1)}%"
+        params = [
+            {"key": "event_position_pct", "label": "Position size",
+             "value": pct(getattr(s, "event_position_pct", 0)),
+             "help": "Fraction of portfolio deployed per event trade (kept small — these are fast, news-driven bets)."},
+            {"key": "max_event_trades_per_day", "label": "Daily cap",
+             "value": getattr(s, "max_event_trades_per_day", 0),
+             "help": "Hard limit on event trades per day. Once hit, further signals are logged as near-misses, not traded."},
+            {"key": "event_cooldown_minutes", "label": "Cooldown",
+             "value": f"{getattr(s, 'event_cooldown_minutes', 0)} min",
+             "help": "Minimum minutes between event trades in the same ticker, to avoid stacking on one news cycle."},
+            {"key": "event_min_confidence", "label": "Min confidence",
+             "value": f"{getattr(s, 'event_min_confidence', 0):.2f}",
+             "help": "Minimum LLM confidence (0-1) that a post is a bullish, correctly-resolved ticker before it can trade."},
+            {"key": "event_sentiment_threshold", "label": "Sentiment threshold",
+             "value": getattr(s, "event_sentiment_threshold", 0),
+             "help": "VADER sentiment floor for pre-tickered (watchlist) news on the non-resolver path."},
+            {"key": "initial_stop_pct", "label": "Stop",
+             "value": pct(getattr(s, "initial_stop_pct", 0)),
+             "help": "Protective stop placed below the entry on every event fill."},
+        ]
+        return {"params": params, "editable_via": "agent"}
 
     # ---- P3-6: event-trade cards -----------------------------------------
 

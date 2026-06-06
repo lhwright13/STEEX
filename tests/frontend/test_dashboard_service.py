@@ -545,6 +545,11 @@ class TestEventAggregate:
         ]
         service.settings.event_cooldown_minutes = 120
         service.settings.max_event_trades_per_day = 3
+        # event-config block (P4-3) reads these
+        service.settings.event_position_pct = 0.05
+        service.settings.event_min_confidence = 0.70
+        service.settings.event_sentiment_threshold = 40.0
+        service.settings.initial_stop_pct = 0.14
 
     def test_funnel_and_feed(self, service, tmp_path):
         self._configure(service, tmp_path)
@@ -678,3 +683,78 @@ class TestEventAggregate:
         with patch.object(service, "get_portfolio_holdings", return_value={"positions": []}):
             out = service.get_event_trade_cards()
         assert out["count"] == 1 and out["cards"][0]["live"] is None
+
+    def test_near_misses_and_latency_and_config(self, service, tmp_path):
+        """P4-1 near-misses, P4-2 latency percentiles, P4-3 config block."""
+        self._configure(service, tmp_path)
+        records = [
+            self._rec(id="nm", ticker="TSLA", classification="near_miss",
+                      outcome="skipped", stop_reason="low confidence 0.55 < 0.7",
+                      verdict={"confidence": 0.55, "reasoning": "weak"},
+                      published_at="2026-06-06T12:00:00Z",
+                      detected_at="2026-06-06T12:00:40Z",
+                      decided_at="2026-06-06T12:00:42Z"),
+            self._rec(id="noise", classification="noise",
+                      stop_reason="not a bullish company signal",
+                      published_at="2026-06-06T12:01:00Z",
+                      detected_at="2026-06-06T12:01:30Z",
+                      decided_at="2026-06-06T12:01:31Z"),
+            self._rec(id="ex", ticker="DELL", classification="executed",
+                      outcome="executed",
+                      published_at="2026-06-06T12:02:00Z",
+                      detected_at="2026-06-06T12:02:10Z",
+                      decided_at="2026-06-06T12:02:13Z"),
+        ]
+        self._write_run(tmp_path, records)
+        agg = service.get_event_aggregate()
+
+        # P4-1: only the near-miss, with its exact guardrail
+        nm = agg["near_misses"]
+        assert len(nm) == 1 and nm[0]["ticker"] == "TSLA"
+        assert "low confidence" in nm[0]["guardrail"]
+
+        # P4-2: totals 42 / 31 / 13 -> median 31; detect 40 / 30 / 10 -> median 30
+        lat = agg["latency"]
+        assert lat["count"] == 3
+        assert lat["median_total_s"] == 31.0
+        assert lat["median_detect_s"] == 30.0
+        assert lat["p90_total_s"] >= lat["median_total_s"]
+
+        # P4-3: live knobs present and read-only
+        keys = {p["key"] for p in agg["config"]["params"]}
+        assert "event_min_confidence" in keys and "max_event_trades_per_day" in keys
+        assert agg["config"]["editable_via"] == "agent"
+
+
+class TestSignalHealth:
+    """P4-4: Signal Confidence & Alpha Decay wired to AlphaDecayMonitor."""
+
+    def test_passthrough_when_trades_exist(self, service):
+        report = {
+            "signals": [{"signal": "momentum_score", "current_hit_rate": 0.6,
+                         "baseline_hit_rate": 0.5, "trend": "improving",
+                         "alert_level": "healthy"}],
+            "total_trades": 12, "overall_recent_win_rate": 0.6,
+            "recommendations": ["All signals healthy - no action needed"],
+            "window_size": 20,
+        }
+        with patch("src.research.alpha_monitor.AlphaDecayMonitor") as M:
+            M.return_value.generate_report.return_value = report
+            out = service.get_signal_health()
+        assert out["available"] is True
+        assert out["signals"][0]["signal"] == "momentum_score"
+        assert out["overall_recent_win_rate"] == 0.6
+
+    def test_unavailable_when_no_trades(self, service):
+        report = {"signals": [], "total_trades": 0, "recommendations": [],
+                  "overall_recent_win_rate": 0.0, "window_size": 20}
+        with patch("src.research.alpha_monitor.AlphaDecayMonitor") as M:
+            M.return_value.generate_report.return_value = report
+            out = service.get_signal_health()
+        assert out["available"] is False
+
+    def test_graceful_on_error(self, service):
+        with patch("src.research.alpha_monitor.AlphaDecayMonitor",
+                   side_effect=Exception("boom")):
+            out = service.get_signal_health()
+        assert out["available"] is False and out["signals"] == []

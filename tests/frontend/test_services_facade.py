@@ -14,7 +14,8 @@ from frontend.services import DashboardService, get_dashboard_service
 PUBLIC_METHODS = {
     "get_pipeline_current", "get_pipeline_live", "get_consensus",
     "get_screening_stats", "get_regime", "get_manager_decision",
-    "get_portfolio_performance", "get_portfolio_holdings", "get_system_agents",
+    "get_portfolio_performance", "get_portfolio_holdings", "get_signal_health",
+    "get_system_agents",
     "get_system_schedules", "get_agent_detail", "get_agent_last_output",
     "get_workflow_topology", "get_graph_structure", "get_recent_runs",
     "get_event_activity", "get_event_aggregate", "get_event_figures",

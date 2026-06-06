@@ -360,6 +360,22 @@ class TestAgentDetailAPI:
         assert response.status_code == 404
 
 
+class TestSignalHealthAPI:
+    """P4-4 signal-health endpoint."""
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_signal_health_returns_json(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.get_signal_health.return_value = {
+            "available": True, "signals": [{"signal": "momentum_score"}],
+            "overall_recent_win_rate": 0.6,
+        }
+        mock_get_service.return_value = mock_service
+        r = client.get("/api/v1/signals/health")
+        assert r.status_code == 200
+        assert json.loads(r.data)["signals"][0]["signal"] == "momentum_score"
+
+
 class TestEventAggregateAPI:
     """Test the P3-4 event-trigger panel endpoint."""
 

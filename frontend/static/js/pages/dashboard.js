@@ -6,6 +6,7 @@
 // only once its partial has a stable root id and its legacy updateXxxDOM is gone.
 import "../components/help-popover.js";
 import "../widgets/live-pipeline.js";
+import "../widgets/signal-confidence.js";
 import "../widgets/today-events.js";
 import "../widgets/event-trigger.js";
 import "../widgets/event-trade-cards.js";

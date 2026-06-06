@@ -106,6 +106,64 @@ async function openFeedDetail(item) {
   );
 }
 
+// P4-1: near-misses — bullish posts blocked by a guardrail (the tuning gold).
+function nearMisses(list) {
+  const items = list || [];
+  if (!items.length) {
+    return `<div class="et-section">Near-misses <span class="et-dim">(bullish, blocked)</span></div>` +
+      '<div class="et-empty">None — no bullish post has been gated out yet.</div>';
+  }
+  const rows = items.map((m) => {
+    const conf = m.confidence != null ? Math.round(m.confidence * 100) + "%"
+      : (m.score != null ? m.score : "—");
+    return (
+      `<div class="et-nm">` +
+        `<span class="et-nm-tk">${escapeHtml(m.ticker || "—")}</span>` +
+        `<span class="et-nm-head">${escapeHtml(m.headline || "")}</span>` +
+        `<span class="et-nm-conf">${escapeHtml(conf)}</span>` +
+        `<span class="et-nm-block">${escapeHtml(m.guardrail || "blocked")}</span>` +
+      `</div>`
+    );
+  }).join("");
+  return `<div class="et-section">Near-misses <span class="et-dim">(bullish, blocked)</span></div>` +
+    `<div class="et-nms">${rows}</div>`;
+}
+
+// P4-2: reaction latency — post -> detected -> decided.
+function latency(l) {
+  if (!l || !l.count) {
+    return `<div class="et-section">Reaction latency</div>` +
+      '<div class="et-empty">No timed events yet.</div>';
+  }
+  const stat = (label, v) =>
+    `<div class="et-cell"><div class="et-k">${label}</div><div class="et-v">${v == null ? "—" : v + "s"}</div></div>`;
+  return (
+    `<div class="et-section">Reaction latency <span class="et-dim">(post → trade decision)</span></div>` +
+    `<div class="et-strip et-lat">` +
+      stat("Median total", l.median_total_s) +
+      stat("p90 total", l.p90_total_s) +
+      stat("Median detect", l.median_detect_s) +
+      `<div class="et-cell"><div class="et-k">Events</div><div class="et-v">${l.count}</div></div>` +
+    `</div>`
+  );
+}
+
+// P4-3: read-only event-trigger config with a single "?" explainer.
+function configBlock(cfg) {
+  const params = (cfg && cfg.params) || [];
+  if (!params.length) return "";
+  const help = params.map((p) => `${p.label}: ${p.help}`).join("\n\n");
+  const cells = params.map((p) =>
+    `<div class="et-cell"><div class="et-k">${escapeHtml(p.label)}</div>` +
+    `<div class="et-v">${escapeHtml(String(p.value))}</div></div>`
+  ).join("");
+  return (
+    `<div class="et-section">Event config <span class="et-dim">(read-only · edit via Claude Code agent)</span>` +
+      ` <button class="help-q" data-help="${escapeHtml(help)}">?</button></div>` +
+    `<div class="et-strip">${cells}</div>`
+  );
+}
+
 function renderBody(data, body) {
   if (!body) return;
   const feed = (data && data.feed) || [];
@@ -116,7 +174,10 @@ function renderBody(data, body) {
     armedStrip(data && data.status) +
     funnel(data && data.funnel) +
     `<div class="et-section">Watching feed</div>` +
-    `<div class="et-feed">${feedHtml}</div>`;
+    `<div class="et-feed">${feedHtml}</div>` +
+    nearMisses(data && data.near_misses) +
+    latency(data && data.latency) +
+    configBlock(data && data.config);
   body.querySelectorAll("[data-feed-idx]").forEach((el) =>
     el.addEventListener("click", () => openFeedDetail(feed[Number(el.dataset.feedIdx)]))
   );

@@ -505,33 +505,6 @@
     }
   }
 
-  function dismissSignal() {
-    const panel = q('#signal-panel');
-    if (panel) panel.style.display = 'none';
-  }
-
-  async function applyRecs() {
-    try {
-      const r = await fetch('/api/v1/learning/apply', { method: 'POST' });
-      const d = await r.json();
-      alert(d.message || 'Recommendations queued');
-    } catch (e) {
-      console.error('Apply recs failed:', e);
-      alert('Error: ' + e.message);
-    }
-  }
-
-  async function runLearning() {
-    try {
-      const r = await fetch('/api/v1/learning/run', { method: 'POST' });
-      const d = await r.json();
-      alert(d.message || d.command || 'Learning mode started');
-    } catch (e) {
-      console.error('Run learning failed:', e);
-      alert('Error: ' + e.message);
-    }
-  }
-
   function setFilterTab(which) {
     q('#btn-filter-all').classList.toggle('on', which === 'all');
     q('#btn-filter-today').classList.toggle('on', which === 'today');
@@ -562,9 +535,6 @@
     const filterAll = q('#btn-filter-all');
     const filterToday = q('#btn-filter-today');
     const exportBtn = q('#btn-export-csv');
-    const applyRecsBtn = q('#btn-apply-recs');
-    const runLearningBtn = q('#btn-run-learning');
-    const dismissBtn = q('#btn-dismiss-signal');
 
     if (refreshManual) refreshManual.addEventListener('click', setManual);
     if (refreshAuto) refreshAuto.addEventListener('click', setAuto);
@@ -573,9 +543,6 @@
     if (filterAll) filterAll.addEventListener('click', () => setFilterTab('all'));
     if (filterToday) filterToday.addEventListener('click', () => setFilterTab('today'));
     if (exportBtn) exportBtn.addEventListener('click', exportCSV);
-    if (applyRecsBtn) applyRecsBtn.addEventListener('click', applyRecs);
-    if (runLearningBtn) runLearningBtn.addEventListener('click', runLearning);
-    if (dismissBtn) dismissBtn.addEventListener('click', dismissSignal);
 
     const ksMaster = q('#ks-toggle-master');
     const ksEvent = q('#ks-toggle-event');
