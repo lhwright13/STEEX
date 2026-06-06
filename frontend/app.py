@@ -53,6 +53,16 @@ def create_app():
             logger.error(f"Error fetching pipeline state: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/pipeline/live")
+    def pipeline_live():
+        """Live Pipeline: per-agent lanes for the active-or-latest run (P3-2)."""
+        try:
+            service = get_dashboard_service()
+            return jsonify(service.get_pipeline_live())
+        except Exception as e:
+            logger.error(f"Error fetching live pipeline: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/variants/results")
     def variants_results():
         """Get results from all three analysis variants."""

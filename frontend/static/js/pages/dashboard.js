@@ -4,6 +4,7 @@
 // Migration note: this runs ALONGSIDE the legacy refresh.js/perf-chart.js while
 // widgets are ported one at a time (phase-3 migration order). A widget lives here
 // only once its partial has a stable root id and its legacy updateXxxDOM is gone.
+import "../widgets/live-pipeline.js";
 import "../widgets/today-events.js";
 import "../widgets/event-trigger.js";
 import "../widgets/event-trade-cards.js";

@@ -43,6 +43,66 @@ class PipelineMixin:
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
+    def get_pipeline_live(self) -> Dict[str, Any]:
+        """Live Pipeline view (P3-2): per-agent lanes for the active-or-latest run.
+
+        STEEX runs as cron one-shots and the run log persists only a start record
+        and a final record (no mid-run progress), so true second-by-second
+        streaming isn't available without an orchestrator change. This surfaces
+        what IS real: whether a run is active right now, and the per-agent lanes
+        (status + tools called, from the H4 trace telemetry) of the run in
+        flight — or, if it hasn't produced traces yet, the most recent run that
+        did, clearly flagged via `source`.
+        """
+        cur = self.get_pipeline_current()
+        active = cur.get("status") == "running"
+        run_id = cur.get("run_id")
+
+        timeline = self.get_agent_timeline(run_id)
+        source = "current"
+        if not timeline.get("steps"):
+            # The in-flight run has no traces yet (or none active) — show the
+            # latest run that actually executed agents, labelled as the last run.
+            runs_dir = self.data_dir / "runs"
+            if runs_dir.exists():
+                for f in sorted(runs_dir.glob("run_*.jsonl"), reverse=True):
+                    d = self._load_json(f)
+                    if d and d.get("mode") != "event_scan" and d.get("traces"):
+                        timeline = self.get_agent_timeline(d.get("run_id"))
+                        run_id = d.get("run_id")
+                        source = "last_run"
+                        break
+
+        current_agent = cur.get("current_agent")
+        lanes = []
+        for s in timeline.get("steps", []):
+            if active and source == "current" and s["agent"] == current_agent:
+                status = "running"
+            else:
+                status = "ok" if s.get("success") else "failed"
+            tools = s.get("tools_called") or []
+            lanes.append({
+                "agent": s.get("agent"),
+                "role": s.get("role"),
+                "status": status,
+                "tools_called": tools,
+                "tool_count": len(tools),
+                "duration_seconds": s.get("duration_seconds"),
+                "summary": s.get("summary"),
+            })
+
+        return {
+            "active": active,
+            "status": cur.get("status"),
+            "mode": cur.get("mode"),
+            "run_id": run_id,
+            "elapsed": cur.get("elapsed"),
+            "current_agent": current_agent,
+            "source": source,
+            "lanes": lanes,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
     def get_variants_results(self) -> Dict[str, Dict[str, Any]]:
         """Get results from all three analysis variants."""
         run_file = self._get_latest_run_file()
