@@ -493,6 +493,18 @@ class Settings(BaseSettings):
         description="Claude model for the per-post ticker resolver (cheap; runs on every new post)",
     )
 
+    # ---- Big-move detector (P1-3) -----------------------------------------
+    big_move_enabled: bool = Field(
+        default=True, description="Detect sudden jumps in held positions and notify"
+    )
+    big_move_threshold_pct: float = Field(
+        default=0.08,
+        description="Jump since the last scan that counts as a big move (0.08 = 8%)",
+    )
+    big_move_cooldown_minutes: int = Field(
+        default=180, description="Per-ticker cooldown before re-alerting on a continued move"
+    )
+
     # ---- Messaging / notifications (P1) -----------------------------------
     messaging_enabled: bool = Field(
         default=False,
