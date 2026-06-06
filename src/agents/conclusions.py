@@ -251,6 +251,12 @@ class ResearchConclusion(BaseModel):
     meta: Optional[AgentMeta] = Field(default=None, description="Self-improvement suggestions")
 
 
+class EventSummary(BaseModel):
+    """Output from the event-summary stage (P1-2): a concise user-facing note."""
+
+    summary: str = Field(description="3-5 sentence plain-language explanation of the event")
+
+
 class ReportConclusion(BaseModel):
     """Output from the ReportAgent."""
 

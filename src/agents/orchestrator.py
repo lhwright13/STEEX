@@ -450,6 +450,45 @@ class Orchestrator:
         elif scan["executed"]:
             console.print("  [dim]dry_run: skipping post-trade review agent[/dim]")
 
+        # P1-2: summarize + notify the user about real event fills and big moves.
+        # The summary stage is idempotent per id and the message layer is itself
+        # kill-switched, so this is safe to call every scan.
+        try:
+            from src.notify.event_summary import summarize_and_notify
+            from src.strategy.move_watch import MoveWatcher
+
+            review_by_ticker = {r.get("ticker"): r for r in reviews}
+            if not self.dry_run:
+                for trade in scan["executed"]:
+                    ev = trade.get("event", {})
+                    eid = str(ev.get("id") or f"{trade['ticker']}_{ev.get('published_at', '')}")
+                    summarize_and_notify({
+                        "id": f"evt_{eid}",
+                        "type": "event_trade",
+                        "ticker": trade["ticker"],
+                        "context": {
+                            "headline": ev.get("headline"),
+                            "source": ev.get("source"),
+                            "figure": ev.get("figure"),
+                            "shares": trade.get("shares"),
+                            "price": trade.get("price"),
+                            "stop": trade.get("stop"),
+                            "review": review_by_ticker.get(trade["ticker"]),
+                        },
+                        "links": ([{"label": "post", "href": ev["url"]}]
+                                  if ev.get("url") else []),
+                    }, settings=self.settings)
+
+            for mv in MoveWatcher(manager, self.settings).scan():
+                summarize_and_notify({
+                    "id": f"move_{mv['ticker']}_{mv['ts']}",
+                    "type": "big_move",
+                    "ticker": mv["ticker"],
+                    "context": mv,
+                }, settings=self.settings)
+        except Exception as e:  # a notification must never break the scan
+            logger.error("event/move notification failed: %s", e)
+
         report = {"mode": mode, "scan": scan, "reviews": reviews}
         final_state = {
             "mode": mode,
