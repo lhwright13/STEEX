@@ -553,6 +553,10 @@
       <h2>Today's Events <span class="sub">buys, sells, event trades &amp; big moves — what the system did today</span></h2>
     </header>
     <div class="body">
+      <!-- P3-6: event-trade cards (fired event trades + live P&L), distinct from
+           scheduled trades; same /events/trade-cards source as the event panel. -->
+      <div id="event-trade-cards-today" class="etc-wrap"></div>
+
       <!-- P3-3: user_updates feed (the same stream sent to Telegram),
            newest-first, each row clickable to a detail modal. -->
       <div id="today-events" class="te-feed">
@@ -662,6 +666,9 @@
       <h2>Event Trigger <span class="sub">news fast-path · who's watched, why a trade did or didn't fire</span></h2>
     </header>
     <div class="body">
+      <!-- P3-6: fired event-trade cards (live P&L), same source as Today's Events -->
+      <div id="event-trade-cards-panel" class="etc-wrap"></div>
+
       <!-- P3-4: armed strip + "why no trade?" funnel + watching feed,
            rolled up from per-post verdict records (/api/v1/events/aggregate). -->
       <div id="event-trigger">
@@ -1082,6 +1089,32 @@
 .et-headline { flex:1 1 auto; min-width:0; font-size:12px; color:#222;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .et-when { flex:0 0 auto; font-family:var(--mono); font-size:11px; color:var(--dim); white-space:nowrap; }
+
+/* P3-6 event-trade cards */
+.etc-wrap:empty { display:none; }
+.etc-wrap { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:10px; margin-bottom:14px; }
+.etc-empty { display:none; }
+.etc-card { border:1px solid #ecdcc7; border-left:3px solid #a05a00; background:#fffdfa; padding:11px 13px; }
+.etc-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.etc-ticker { font-weight:700; font-size:15px; color:#000; }
+.etc-figure { font-family:var(--mono); font-size:11px; color:#a05a00; }
+.etc-pnl { margin-left:auto; font-family:var(--mono); font-size:13px; font-weight:700; }
+.etc-up { color:#00772a; }
+.etc-down { color:#b80000; }
+.etc-flat { color:var(--dim); font-weight:400; }
+.etc-post { margin:8px 0; padding:7px 10px; background:#faf4ec; border-left:2px solid #ecdcc7;
+  font-style:italic; font-size:12px; color:#333; }
+.etc-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px 8px; font-family:var(--mono);
+  font-size:11px; border-top:1px solid var(--border); padding-top:8px; }
+.etc-grid .etc-k { display:block; color:var(--dim); text-transform:uppercase; font-size:9px; letter-spacing:0.05em; }
+.etc-grid .etc-v { color:#000; font-weight:700; }
+.etc-foot { display:flex; align-items:center; gap:10px; margin-top:9px; }
+.etc-verdict { font-family:var(--mono); font-size:10px; font-weight:700; padding:2px 7px; border-radius:3px;
+  text-transform:uppercase; background:#f0f0f0; color:#555; }
+.etc-keep { background:#e3f4e8; color:#00772a; }
+.etc-exit { background:#fbe4e4; color:#b80000; }
+.etc-tighten { background:#fff3df; color:#a05a00; }
+.etc-link { font-family:var(--mono); font-size:11px; color:#3458b8; margin-left:auto; }
 </style>
 <script type="module" src="/static/js/pages/dashboard.js"></script>
 <script src="/static/js/refresh.js"></script>

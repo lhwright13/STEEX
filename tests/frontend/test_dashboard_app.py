@@ -427,6 +427,21 @@ class TestEventAggregateAPI:
         assert kwargs["figure"] == "elonmusk" and kwargs["limit"] == 10
 
     @patch("frontend.app.get_dashboard_service")
+    def test_trade_cards_endpoint(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.get_event_trade_cards.return_value = {
+            "cards": [{"ticker": "DELL", "live": {"unrealized_pnl": 105.0}}], "count": 1,
+        }
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/events/trade-cards?limit=20")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["cards"][0]["ticker"] == "DELL"
+        _, kwargs = mock_service.get_event_trade_cards.call_args
+        assert kwargs["limit"] == 20
+
+    @patch("frontend.app.get_dashboard_service")
     def test_figures_endpoint(self, mock_get_service, client):
         mock_service = Mock()
         mock_service.get_event_figures.return_value = {

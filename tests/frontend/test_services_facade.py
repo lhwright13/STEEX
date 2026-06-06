@@ -18,7 +18,7 @@ PUBLIC_METHODS = {
     "get_system_schedules", "get_agent_detail", "get_agent_last_output",
     "get_workflow_topology", "get_graph_structure", "get_recent_runs",
     "get_event_activity", "get_event_aggregate", "get_event_figures",
-    "get_user_updates", "get_user_update", "get_run_trace",
+    "get_event_trade_cards", "get_user_updates", "get_user_update", "get_run_trace",
     "get_controls", "set_controls", "get_trade_history", "get_agent_timeline",
 }
 

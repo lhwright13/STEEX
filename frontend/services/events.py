@@ -159,6 +159,58 @@ class EventsMixin:
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
+    # ---- P3-6: event-trade cards -----------------------------------------
+
+    def get_event_trade_cards(self, limit: int = 20, day: Optional[str] = None) -> Dict[str, Any]:
+        """Event-trade cards (P3-6): each fired event trade as a rich card.
+
+        Joins the ``event_trade`` user_updates (the triggering post, entry, stop,
+        review verdict — one data source, shared by Today's Events and the event
+        panel) to the live holding for current price + unrealized P&L. A trade
+        whose position is closed simply has ``live = None``.
+        """
+        from src.notify import user_updates as uu
+        updates = uu.read_updates(self.data_dir, limit=200, types=["event_trade"], day=day)
+
+        pos_by_ticker: Dict[str, Any] = {}
+        try:
+            for p in (self.get_portfolio_holdings().get("positions") or []):
+                if p.get("ticker"):
+                    pos_by_ticker[p["ticker"]] = p
+        except Exception as e:  # P&L is a nice-to-have; never break the card list
+            logger.debug("event-trade-card holdings join skipped: %s", e)
+
+        cards = []
+        for u in updates[:limit]:
+            p = u.payload or {}
+            review = p.get("review") or {}
+            ticker = p.get("ticker")
+            pos = pos_by_ticker.get(ticker)
+            live = None
+            if pos:
+                live = {
+                    "price": pos.get("current_price"),
+                    "market_value": pos.get("market_value"),
+                    "unrealized_pnl": pos.get("unrealized_pnl"),
+                    "unrealized_pct": pos.get("unrealized_pct"),
+                    "stop": pos.get("current_stop"),
+                    "held": True,
+                }
+            cards.append({
+                "id": u.id, "ts": u.ts, "ticker": ticker,
+                "headline": p.get("headline"), "figure": p.get("figure"),
+                "source": p.get("source"), "shares": p.get("shares"),
+                "entry_price": p.get("price"), "stop": p.get("stop"),
+                "review_verdict": review.get("verdict"),
+                "review_reasoning": review.get("reasoning"),
+                "links": [l.model_dump() for l in (u.links or [])],
+                "live": live,
+            })
+        return {
+            "cards": cards, "count": len(cards),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
     @staticmethod
     def _rec_time(rec: Dict[str, Any]):
         ts = rec.get("decided_at") or rec.get("detected_at") or rec.get("published_at")

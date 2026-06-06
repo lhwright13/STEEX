@@ -664,3 +664,37 @@ class TestEventAggregate:
         figs = service.get_event_figures()["figures"]
         assert figs[0]["name"] == "realDonaldTrump"
         assert figs[0]["account_id"] == "107780257626128497"
+
+    def test_trade_cards_join_live_pnl(self, service, tmp_path):
+        """Event-trade cards join the event_trade update to the live holding."""
+        from src.notify import user_updates as uu
+        service.data_dir = tmp_path
+        uu.write_update(
+            tmp_path, type="event_trade", title="Bought DELL",
+            update_id="evt_dell",
+            payload={"ticker": "DELL", "headline": "Buy DELL!", "figure": "realDonaldTrump",
+                     "shares": 14, "price": 122.5, "stop": 105.35,
+                     "review": {"verdict": "keep", "reasoning": "ok"}},
+            links=[{"label": "post", "href": "https://truthsocial.com/x"}],
+        )
+        with patch.object(service, "get_portfolio_holdings", return_value={"positions": [
+            {"ticker": "DELL", "current_price": 130.0, "market_value": 1820.0,
+             "unrealized_pnl": 105.0, "unrealized_pct": 6.1, "current_stop": 110.0},
+        ]}):
+            out = service.get_event_trade_cards()
+        assert out["count"] == 1
+        card = out["cards"][0]
+        assert card["ticker"] == "DELL" and card["entry_price"] == 122.5
+        assert card["review_verdict"] == "keep"
+        assert card["links"][0]["href"] == "https://truthsocial.com/x"
+        assert card["live"]["unrealized_pnl"] == 105.0 and card["live"]["held"] is True
+
+    def test_trade_cards_no_position(self, service, tmp_path):
+        """A closed/absent position yields a card with live=None (not an error)."""
+        from src.notify import user_updates as uu
+        service.data_dir = tmp_path
+        uu.write_update(tmp_path, type="event_trade", title="Bought RIVN",
+                        payload={"ticker": "RIVN", "price": 15.0})
+        with patch.object(service, "get_portfolio_holdings", return_value={"positions": []}):
+            out = service.get_event_trade_cards()
+        assert out["count"] == 1 and out["cards"][0]["live"] is None

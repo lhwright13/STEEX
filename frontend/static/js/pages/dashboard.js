@@ -6,6 +6,7 @@
 // only once its partial has a stable root id and its legacy updateXxxDOM is gone.
 import "../widgets/today-events.js";
 import "../widgets/event-trigger.js";
+import "../widgets/event-trade-cards.js";
 import { start } from "../core/scheduler.js";
 
 start();
