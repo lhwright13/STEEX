@@ -185,7 +185,7 @@ class TestToolErrorHandling:
         from src.agents.mcp_server import run_screening_variant, _safe_json
 
         # Mock the manager initialization
-        with patch("src.agents.mcp_server._init_manager") as mock_init:
+        with patch("src.agents.mcp_tools._state.init_manager") as mock_init:
             mock_init.return_value = MagicMock()
 
             result_json = run_screening_variant("invalid_variant")
@@ -196,27 +196,27 @@ class TestToolErrorHandling:
 
     def test_get_regime_without_regime_fails(self):
         """get_regime_screening_params should fail if no regime data"""
-        from src.agents.mcp_server import get_regime_screening_params, _regime
+        from src.agents.mcp_server import get_regime_screening_params
+        import src.agents.mcp_tools._state as state
 
-        # When _regime is None, should return error
-        import src.agents.mcp_server as mcp_module
-        original_regime = mcp_module._regime
-        mcp_module._regime = None
+        # When regime is None, should return error
+        original_regime = state.regime
+        state.regime = None
 
         try:
             result_json = get_regime_screening_params()
             result = json.loads(result_json)
             assert "error" in result
         finally:
-            mcp_module._regime = original_regime
+            state.regime = original_regime
 
     def test_weight_tool_returns_dict(self):
         """rank_candidates_with_weights should return proper structure"""
-        from src.agents.mcp_server import rank_candidates_with_weights, _pipeline_result
-        import src.agents.mcp_server as mcp_module
+        from src.agents.mcp_server import rank_candidates_with_weights
+        import src.agents.mcp_tools._state as state
 
-        # When _pipeline_result is None, should return error
-        if mcp_module._pipeline_result is None:
+        # When pipeline_result is None, should return error
+        if state.pipeline_result is None:
             result_json = rank_candidates_with_weights()
             result = json.loads(result_json)
             assert "error" in result
@@ -295,13 +295,13 @@ class TestToolIntegrationPoints:
     """Test how tools interact with the wider system"""
 
     def test_variant_tools_use_shared_globals(self):
-        """Variant tools should read/write shared module globals"""
-        import src.agents.mcp_server as mcp_module
+        """Variant tools should read/write shared session state in _state."""
+        import src.agents.mcp_tools._state as state
 
-        # Verify these globals exist
-        assert hasattr(mcp_module, "_pipeline_result")
-        assert hasattr(mcp_module, "_ranked")
-        assert hasattr(mcp_module, "_regime")
+        # Shared pipeline session cache now lives in the _state module (P0-2)
+        assert hasattr(state, "pipeline_result")
+        assert hasattr(state, "ranked")
+        assert hasattr(state, "regime")
 
     def test_config_weights_match_settings(self, mock_manager):
         """Tool parameter defaults should match settings.py defaults"""

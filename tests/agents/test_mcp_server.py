@@ -23,25 +23,25 @@ import pytest
 def _reset_mcp_globals():
     """Reset MCP server globals between tests."""
     import src.agents.mcp_server as mcp_mod
-    mcp_mod._manager = None
-    mcp_mod._settings = None
-    mcp_mod._pipeline_result = None
-    mcp_mod._ranked = None
-    mcp_mod._exit_signals = None
-    mcp_mod._regime = None
-    mcp_mod._buy_list = None
-    mcp_mod._sell_list = None
-    mcp_mod._dry_run = False
+    mcp_mod._state.manager = None
+    mcp_mod._state.settings = None
+    mcp_mod._state.pipeline_result = None
+    mcp_mod._state.ranked = None
+    mcp_mod._state.exit_signals = None
+    mcp_mod._state.regime = None
+    mcp_mod._state.buy_list = None
+    mcp_mod._state.sell_list = None
+    mcp_mod._state.dry_run = False
     yield
-    mcp_mod._manager = None
-    mcp_mod._settings = None
-    mcp_mod._pipeline_result = None
-    mcp_mod._ranked = None
-    mcp_mod._exit_signals = None
-    mcp_mod._regime = None
-    mcp_mod._buy_list = None
-    mcp_mod._sell_list = None
-    mcp_mod._dry_run = False
+    mcp_mod._state.manager = None
+    mcp_mod._state.settings = None
+    mcp_mod._state.pipeline_result = None
+    mcp_mod._state.ranked = None
+    mcp_mod._state.exit_signals = None
+    mcp_mod._state.regime = None
+    mcp_mod._state.buy_list = None
+    mcp_mod._state.sell_list = None
+    mcp_mod._state.dry_run = False
 
 
 @pytest.fixture
@@ -76,8 +76,8 @@ def mock_manager():
 def inject_manager(mock_manager):
     """Inject the mock manager into the MCP module globals."""
     import src.agents.mcp_server as mcp_mod
-    mcp_mod._manager = mock_manager
-    mcp_mod._settings = mock_manager.settings
+    mcp_mod._state.manager = mock_manager
+    mcp_mod._state.settings = mock_manager.settings
     return mock_manager
 
 
@@ -176,7 +176,7 @@ class TestScreeningPipeline:
 
     def test_rank_candidates(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._pipeline_result = self._make_pipeline_result()
+        mcp_mod._state.pipeline_result = self._make_pipeline_result()
         ranked = self._make_ranked()
         inject_manager.rank_candidates.return_value = ranked
 
@@ -195,7 +195,7 @@ class TestScreeningPipeline:
     def test_construct_portfolio(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
         ranked = self._make_ranked()
-        mcp_mod._ranked = ranked
+        mcp_mod._state.ranked = ranked
 
         proposal = MagicMock()
         proposal.selected = []
@@ -222,7 +222,7 @@ class TestExecution:
 
     def test_execute_entries(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._buy_list = [
+        mcp_mod._state.buy_list = [
             {"ticker": "AAPL", "shares": 10, "price": 150.0, "stop": 142.5}
         ]
         inject_manager.execute_entries.return_value = [
@@ -237,10 +237,10 @@ class TestExecution:
 
     def test_execute_entries_dry_run(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._buy_list = [
+        mcp_mod._state.buy_list = [
             {"ticker": "AAPL", "shares": 10, "price": 150.0, "stop": 142.5}
         ]
-        mcp_mod._dry_run = True
+        mcp_mod._state.dry_run = True
         inject_manager.execute_entries.return_value = []
 
         result = _parse(mcp_mod.execute_entries())
@@ -250,7 +250,7 @@ class TestExecution:
         """If size_buy_list was skipped, execute_entries sizes on demand rather
         than silently placing zero orders."""
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._buy_list = [{"ticker": "AAPL", "score": 60.0}]  # unsized
+        mcp_mod._state.buy_list = [{"ticker": "AAPL", "score": 60.0}]  # unsized
         inject_manager._get_portfolio_value.return_value = 50000.0
         inject_manager._get_cash.return_value = 20000.0
         inject_manager.settings.min_cash_reserve_pct = 0.1
@@ -266,14 +266,14 @@ class TestExecution:
         assert result["count"] == 1
         inject_manager.execute_entries.assert_called_once()
         # the entry was sized in place before execution
-        assert mcp_mod._buy_list[0]["shares"] >= 1
-        assert mcp_mod._buy_list[0]["price"] == 150.0
+        assert mcp_mod._state.buy_list[0]["shares"] >= 1
+        assert mcp_mod._state.buy_list[0]["price"] == 150.0
 
     def test_execute_entries_skips_unsizable(self, inject_manager):
         """An entry that genuinely can't be sized (no quote) is dropped, and with
         nothing left to execute the call reports it instead of placing orders."""
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._buy_list = [{"ticker": "AAPL", "score": 60.0}]  # unsized
+        mcp_mod._state.buy_list = [{"ticker": "AAPL", "score": 60.0}]  # unsized
         inject_manager._get_portfolio_value.return_value = 50000.0
         inject_manager._get_cash.return_value = 20000.0
         inject_manager.settings.min_cash_reserve_pct = 0.1
@@ -293,7 +293,7 @@ class TestExecution:
 
     def test_execute_exits(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._sell_list = [{"ticker": "AAPL", "qty": 10, "reason": "stop_loss"}]
+        mcp_mod._state.sell_list = [{"ticker": "AAPL", "qty": 10, "reason": "stop_loss"}]
         inject_manager.execute_exits.return_value = [
             {"ticker": "AAPL", "status": "filled", "qty": 10}
         ]
@@ -361,9 +361,9 @@ class TestScreenResultsRoundTrip:
     def test_save_and_load(self, inject_manager, tmp_path):
         import src.agents.mcp_server as mcp_mod
         inject_manager.settings.data_dir = str(tmp_path)
-        mcp_mod._regime = {"regime": "risk_on", "confidence": 0.85}
-        mcp_mod._buy_list = [{"ticker": "AAPL", "qty": 10}]
-        mcp_mod._ranked = [MagicMock()]
+        mcp_mod._state.regime = {"regime": "risk_on", "confidence": 0.85}
+        mcp_mod._state.buy_list = [{"ticker": "AAPL", "qty": 10}]
+        mcp_mod._state.ranked = [MagicMock()]
 
         # Save
         save_result = _parse(mcp_mod.save_screen_results())
@@ -371,7 +371,7 @@ class TestScreenResultsRoundTrip:
         assert save_result["candidates"] == 1
 
         # Reset buy_list to verify load restores it
-        mcp_mod._buy_list = None
+        mcp_mod._state.buy_list = None
 
         # Load
         load_result = _parse(mcp_mod.load_screen_results())
@@ -428,7 +428,7 @@ class TestLearningLoop:
 
     def test_run_learning_loop_dry_run(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._dry_run = True
+        mcp_mod._state.dry_run = True
         inject_manager.run_learning.return_value = {"dry_run": True}
 
         _parse(mcp_mod.run_learning_loop())
@@ -463,7 +463,7 @@ class TestConfigChanges:
 
     def test_apply_config_dry_run(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        mcp_mod._dry_run = True
+        mcp_mod._state.dry_run = True
 
         result = _parse(mcp_mod.apply_config_changes('{"weight_momentum": 0.35}', "test"))
         assert result["applied"] is False
