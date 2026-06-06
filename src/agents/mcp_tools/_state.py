@@ -30,21 +30,35 @@ buy_list = None
 sell_list = None
 
 
+def get_settings_only() -> Settings:
+    """Resolve session settings (with the paper/live/no-broker flags applied)
+    WITHOUT constructing the QuantManager or its broker.
+
+    Pure tools that only need settings — e.g. the notification tool — use this so
+    a broker initialization failure can't take down work that never touches the
+    broker. Caches on the shared `settings` global, same as init_manager.
+    """
+    global settings
+    if settings is not None:
+        return settings
+
+    s = get_settings()
+    if args.paper:
+        s.broker_enabled = True
+        s.broker_paper = True
+    elif args.live:
+        s.broker_enabled = True
+        s.broker_paper = False
+    elif args.no_broker:
+        s.broker_enabled = False
+    settings = s
+    return s
+
+
 def init_manager() -> QuantManager:
     """Lazy-init the QuantManager on first tool call."""
-    global settings, manager
+    global manager
     if manager is not None:
         return manager
-
-    settings = get_settings()
-    if args.paper:
-        settings.broker_enabled = True
-        settings.broker_paper = True
-    elif args.live:
-        settings.broker_enabled = True
-        settings.broker_paper = False
-    elif args.no_broker:
-        settings.broker_enabled = False
-
-    manager = QuantManager(settings=settings)
+    manager = QuantManager(settings=get_settings_only())
     return manager

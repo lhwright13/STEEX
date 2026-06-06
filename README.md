@@ -354,13 +354,12 @@ STEEX/
     install.sh / uninstall.sh
   frontend/
     app.py                   # Flask app with REST API endpoints
-    services.py              # Dashboard data service layer
+    services/                # Dashboard data service (domain-split behind a facade)
     templates/               # HTML templates (index.html, system.html)
     static/
-      js/                    # Client-side logic (refresh.js, system-live.js)
+      js/                    # ES-module widgets (core/, widgets/, pages/, components/)
       css/                   # Styling
-  tests/                     # 376+ tests
-  STRATEGY.md                # Full strategy document with code references
+  tests/                     # full pytest suite
 ```
 
 ---

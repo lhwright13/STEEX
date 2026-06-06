@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.notify import user_updates
-from src.notify.event_summary import summarize_and_notify, _default_title
+from src.notify.event_summary import summarize_and_notify, _default_title, _enforce_length
 
 
 def _settings(tmp_path):
@@ -68,3 +68,27 @@ def test_severity_mapping(tmp_path):
                                 "context": {"direction": "up", "move_pct": 9}},
                                settings=s, summarizer=_stub_summary, send=False)
     assert big.severity == "warning"
+
+
+def test_enforce_length_clamps_to_five_sentences():
+    """P1-2 acceptance: a long summary is hard-capped at 5 sentences."""
+    seven = " ".join(f"Sentence number {i}." for i in range(1, 8))
+    out = _enforce_length(seven)
+    assert out.count(".") == 5
+    assert out.startswith("Sentence number 1.")
+    assert "number 6" not in out and "number 7" not in out
+
+
+def test_enforce_length_passes_short_through():
+    two = "First sentence. Second sentence."
+    assert _enforce_length(two) == two
+    assert _enforce_length("") == ""
+
+
+def test_summary_length_enforced_end_to_end(tmp_path):
+    """A verbose summarizer is clamped before it's stored on the stream."""
+    s = _settings(tmp_path)
+    verbose = lambda _e: " ".join(f"Point {i} about the trade." for i in range(1, 9))
+    rec = summarize_and_notify({"id": "long1", "type": "buy", "ticker": "AAPL"},
+                               settings=s, summarizer=verbose, send=False)
+    assert rec.summary.count(".") == 5

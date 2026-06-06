@@ -25,6 +25,16 @@ from typing import Dict, List
 
 logger = logging.getLogger("steex.event_trigger")
 
+_MAX_REASONING_CHARS = 280  # bound stored resolver reasoning (P1-5) to keep
+                            # event reports + UI payloads from bloating.
+
+
+def _clip(text, limit: int = _MAX_REASONING_CHARS):
+    """Bound a stored free-text reasoning string; None/empty passes through."""
+    if not text:
+        return text
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
 
 class EventTrigger:
     """Runs one event-scan pass and returns a structured result."""
@@ -183,7 +193,7 @@ class EventTrigger:
                     "is_bullish": bool(getattr(res, "is_bullish", False)) if res else False,
                     "confidence": getattr(res, "confidence", None) if res else None,
                     "company": getattr(res, "company_name", None) if res else None,
-                    "reasoning": getattr(res, "reasoning", None) if res else None,
+                    "reasoning": _clip(getattr(res, "reasoning", None)) if res else None,
                 }
                 if not res or not getattr(res, "mentions_company", False) or not getattr(res, "is_bullish", False):
                     result["skipped"].append({"reason": "not a bullish company signal", "headline": ev.headline[:120]})
@@ -198,7 +208,7 @@ class EventTrigger:
                 ticker = res.ticker.upper()
                 score = round(res.confidence * 100, 1)
                 event_meta.update({"company": res.company_name, "confidence": res.confidence,
-                                   "resolver_reasoning": res.reasoning})
+                                   "resolver_reasoning": _clip(res.reasoning)})
 
             # Past the relevance filter: a real candidate. Any guardrail that blocks
             # it now is a near_miss (named a tradable bullish name, just gated out).
@@ -266,7 +276,10 @@ class EventTrigger:
             result["actionable"].append(actionable)
 
             # Execute (reuses broker.buy + server stop inside execute_entries).
-            executed = self.mgr.execute_entries([actionable], dry_run=dry_run, auto_confirm=True)
+            # notify=False: the orchestrator sends a richer event_trade
+            # notification for event fills, so suppress the generic buy notice.
+            executed = self.mgr.execute_entries(
+                [actionable], dry_run=dry_run, auto_confirm=True, notify=False)
             if executed:
                 result["executed"].append(actionable)
                 _record(ev, "executed", None, "executed", ticker=ticker, verdict=verdict, score=score)

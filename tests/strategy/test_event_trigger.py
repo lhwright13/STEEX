@@ -50,7 +50,9 @@ class StubMgr:
         return 50000.0
     def _get_cash(self):
         return 30000.0
-    def execute_entries(self, buy_list, dry_run=True, auto_confirm=True):
+    def execute_entries(self, buy_list, dry_run=True, auto_confirm=True, notify=True):
+        # event path passes notify=False (orchestrator sends the richer notice)
+        assert notify is False
         self.bought.extend(b["ticker"] for b in buy_list)
         return buy_list
 

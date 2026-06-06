@@ -5,6 +5,7 @@ and reporting into a single end-to-end pipeline.
 """
 
 import json
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -36,6 +37,7 @@ from ..strategy.ranking import RankedStock, StockRanker
 from ..regime.detector import RegimeDetector, MacroRegime
 
 console = Console()
+logger = logging.getLogger("steex.manager")
 
 
 def _normalize_date_key(raw: Optional[str]) -> Optional[str]:
@@ -838,10 +840,63 @@ class QuantManager:
         self._log("execution", f"Generated {len(sell_list)} sell signals")
         return sell_list
 
+    def _notify_fill(self, kind: str, *, ticker, shares, price, stop=None,
+                     pnl=None, pnl_pct=None, reason=None, reasons=None):
+        """Emit a user_update + Telegram for one real scheduled buy/sell (P1-2).
+
+        This is the universal fill funnel, so it must be safe in EVERY context —
+        including inside the execution agent's MCP subprocess. It therefore uses a
+        deterministic templated summary (NOT a nested Claude call) and never
+        raises into the trading path. The user_update is always recorded (the
+        dashboard reads it); the Telegram send is itself kill-switched by
+        `messaging_enabled` in the messaging layer.
+        """
+        try:
+            from datetime import datetime, timezone
+            from src.notify.event_summary import summarize_and_notify
+
+            day = datetime.now(timezone.utc).strftime("%Y%m%d")
+            if kind == "buy":
+                title = f"Bought {ticker}"
+                summary = f"Bought {shares} shares of {ticker} at ${price:.2f}."
+                if stop:
+                    summary += f" Protective stop set at ${stop:.2f}."
+                if reasons:
+                    summary += " Entry rationale: " + "; ".join(str(r) for r in reasons[:3]) + "."
+                summary += " Scheduled strategy trade."
+            else:
+                title = f"Sold {ticker}"
+                summary = f"Sold {shares} shares of {ticker} at ${price:.2f}"
+                if pnl is not None and pnl_pct is not None:
+                    summary += f" for a realized P&L of ${pnl:+,.0f} ({pnl_pct:+.1f}%)"
+                summary += "."
+                if reason:
+                    summary += f" Reason: {reason}."
+
+            summarize_and_notify(
+                {
+                    "id": f"{kind}_{ticker}_{day}_{int(round((price or 0) * 100))}",
+                    "type": kind, "ticker": ticker, "title": title,
+                    "context": {"ticker": ticker, "shares": shares, "price": price,
+                                "stop": stop, "pnl": pnl, "pnl_pct": pnl_pct,
+                                "reason": reason, "reasons": list(reasons or [])},
+                },
+                settings=self.settings,
+                summarizer=lambda e: summary,
+            )
+        except Exception as e:  # a notification must never break a trading run
+            logger.debug("fill notification skipped for %s %s: %s", kind, ticker, e)
+
     def execute_entries(
-        self, buy_list: List[Dict], dry_run: bool = False, auto_confirm: bool = False
+        self, buy_list: List[Dict], dry_run: bool = False, auto_confirm: bool = False,
+        notify: bool = True,
     ) -> List[Dict]:
-        """Execute or prompt for entry confirmation."""
+        """Execute or prompt for entry confirmation.
+
+        `notify` emits a user_update + Telegram per real fill (P1-2). The
+        event-trigger path passes notify=False because the orchestrator already
+        sends a richer event_trade notification for those fills.
+        """
         executed = []
 
         if not buy_list:
@@ -968,12 +1023,21 @@ class QuantManager:
             self._log("execution", f"Entered {entry['ticker']} @ ${entry_price:.2f} x {entry_shares}")
             console.print(f"  [green]Entered {entry['ticker']}[/green]")
 
+            if notify:
+                self._notify_fill(
+                    "buy", ticker=entry["ticker"], shares=entry_shares,
+                    price=entry_price, stop=entry.get("stop"), reasons=entry.get("reasons"),
+                )
+
         return executed
 
     def execute_exits(
-        self, sell_list: List[Dict], dry_run: bool = False
+        self, sell_list: List[Dict], dry_run: bool = False, notify: bool = True
     ) -> List[Dict]:
-        """Execute exits. Immediate exits auto-fire, others are recommendations."""
+        """Execute exits. Immediate exits auto-fire, others are recommendations.
+
+        `notify` emits a user_update + Telegram per real exit fill (P1-2).
+        """
         executed = []
 
         if not sell_list:
@@ -1044,8 +1108,16 @@ class QuantManager:
                     score=position.score,
                     reasons=position.reasons,
                 )
+                exit_shares = position.shares
                 self.position_manager.remove_position(item["ticker"])
                 executed.append(item)
+
+                if notify:
+                    self._notify_fill(
+                        "sell", ticker=item["ticker"], shares=exit_shares,
+                        price=exit_price, pnl=item.get("pnl_dollars"),
+                        pnl_pct=item.get("pnl_pct"), reason=item.get("reason"),
+                    )
 
                 console.print(
                     f"  [{pnl_color}]EXIT {item['ticker']}[/{pnl_color}] "

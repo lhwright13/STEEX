@@ -13,11 +13,42 @@ a trading path.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Callable, Dict, Optional
 
 from src.notify import user_updates
 
 logger = logging.getLogger("steex.event_summary")
+
+_MIN_SENTENCES = 3
+_MAX_SENTENCES = 5
+
+
+def _split_sentences(text: str):
+    """Split into sentences, keeping terminal punctuation; tolerant of a final
+    fragment with no period."""
+    return re.findall(r"[^.!?]+[.!?]+|\S[^.!?]*$", text.strip())
+
+
+def _enforce_length(text: str) -> str:
+    """Enforce the plan's 3-5 sentence bound (P1-2).
+
+    Hard-caps at _MAX_SENTENCES (the real risk is a wall-of-text bloating the
+    notification + UI payload); logs when a summary falls outside [3, 5] so the
+    prompt can be tuned, but a short summary is still delivered rather than
+    dropped.
+    """
+    text = (text or "").strip()
+    if not text:
+        return text
+    parts = _split_sentences(text)
+    n = len(parts)
+    if n > _MAX_SENTENCES:
+        logger.info("event summary had %d sentences; clamping to %d", n, _MAX_SENTENCES)
+        return "".join(parts[:_MAX_SENTENCES]).strip()
+    if n < _MIN_SENTENCES:
+        logger.info("event summary had only %d sentence(s); expected >= %d", n, _MIN_SENTENCES)
+    return text
 
 # event type -> user_updates severity
 _SEVERITY = {
@@ -102,6 +133,7 @@ def summarize_and_notify(
     except Exception as e:
         logger.error("event summary failed (%s); using title", e)
         summary = ""
+    summary = _enforce_length(summary)
 
     title = event.get("title") or _default_title(event)
     payload = dict(event.get("context", {}))

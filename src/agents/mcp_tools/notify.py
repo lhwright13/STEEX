@@ -21,8 +21,10 @@ def send_user_message(text: str, to: str = "") -> str:
     that logs instead of sending. `to` optionally overrides the configured chat id.
     """
     from src.notify.messaging import send_user_message as _send
-    mgr = _state.init_manager()
-    return _safe_json(_send(text, settings=mgr.settings, to=to or None))
+    # Settings only — a notification never needs the broker/QuantManager, so don't
+    # let a broker init failure take the Telegram path down with it.
+    settings = _state.get_settings_only()
+    return _safe_json(_send(text, settings=settings, to=to or None))
 
 
 __all__ = ["send_user_message"]

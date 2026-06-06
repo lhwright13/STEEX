@@ -67,11 +67,13 @@ def test_mcp_tool_wraps_the_sender():
     import src.agents.mcp_server as mcp_server
     import src.agents.mcp_tools._state as state
     import json
-    state.manager = SimpleNamespace(settings=_settings(enabled=False, token="t", chat="c"))
+    # The notification tool reads session settings directly (it must NOT build the
+    # broker/QuantManager just to send a message), so seed state.settings.
+    state.settings = _settings(enabled=False, token="t", chat="c")
     try:
         with patch("requests.post") as post:
             out = json.loads(mcp_server.send_user_message("ping"))
         post.assert_not_called()  # dry-run
         assert out["dry_run"] is True
     finally:
-        state.manager = None
+        state.settings = None
