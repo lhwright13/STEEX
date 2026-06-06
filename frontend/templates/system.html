@@ -86,6 +86,15 @@
   .wf-select { font-family: var(--mono); font-size: 12px; padding: 3px 7px; border: 1px solid var(--border); background: #fff; }
   .wf-pick { cursor: pointer; transition: background 0.08s; }
   .wf-pick:hover { background: #f6f6f6; outline: 1px solid var(--border-strong); outline-offset: -1px; }
+  /* P3-11 help "?" popover + doc links */
+  .help-q { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
+    margin-left: 6px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: #fff;
+    color: var(--dim); font-size: 11px; font-weight: 700; line-height: 1; cursor: pointer; vertical-align: middle; }
+  .help-q:hover { background: #000; color: #fff; border-color: #000; }
+  .help-pop { position: absolute; z-index: 1100; max-width: 340px; background: #1a1a1a; color: #f4f4f4;
+    font-family: var(--sans); font-size: 12px; line-height: 1.5; padding: 10px 12px; border-radius: 4px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.3); }
+  .doc-link { color: #0058b8; font-family: var(--mono); font-size: 11px; }
   .flowchart .post rect { fill: #f0f0f0; stroke: #000; stroke-width: 1; }
   .flowchart .post text { fill: var(--dim); font-size: 11px; letter-spacing: 0.08em; }
   .flowchart .endcap { fill: #000; }
@@ -748,7 +757,8 @@
 
     <section class="panel">
       <header>
-        <h2>MCP Tool Permissions <span class="sub">which agent can call which server</span></h2>
+        <h2>MCP Tool Permissions <span class="sub">which agent can call which server</span>
+          <button class="help-q" data-help="Each agent is granted only the MCP tool servers it needs (least privilege). Alpaca = brokerage + market data (quotes, positions, orders); AlphaVantage = technical indicators + fundamentals + macro; Polygon = aggregates, options flow, news. A ✓ means that agent may call that server; a blank means the tool isn't exposed to it, so it cannot. The internal STEEX server holds the pipeline tools (screening, sizing, execution).">?</button></h2>
         <div class="tools"><span>4 MCP servers</span></div>
       </header>
       <div class="body">
@@ -849,13 +859,13 @@
 └─ <span class="tn">market_hours</span> · <span class="tn">circuit_breaker_status</span>
 <span class="ag">used by:</span> <span class="dim">DataAgent · RiskAgent · ExecutionAgent · all analysis variants</span>
 
-<h5>AlphaVantage <span class="dim">mcp__alphavantage__*</span></h5>├─ 50+ technical indicators <span class="dim">(RSI, MACD, BBands, ...)</span>
+<h5>AlphaVantage <span class="dim">mcp__alphavantage__*</span> · <a href="https://www.alphavantage.co/documentation/" target="_blank" rel="noopener" class="doc-link">API docs ↗</a></h5>├─ 50+ technical indicators <span class="dim">(RSI, MACD, BBands, ...)</span>
 ├─ Economic indicators <span class="dim">(CPI, unemployment, GDP)</span>
 ├─ Earnings calendar · fundamentals
 └─ Commodity &amp; FX data
 <span class="ag">used by:</span> <span class="dim">all analysis variants · ResearchAgent · LearningAgent</span>
 
-<h5>Polygon / Massive <span class="dim">mcp__polygon__*</span></h5>├─ Stock aggregates · daily bars
+<h5>Polygon / Massive <span class="dim">mcp__polygon__*</span> · <a href="https://polygon.io/docs" target="_blank" rel="noopener" class="doc-link">API docs ↗</a></h5>├─ Stock aggregates · daily bars
 ├─ Options aggregates · unusual options activity
 ├─ Company news · sentiment analysis
 └─ Option chains · IV · Greeks
@@ -1379,5 +1389,6 @@ document.addEventListener("DOMContentLoaded", syncLiveStatus);
 setInterval(syncLiveStatus, 10000); // Poll every 10 seconds
 </script>
 <script src="/static/js/system-live.js"></script>
+<script type="module" src="/static/js/components/help-popover.js"></script>
 </body>
 </html>

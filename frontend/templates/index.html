@@ -675,7 +675,8 @@
   <!-- ============ 3.5 VARIANT CONSENSUS MATRIX ============ -->
   <section class="panel">
     <header>
-      <h2>Variant Consensus Matrix <span class="sub">3-way agreement · no data yet</span></h2>
+      <h2>Variant Consensus Matrix <span class="sub">3-way agreement · no data yet</span>
+        <button class="help-q" data-help="Each screening run fans out to three analysis variants — conservative, aggressive, momentum — that rank candidates independently. This matrix shows where they agree: a ticker backed by all 3 is HIGH conviction (max size), 2/3 is MEDIUM (standard size), 1/3 is LOW (excluded unless unusual options activity confirms).">?</button></h2>
       <div class="tools"><span>—</span></div>
     </header>
     <div class="body">
@@ -740,7 +741,8 @@
     <!-- SIGNALS -->
     <section class="panel" id="signal-panel">
       <header>
-        <h2>Signal Confidence &amp; Alpha Decay</h2>
+        <h2>Signal Confidence &amp; Alpha Decay
+          <button class="help-q" data-help="Signal confidence scores how predictive each scoring factor (momentum, insider, volume, sentiment…) has been recently. Alpha decay tracks whether an edge is fading over time — a factor whose forward returns are shrinking is decaying and the learning pipeline down-weights it. (Live data wiring is tracked as P4-4.)">?</button></h2>
         <div class="tools"><span class="mute">—</span></div>
       </header>
       <div class="body">
@@ -761,7 +763,8 @@
   <!-- ============ 3.9 CONFIGURATION ============ -->
   <section class="panel">
     <header>
-      <h2>Configuration &amp; Parameters <span class="sub">snapshot · effective now</span></h2>
+      <h2>Configuration &amp; Parameters <span class="sub">snapshot · effective now</span>
+        <button class="help-q" data-help="The live tuning knobs. Scoring weights set how much each factor contributes to a candidate's rank (they sum to 1.0). Screening thresholds gate which stocks even enter the funnel (price/volume/momentum/valuation floors). Position management bounds risk: max concurrent positions, per-trade size, sector caps, stop-loss, and hold time. Variant presets are the three analysis lenses' overrides. Changes are made via the agent (P2-4), not edited here.">?</button></h2>
       <div class="tools">
       </div>
     </header>
@@ -1026,6 +1029,15 @@
 .etc-exit { background:#fbe4e4; color:#b80000; }
 .etc-tighten { background:#fff3df; color:#a05a00; }
 .etc-link { font-family:var(--mono); font-size:11px; color:#3458b8; margin-left:auto; }
+
+/* P3-11 help "?" popovers */
+.help-q { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px;
+  margin-left:6px; padding:0; border:1px solid var(--border); border-radius:50%; background:#fff;
+  color:var(--dim); font-size:11px; font-weight:700; line-height:1; cursor:pointer; vertical-align:middle; }
+.help-q:hover { background:#000; color:#fff; border-color:#000; }
+.help-pop { position:absolute; z-index:1100; max-width:340px; background:#1a1a1a; color:#f4f4f4;
+  font-family:var(--sans); font-size:12px; line-height:1.5; padding:10px 12px; border-radius:4px;
+  box-shadow:0 6px 24px rgba(0,0,0,0.3); }
 </style>
 <script type="module" src="/static/js/pages/dashboard.js"></script>
 <script src="/static/js/refresh.js"></script>
