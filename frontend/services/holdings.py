@@ -12,6 +12,16 @@ from src.regime.detector import RegimeDetector  # noqa: F401
 logger = logging.getLogger("steex.dashboard")
 
 class HoldingsMixin:
+    # period -> (Alpaca PortfolioHistory period, SPY lookback days). Dropped in
+    # the P0-5 split, which 500'd the perf chart; restored here. Alpaca uses "1A"
+    # for one year.
+    _PERF_PERIODS = {
+        "1W": ("1W", 10),
+        "1M": ("1M", 35),
+        "3M": ("3M", 100),
+        "1Y": ("1A", 370),
+    }
+
     def get_portfolio_performance(self, period: str = "1M") -> Dict[str, Any]:
         """Portfolio equity curve vs S&P 500, with alpha, rebased to % return.
 

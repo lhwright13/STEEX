@@ -465,6 +465,17 @@ class TestHelperMethods:
             progress = service._calculate_stage_progress(run_data)
             assert progress == expected
 
+    def test_perf_periods_present_and_period_lookup_safe(self, service):
+        """Regression: _PERF_PERIODS was dropped in the P0-5 split, 500-ing the
+        performance chart (it's read before the broker check). Pin it back and
+        confirm an unknown period normalizes to 1M instead of raising."""
+        assert set(service._PERF_PERIODS) == {"1W", "1M", "3M", "1Y"}
+        # Force the broker path to fail so we exercise the period lookup without
+        # network/credentials, then hit the graceful unavailable branch.
+        with patch("alpaca.trading.client.TradingClient", side_effect=Exception("no broker")):
+            out = service.get_portfolio_performance("nonsense")
+        assert out["available"] is False and out["period"] == "1M"
+
 
 # ========================================================================
 # Test: Kill switch, trade history, agent timeline
