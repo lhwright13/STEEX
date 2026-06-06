@@ -13,6 +13,7 @@ in the text can't break or inject into the AppleScript.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from abc import ABC, abstractmethod
 from typing import Optional
@@ -20,9 +21,13 @@ from typing import Optional
 logger = logging.getLogger("steex.messaging")
 
 # AppleScript that takes (handle, message) as run-handler args — no interpolation.
+# `launch` ensures Messages is running (a common cause of error -10810 is Messages
+# not being open / no GUI session). It needs an active Aqua login session, so the
+# Mac mini must be logged into the desktop (auto-login) for cron sends to work.
 _IMESSAGE_SCRIPT = (
     "on run {targetHandle, msg}\n"
     '    tell application "Messages"\n'
+    "        launch\n"
     "        set svc to 1st service whose service type = iMessage\n"
     "        set theBuddy to buddy targetHandle of svc\n"
     "        send msg to theBuddy\n"
@@ -44,11 +49,14 @@ class IMessageChannel(Channel):
     permission to control Messages (granted once in System Settings)."""
 
     def send(self, to: str, text: str) -> bool:
+        # `launchctl asuser <uid> osascript ...` runs the script inside the user's
+        # GUI (Aqua) session, so it works from an SSH shell or a crontab job — a
+        # plain osascript from those contexts can't reach Messages (error -10810).
+        # Requires the user to be logged into the desktop (enable auto-login).
+        cmd = ["launchctl", "asuser", str(os.getuid()),
+               "osascript", "-e", _IMESSAGE_SCRIPT, to, text]
         try:
-            r = subprocess.run(
-                ["osascript", "-e", _IMESSAGE_SCRIPT, to, text],
-                capture_output=True, text=True, timeout=20,
-            )
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
             if r.returncode != 0:
                 logger.error("iMessage send failed (rc=%d): %s",
                              r.returncode, (r.stderr or "").strip()[:300])
