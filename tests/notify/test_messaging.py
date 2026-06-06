@@ -30,8 +30,8 @@ def test_live_invokes_osascript_with_text_as_argument():
                                           settings=_settings(enabled=True, to="+1555"))
     assert res["sent"] is True and res["dry_run"] is False and res["to"] == "+1555"
     args = run.call_args.args[0]
-    # runs osascript inside the GUI session via `launchctl asuser <uid>`
-    assert args[0] == "launchctl" and "asuser" in args and "osascript" in args
+    # primary path is plain osascript (works inside the GUI session)
+    assert args[0] == "osascript"
     # message + handle are passed as argv, NOT interpolated into the script
     assert "+1555" in args and 'hi "there"\nnewline' in args
 

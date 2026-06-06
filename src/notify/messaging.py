@@ -49,22 +49,27 @@ class IMessageChannel(Channel):
     permission to control Messages (granted once in System Settings)."""
 
     def send(self, to: str, text: str) -> bool:
-        # `launchctl asuser <uid> osascript ...` runs the script inside the user's
-        # GUI (Aqua) session, so it works from an SSH shell or a crontab job — a
-        # plain osascript from those contexts can't reach Messages (error -10810).
-        # Requires the user to be logged into the desktop (enable auto-login).
-        cmd = ["launchctl", "asuser", str(os.getuid()),
-               "osascript", "-e", _IMESSAGE_SCRIPT, to, text]
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-            if r.returncode != 0:
-                logger.error("iMessage send failed (rc=%d): %s",
-                             r.returncode, (r.stderr or "").strip()[:300])
-                return False
-            return True
-        except Exception as e:
-            logger.error("iMessage send error: %s", e)
-            return False
+        base = ["osascript", "-e", _IMESSAGE_SCRIPT, to, text]
+        # Plain osascript works when we're already inside the GUI (Aqua) session
+        # (e.g. a Terminal opened via Screen Sharing). From a context with no GUI
+        # session (SSH shell / crontab) it fails with -10810; in that case try the
+        # `launchctl asuser <uid>` bridge into the logged-in session (may itself
+        # need privileges, so it's only a best-effort fallback).
+        attempts = [base, ["launchctl", "asuser", str(os.getuid())] + base]
+        last_err = ""
+        for cmd in attempts:
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+                if r.returncode == 0:
+                    return True
+                last_err = (r.stderr or "").strip()[:300]
+                # Only the no-GUI-session failure is worth trying the bridge for.
+                if "-10810" not in last_err and "audit session" not in last_err:
+                    break
+            except Exception as e:
+                last_err = str(e)
+        logger.error("iMessage send failed: %s", last_err)
+        return False
 
 
 class DryRunChannel(Channel):
