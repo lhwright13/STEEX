@@ -172,3 +172,51 @@ def test_kill_switch_disarms_event_path(tmp_path):
     res = trig.run(dry_run=False, resolver=_resolver({"Dell": ("DELL", True, 0.9)}))
     assert res["executed"] == []
     assert any("disarmed" in x.get("reason", "") for x in res["skipped"])
+
+
+# ---- P1-5: per-post verdict + guardrail + timing records --------------------
+
+def test_records_executed_with_verdict_and_timings(tmp_path):
+    mgr = StubMgr()
+    trig, _ = _trigger(mgr, tmp_path)
+    trig.source = FixtureSource([_truth_event("1", "Go out and buy a Dell")])
+    res = trig.run(dry_run=True, resolver=_resolver({"Dell": ("DELL", True, 0.9)}))
+    recs = res["records"]
+    assert len(recs) == 1
+    r = recs[0]
+    assert r["outcome"] == "executed" and r["classification"] == "executed"
+    assert r["ticker"] == "DELL"
+    assert r["verdict"]["is_bullish"] is True and r["verdict"]["confidence"] == 0.9
+    # timings present (published from the post, detected/decided from the scan)
+    assert r["published_at"] and r["detected_at"] and r["decided_at"]
+
+
+def test_records_noise_for_political_post(tmp_path):
+    mgr = StubMgr()
+    trig, _ = _trigger(mgr, tmp_path)
+    trig.source = FixtureSource([_truth_event("1", "The Radical Left judges are terrible")])
+    res = trig.run(dry_run=True, resolver=_resolver({}))
+    r = res["records"][0]
+    assert r["classification"] == "noise"
+    assert r["verdict"]["mentions_company"] is False
+
+
+def test_records_near_miss_for_low_confidence(tmp_path):
+    mgr = StubMgr()
+    trig, _ = _trigger(mgr, tmp_path)
+    trig.source = FixtureSource([_truth_event("1", "maybe buy Acme")])
+    res = trig.run(dry_run=True, resolver=_resolver({"Acme": ("ACME", True, 0.3)}))
+    r = res["records"][0]
+    # named a bullish company but blocked by the confidence gate -> near_miss (tunable)
+    assert r["classification"] == "near_miss"
+    assert r["ticker"] == "ACME" and "low confidence" in r["stop_reason"]
+
+
+def test_records_near_miss_for_already_held(tmp_path):
+    mgr = StubMgr(held={"DELL"})
+    trig, _ = _trigger(mgr, tmp_path)
+    trig.source = FixtureSource([_truth_event("1", "buy a Dell")])
+    res = trig.run(dry_run=True, resolver=_resolver({"Dell": ("DELL", True, 0.9)}))
+    r = res["records"][0]
+    assert r["classification"] == "near_miss" and r["stop_reason"] == "already held"
+    assert r["verdict"]["is_bullish"] is True
