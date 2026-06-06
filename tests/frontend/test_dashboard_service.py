@@ -71,9 +71,11 @@ def mock_regime_detector():
 @pytest.fixture
 def service(mock_settings, mock_registry, mock_regime_detector):
     """Create dashboard service with mocks."""
-    with patch("frontend.services.get_settings", return_value=mock_settings), \
-         patch("frontend.services.AgentRegistry", return_value=mock_registry), \
-         patch("frontend.services.RegimeDetector", return_value=mock_regime_detector):
+    # __init__ now lives in the base mixin (frontend/services/base.py) after the
+    # P0-5 split, so patch where the names are actually looked up.
+    with patch("frontend.services.base.get_settings", return_value=mock_settings), \
+         patch("frontend.services.base.AgentRegistry", return_value=mock_registry), \
+         patch("frontend.services.base.RegimeDetector", return_value=mock_regime_detector):
         return DashboardService()
 
 
