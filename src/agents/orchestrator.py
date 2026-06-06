@@ -293,7 +293,9 @@ class Orchestrator:
             return {"mode": mode, "skipped": "event_trigger_enabled=false"}
 
         from src.strategy.manager import QuantManager
-        from src.data.event_source import NewsEventSource, TruthSocialEventSource
+        from src.data.event_source import (
+            NewsEventSource, TruthSocialEventSource, CompositeEventSource,
+        )
         from src.data.sentiment import SentimentProvider
         from src.strategy.event_trigger import EventTrigger
         from src.agents.conclusions import EventTickerResolution
@@ -307,15 +309,51 @@ class Orchestrator:
 
         sentiment = SentimentProvider()
 
-        # Source: Truth Social (watchlist-free, LLM-resolved) when enabled,
-        # else the Finnhub watchlist poller.
-        if getattr(self.settings, "event_truth_social_enabled", False):
-            source = TruthSocialEventSource(
-                account_id=self.settings.event_truth_social_account_id,
-                data_dir=self.settings.data_dir,
-                lookback_hours=self.settings.event_truth_lookback_hours,
+        # Source: one or more watched figures on Truth Social (P1-4), else the
+        # Finnhub watchlist poller. event_figures drives the multi-figure list;
+        # when empty it falls back to the legacy single-account config.
+        figures = list(getattr(self.settings, "event_figures", []) or [])
+        if not figures and getattr(self.settings, "event_truth_social_enabled", False):
+            figures = [{
+                "name": "realDonaldTrump",
+                "platform": "truth_social",
+                "account_id": self.settings.event_truth_social_account_id,
+                "enabled": True,
+            }]
+
+        if figures:
+            # One-time cursor migration: preserve the legacy single-account dedup
+            # state (data/events/truth_cursor.json) under its account-namespaced name.
+            events_dir = Path(self.settings.data_dir) / "events"
+            legacy_cursor = events_dir / "truth_cursor.json"
+            legacy_acct = str(self.settings.event_truth_social_account_id)
+            target = events_dir / f"truth_cursor_{legacy_acct}.json"
+            if legacy_cursor.exists() and not target.exists():
+                try:
+                    legacy_cursor.rename(target)
+                except Exception as e:
+                    logger.debug("legacy truth cursor migration skipped: %s", e)
+
+            enabled_figs = [
+                f for f in figures
+                if f.get("enabled", True)
+                and f.get("platform", "truth_social") == "truth_social"
+                and f.get("account_id")
+            ]
+            sources = [
+                TruthSocialEventSource(
+                    account_id=f["account_id"],
+                    data_dir=self.settings.data_dir,
+                    lookback_hours=self.settings.event_truth_lookback_hours,
+                    figure=f.get("name") or str(f["account_id"]),
+                )
+                for f in enabled_figs
+            ]
+            source = CompositeEventSource(sources)
+            source_desc = "truth_social:" + (
+                ",".join(f.get("name") or str(f["account_id"]) for f in enabled_figs)
+                or "none-enabled"
             )
-            source_desc = f"truth_social:{self.settings.event_truth_social_account_id}"
         else:
             source = NewsEventSource(
                 watchlist=self.settings.event_watchlist,

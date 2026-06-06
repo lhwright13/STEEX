@@ -476,6 +476,15 @@ class Settings(BaseSettings):
     event_truth_lookback_hours: int = Field(
         default=24, description="How far back to consider Truth Social posts on each poll"
     )
+    event_figures: List[dict] = Field(
+        default_factory=list,
+        description=(
+            "Watched public figures for the event trigger (P1-4). Each item: "
+            "{name, platform: 'truth_social', account_id, enabled}. When empty, "
+            "falls back to the legacy single-account config above. The P3-5 "
+            "dashboard dropdown selects between these."
+        ),
+    )
     event_min_confidence: float = Field(
         default=0.7, description="Min LLM confidence (0-1) that a post is a bullish, correctly-resolved ticker"
     )

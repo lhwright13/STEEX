@@ -51,6 +51,7 @@ class NewsEvent:
     published_at: str  # ISO 8601 UTC
     source: str
     summary: str = ""
+    figure: Optional[str] = None  # which watched figure this came from (P1-4)
 
 
 class EventSource(ABC):
@@ -164,12 +165,15 @@ class TruthSocialEventSource(EventSource):
     _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 
-    def __init__(self, account_id, data_dir, lookback_hours: int = 24, http_get=None):
+    def __init__(self, account_id, data_dir, lookback_hours: int = 24, http_get=None,
+                 figure: Optional[str] = None):
         self.account_id = str(account_id)
+        self.figure = figure  # display name of the watched figure (P1-4)
         self.lookback_hours = lookback_hours
         self._events_dir = Path(data_dir) / "events"
         self._events_dir.mkdir(parents=True, exist_ok=True)
-        self._cursor_path = self._events_dir / "truth_cursor.json"
+        # Per-account cursor so multiple figures don't share dedup state (P1-4).
+        self._cursor_path = self._events_dir / f"truth_cursor_{self.account_id}.json"
         # Injectable fetcher for tests; defaults to a real requests GET.
         self._http_get = http_get or self._default_get
 
@@ -236,6 +240,7 @@ class TruthSocialEventSource(EventSource):
                 published_at=created_dt.isoformat(),
                 source="truth_social",
                 summary=text[:1000],
+                figure=self.figure,
             ))
             seen.add(pid)
 
@@ -245,6 +250,28 @@ class TruthSocialEventSource(EventSource):
         self._save_cursor(cursor)
         fresh.sort(key=lambda e: e.published_at)
         return fresh
+
+
+class CompositeEventSource(EventSource):
+    """Poll several sources (e.g. multiple watched figures) and merge the results.
+
+    Each sub-source tags its own events (with `figure`), so the merged stream is
+    self-describing. A failing sub-source is skipped, not fatal, so one figure's
+    outage doesn't blind the others. Results are returned oldest-first.
+    """
+
+    def __init__(self, sources: List[EventSource]):
+        self._sources = list(sources)
+
+    def poll(self) -> List[NewsEvent]:
+        merged: List[NewsEvent] = []
+        for src in self._sources:
+            try:
+                merged.extend(src.poll())
+            except Exception as e:
+                logger.warning("event sub-source poll failed: %s", e)
+        merged.sort(key=lambda e: e.published_at)
+        return merged
 
 
 class StreamingEventSource(EventSource):
