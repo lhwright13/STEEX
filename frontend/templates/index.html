@@ -473,55 +473,6 @@
     </div>
   </section>
 
-  <!-- ============ 3.3 VARIANT CONCLUSIONS (LIVE) ============ -->
-  <section class="panel">
-    <header>
-      <h2>Analysis Variants <span class="sub">real-time results · 3-way fan-out</span></h2>
-      <div class="tools"><span>polling 2s</span></div>
-    </header>
-    <div class="body" style="padding:0;background:#fff;">
-      <div class="col3">
-
-        <div class="v" data-variant="conservative">
-          <h3>Conservative <span class="dim" style="font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0;font-size:11px;">quality focus</span></h3>
-          <div class="sub"><span class="tag mute">IDLE</span></div>
-          <div class="stats">
-            <span>cand <b>—</b></span>
-            <span>top <b>—</b></span>
-            <span>avg <b>—</b></span>
-          </div>
-          <div style="font-size:12px;color:#999;padding:12px;">Run screening to generate candidates</div>
-        </div>
-
-        <div class="v" data-variant="aggressive">
-          <h3>Aggressive <span class="dim" style="font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0;font-size:11px;">growth focus</span></h3>
-          <div class="sub"><span class="tag mute">IDLE</span></div>
-          <div class="stats">
-            <span>cand <b>—</b></span>
-            <span>top <b>—</b></span>
-            <span>avg <b>—</b></span>
-          </div>
-          <div style="font-size:12px;color:#999;padding:12px;">Run screening to generate candidates</div>
-        </div>
-
-        <div class="v" data-variant="momentum">
-          <h3>Momentum <span class="dim" style="font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0;font-size:11px;">trend following</span></h3>
-          <div class="sub"><span class="tag mute">IDLE</span></div>
-          <div class="stats">
-            <span>cand <b>—</b></span>
-            <span>top <b>—</b></span>
-            <span>avg <b>—</b></span>
-          </div>
-          <div style="font-size:12px;color:#999;padding:12px;">Run screening to generate candidates</div>
-        </div>
-
-      </div>
-      <div style="padding:10px 14px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--dim);background:#f6f6f6;">
-        <b>Consensus Synthesis</b> · —
-      </div>
-    </div>
-  </section>
-
   <!-- ============ 3.4 TODAY'S EVENTS ============ -->
   <section class="panel">
     <header>
@@ -807,53 +758,11 @@
 
   </div>
 
-  <!-- ============ 3.8 SESSION HISTORY ============ -->
-  <section class="panel">
-    <header>
-      <h2>Session History <span class="sub">screen mode</span></h2>
-      <div class="tools tabs">
-        <span class="tab on" id="tab-history-7d" data-period="7d">Last 7 days</span>
-        <span class="tab" id="tab-history-30d" data-period="30d">Last 30 days</span>
-        <span class="tab" id="tab-history-custom" data-period="custom">Custom</span>
-      </div>
-    </header>
-    <div class="body">
-      <table class="data">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Time</th>
-            <th>Run ID</th>
-            <th class="num">Duration</th>
-            <th>Consensus</th>
-            <th>Entries</th>
-            <th>Status</th>
-            <th>Notes</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td colspan="8" style="text-align:center;padding:24px;color:#999;">
-              No session history available. Run screening to generate session data.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--muted);">
-        ↳ click row to expand: variant breakdowns · agent turns · full consensus logic
-      </div>
-    </div>
-  </section>
-
   <!-- ============ 3.9 CONFIGURATION ============ -->
   <section class="panel">
     <header>
       <h2>Configuration &amp; Parameters <span class="sub">snapshot · effective now</span></h2>
       <div class="tools">
-        <button class="btn" id="btn-config-edit" disabled title="Not available in this version">Edit</button>
-        <button class="btn" id="btn-config-load" disabled title="Not available in this version">Load Preset</button>
-        <button class="btn" id="btn-config-save" disabled title="Not available in this version">Save As New</button>
-        <button class="btn" id="btn-config-diff" disabled title="Not available in this version">Diff vs Previous</button>
       </div>
     </header>
     <div class="body">

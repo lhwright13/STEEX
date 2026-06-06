@@ -427,10 +427,7 @@
         <span>Next scheduled: 14:30:00 <b style="color:#000">(in 4 min)</b></span>
         <span>Frequency: every 2.5 h</span>
       </div>
-      <div class="right">
-        <button class="btn" id="btn-pause-schedule">Pause Schedule</button>
-        <button class="btn" id="btn-run-now">Run Now</button>
-      </div>
+      <div class="right"></div>
     </div>
   </header>
 
@@ -1314,50 +1311,9 @@ document.getElementById("agent-grid").addEventListener("click", e => {
 initWorkflows();
 selectAgent("DataAgent", "agent-detail-host-2", false);
 
-/* ---------- Schedule control buttons ---------- */
-document.getElementById("btn-pause-schedule").addEventListener("click", async () => {
-  if (!confirm("Pause all scheduled runs?")) return;
-  const btn = document.getElementById("btn-pause-schedule");
-  btn.disabled = true;
-  btn.textContent = "Pausing...";
-  try {
-    const r = await fetch("/api/v1/system/schedules/pause", { method: "POST" });
-    const d = await r.json();
-    btn.textContent = d.message || "Paused";
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = "Pause Schedule";
-    }, 3000);
-  } catch (e) {
-    alert("Error: " + e.message);
-    btn.disabled = false;
-    btn.textContent = "Pause Schedule";
-  }
-});
-
-document.getElementById("btn-run-now").addEventListener("click", async () => {
-  const activeView = document.querySelector("[data-view].on");
-  const activeSched = activeView?.dataset.view === "schedules"
-    ? document.querySelector("[data-schedule].on")?.dataset.schedule || "screen"
-    : "screen";
-  if (!confirm(`Run '${activeSched}' now?`)) return;
-  const btn = document.getElementById("btn-run-now");
-  btn.disabled = true;
-  btn.textContent = "Running...";
-  try {
-    const r = await fetch(`/api/v1/system/schedules/${activeSched}/run`, { method: "POST" });
-    const d = await r.json();
-    btn.textContent = d.message || "Initiated";
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = "Run Now";
-    }, 3000);
-  } catch (e) {
-    alert("Error: " + e.message);
-    btn.disabled = false;
-    btn.textContent = "Run Now";
-  }
-});
+/* Pause Schedule / Run Now buttons removed (P3-10) — Pause only disarmed the
+   kill switch (use the dashboard kill switch) and Run Now required manual
+   terminal execution. */
 
 /* ---------- Schedule period tabs ---------- */
 document.querySelectorAll("#schedule-period-tabs .tab").forEach(tab => {

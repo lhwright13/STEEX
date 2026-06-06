@@ -63,17 +63,6 @@ def create_app():
             logger.error(f"Error fetching live pipeline: {e}")
             return jsonify({"error": str(e)}), 500
 
-    @app.route("/api/v1/variants/results")
-    def variants_results():
-        """Get results from all three analysis variants."""
-        try:
-            service = get_dashboard_service()
-            data = service.get_variants_results()
-            return jsonify(data)
-        except Exception as e:
-            logger.error(f"Error fetching variant results: {e}")
-            return jsonify({"error": str(e)}), 500
-
     @app.route("/api/v1/consensus")
     def consensus():
         """Get consensus picks from meta-analysis synthesis."""
@@ -361,25 +350,6 @@ def create_app():
             "status": "manual_required",
             "command": "python run_manager.py learning --agent --paper",
             "message": "Learning mode must be started from terminal due to agent subprocess requirements"
-        })
-
-    @app.route("/api/v1/system/schedules/pause", methods=["POST"])
-    def pause_schedules():
-        """Disarm trading via the kill switch (cron keeps running but places no orders)."""
-        try:
-            data = get_dashboard_service().set_controls(trading_armed=False)
-            return jsonify({"status": "disarmed", "controls": data,
-                            "message": "Trading disarmed. Scheduled runs still execute but place no orders."})
-        except Exception as e:
-            logger.error(f"Error pausing: {e}")
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/v1/system/schedules/<schedule_name>/run", methods=["POST"])
-    def run_schedule(schedule_name):
-        """Manually trigger a scheduled run."""
-        return jsonify({
-            "status": "manual_required",
-            "message": f"Run '{schedule_name}' queued (execute from terminal: python run_manager.py {schedule_name} --agent)"
         })
 
     @app.route("/api/v1/system/graph/<mode>")

@@ -64,16 +64,6 @@
     }
   }
 
-  async function fetchVariants() {
-    try {
-      const r = await fetch('/api/v1/variants/results');
-      return await r.json();
-    } catch (e) {
-      console.error('Error fetching variants:', e);
-      return null;
-    }
-  }
-
   async function fetchConsensus() {
     try {
       const r = await fetch('/api/v1/consensus');
@@ -177,26 +167,6 @@
         el.style.width = (data.stage_progress * 100) + '%';
       });
     }
-  }
-
-  function updateVariantsDOM(data) {
-    if (!data) return;
-    // Update variant cards for each of the three variants
-    ['conservative', 'aggressive', 'momentum'].forEach(variant => {
-      const card = q(`[data-variant="${variant}"]`);
-      if (!card || !data[variant]) return;
-
-      const info = data[variant];
-      // Update status tag
-      const statusTag = card.querySelector('.tag');
-      if (statusTag) {
-        statusTag.textContent = `${info.status.toUpperCase()} ${info.candidate_count}`;
-      }
-      // Update stats
-      const stats = card.querySelectorAll('.stats span');
-      if (stats[0]) stats[0].innerHTML = `cand <b>${info.candidate_count || 0}</b>`;
-      if (stats[1]) stats[1].innerHTML = `top <b>${info.avg_score ? info.avg_score.toFixed(1) : '—'}</b>`;
-    });
   }
 
   function updateConsensusDOM(data) {
@@ -467,9 +437,8 @@
   async function refreshAll() {
     updateHeaderTime();
 
-    const [pipeline, variants, consensus, regime, holdings, events, trades, timeline, controls] = await Promise.allSettled([
+    const [pipeline, consensus, regime, holdings, events, trades, timeline, controls] = await Promise.allSettled([
       fetchPipeline(),
-      fetchVariants(),
       fetchConsensus(),
       fetchRegime(),
       fetchHoldings(),
@@ -481,7 +450,6 @@
 
     // Extract values from PromiseSettledResult
     if (pipeline.status === 'fulfilled') updatePipelineDOM(pipeline.value);
-    if (variants.status === 'fulfilled') updateVariantsDOM(variants.value);
     if (consensus.status === 'fulfilled') updateConsensusDOM(consensus.value);
     if (regime.status === 'fulfilled') updateRegimeDOM(regime.value);
     if (holdings.status === 'fulfilled') updateHoldingsDOM(holdings.value);
@@ -584,12 +552,6 @@
     downloadText('consensus_picks.csv', csv, 'text/csv');
   }
 
-  function setHistoryPeriod(period) {
-    qa('[data-period]').forEach(t => {
-      setClass(t, 'on', t.dataset.period === period);
-    });
-  }
-
   // ── Init Buttons ───────────────────────────────────────────────────────
 
   function initButtons() {
@@ -619,11 +581,6 @@
     const ksEvent = q('#ks-toggle-event');
     if (ksMaster) ksMaster.addEventListener('click', () => toggleControl('master'));
     if (ksEvent) ksEvent.addEventListener('click', () => toggleControl('event'));
-
-    // Session history tabs
-    qa('[data-period]').forEach(tab => {
-      tab.addEventListener('click', () => setHistoryPeriod(tab.dataset.period));
-    });
   }
 
   // ── Start ──────────────────────────────────────────────────────────────

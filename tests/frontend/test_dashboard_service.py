@@ -126,41 +126,6 @@ class TestPipelineCurrent:
 # ========================================================================
 
 
-class TestVariantsResults:
-    """Test getting analysis variant results."""
-
-    def test_variants_all_idle_when_no_run(self, service):
-        """All variants should be idle when no run data."""
-        with patch.object(service, "_get_latest_run_file", return_value=None):
-            data = service.get_variants_results()
-
-            assert data["conservative"]["status"] == "idle"
-            assert data["aggressive"]["status"] == "idle"
-            assert data["momentum"]["status"] == "idle"
-            assert all(v["candidate_count"] == 0 for v in data.values())
-
-    def test_variants_with_conclusions(self, service):
-        """Variants should return all three variants with required fields."""
-        data = service.get_variants_results()
-
-        # Should have all three variants
-        assert "conservative" in data
-        assert "aggressive" in data
-        assert "momentum" in data
-
-        # Each should have required fields
-        for variant in data.values():
-            assert "variant" in variant
-            assert "status" in variant
-            assert "candidate_count" in variant
-            assert "avg_score" in variant
-            assert "timestamp" in variant
-
-
-# ========================================================================
-# Test: Consensus Picks
-# ========================================================================
-
 
 class TestConsensus:
     """Test getting consensus picks."""

@@ -12,7 +12,7 @@ from frontend.services import DashboardService, get_dashboard_service
 # The public surface callers depend on. Adding a method is fine (update this set);
 # silently dropping or renaming one is a breaking change app.py won't survive.
 PUBLIC_METHODS = {
-    "get_pipeline_current", "get_pipeline_live", "get_variants_results", "get_consensus",
+    "get_pipeline_current", "get_pipeline_live", "get_consensus",
     "get_screening_stats", "get_regime", "get_manager_decision",
     "get_portfolio_performance", "get_portfolio_holdings", "get_system_agents",
     "get_system_schedules", "get_agent_detail", "get_agent_last_output",

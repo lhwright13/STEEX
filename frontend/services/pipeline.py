@@ -103,48 +103,6 @@ class PipelineMixin:
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
-    def get_variants_results(self) -> Dict[str, Dict[str, Any]]:
-        """Get results from all three analysis variants."""
-        run_file = self._get_latest_run_file()
-        if not run_file or not run_file.exists():
-            return self._default_variants_results()
-
-        run_data = self._load_json(run_file)
-        if not run_data:
-            return self._default_variants_results()
-
-        conclusions = run_data.get("conclusions", {})
-        variant_conclusions = run_data.get("variant_conclusions", [])
-
-        results = {}
-        for variant_item in variant_conclusions:
-            variant_name = variant_item.get("variant")
-            conclusion = variant_item.get("conclusion", {})
-            if variant_name and conclusion:
-                candidates = conclusion.get("candidates", [])
-                scores = [c.get("score", 0) for c in candidates]
-                avg_score = sum(scores) / len(scores) if scores else 0.0
-
-                results[variant_name] = {
-                    "variant": variant_name,
-                    "status": "complete",
-                    "candidate_count": len(candidates),
-                    "avg_score": round(avg_score, 1),
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                }
-
-        # Fill in missing variants with pending status
-        for variant in ["conservative", "aggressive", "momentum"]:
-            if variant not in results:
-                results[variant] = {
-                    "variant": variant,
-                    "status": "pending",
-                    "candidate_count": 0,
-                    "avg_score": 0.0,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                }
-
-        return results
 
     def get_consensus(self) -> Dict[str, Any]:
         """Get consensus picks from meta-analysis."""
@@ -334,17 +292,6 @@ class PipelineMixin:
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
-    def _default_variants_results(self) -> Dict[str, Dict[str, Any]]:
-        return {
-            variant: {
-                "variant": variant,
-                "status": "idle",
-                "candidate_count": 0,
-                "avg_score": 0.0,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            }
-            for variant in ["conservative", "aggressive", "momentum"]
-        }
 
     def _default_consensus(self) -> Dict[str, Any]:
         return {

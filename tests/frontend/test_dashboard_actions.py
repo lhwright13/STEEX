@@ -15,6 +15,22 @@ from unittest.mock import patch, Mock
 from frontend.app import create_app
 
 
+@pytest.fixture(autouse=True)
+def _isolate_control_writes(tmp_path):
+    """Redirect the dashboard service's data_dir to a tmp path for every test.
+
+    The cancel/pause endpoints now toggle the real kill switch
+    (data/control.json). Without this, running the suite would disarm the live
+    trading system. Point the singleton at tmp so tests never touch real data.
+    """
+    from frontend.services import get_dashboard_service
+    svc = get_dashboard_service()
+    original = svc.data_dir
+    svc.data_dir = tmp_path
+    yield
+    svc.data_dir = original
+
+
 @pytest.fixture
 def app():
     """Create test Flask app."""
@@ -185,47 +201,6 @@ class TestAgentLastOutputEndpoint:
 # ========================================================================
 
 
-class TestScheduleActionEndpoints:
-    """Test schedule control endpoints."""
-
-    def test_pause_schedules_returns_json(self, client):
-        """Pause schedules endpoint should return JSON."""
-        response = client.post("/api/v1/system/schedules/pause")
-
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        assert "status" in data
-        assert "message" in data
-
-    def test_pause_schedules_status(self, client):
-        """Pause schedules should return paused status."""
-        response = client.post("/api/v1/system/schedules/pause")
-
-        data = json.loads(response.data)
-        # Pause now disarms trading via the kill switch.
-        assert data["status"] == "disarmed"
-
-    def test_run_schedule_returns_json(self, client):
-        """Run schedule endpoint should return JSON."""
-        response = client.post("/api/v1/system/schedules/screen/run")
-
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        assert "status" in data
-        assert "message" in data
-
-    def test_run_schedule_includes_schedule_name(self, client):
-        """Run schedule message should include schedule name."""
-        response = client.post("/api/v1/system/schedules/monitor/run")
-
-        data = json.loads(response.data)
-        assert "monitor" in data["message"].lower()
-
-    def test_run_schedule_method_post_only(self, client):
-        """Run schedule endpoint should only accept POST."""
-        response = client.get("/api/v1/system/schedules/screen/run")
-        assert response.status_code == 405
-
 
 class TestActionEndpointResponses:
     """Test that action endpoints return valid JSON."""
@@ -243,8 +218,6 @@ class TestActionEndpointResponses:
             ("POST", "/api/v1/learning/apply"),
             ("POST", "/api/v1/learning/run"),
             ("GET", "/api/v1/system/agent/data/last-output"),
-            ("POST", "/api/v1/system/schedules/pause"),
-            ("POST", "/api/v1/system/schedules/screen/run"),
         ]
 
         for method, endpoint in endpoints:

@@ -101,52 +101,6 @@ class TestPipelineAPI:
 # ========================================================================
 
 
-class TestVariantsAPI:
-    """Test variants results API endpoint."""
-
-    @patch("frontend.app.get_dashboard_service")
-    def test_variants_returns_json(self, mock_get_service, client):
-        """Variants endpoint should return variant results."""
-        mock_service = Mock()
-        mock_service.get_variants_results.return_value = {
-            "conservative": {
-                "variant": "conservative",
-                "status": "complete",
-                "candidate_count": 8,
-                "avg_score": 72.3,
-                "timestamp": "2026-05-24T14:30:45Z",
-            },
-            "aggressive": {
-                "variant": "aggressive",
-                "status": "complete",
-                "candidate_count": 15,
-                "avg_score": 68.9,
-                "timestamp": "2026-05-24T14:31:20Z",
-            },
-            "momentum": {
-                "variant": "momentum",
-                "status": "complete",
-                "candidate_count": 12,
-                "avg_score": 71.2,
-                "timestamp": "2026-05-24T14:31:55Z",
-            },
-        }
-        mock_get_service.return_value = mock_service
-
-        response = client.get("/api/v1/variants/results")
-
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        assert "conservative" in data
-        assert "aggressive" in data
-        assert "momentum" in data
-        assert data["conservative"]["candidate_count"] == 8
-
-
-# ========================================================================
-# Test: API Endpoints - Consensus
-# ========================================================================
-
 
 class TestConsensusAPI:
     """Test consensus picks API endpoint."""
@@ -543,7 +497,6 @@ class TestJSONResponseFormat:
         """All endpoints should return valid JSON."""
         endpoints = [
             "/api/v1/pipeline/current",
-            "/api/v1/variants/results",
             "/api/v1/consensus",
             "/api/v1/screening/stats",
             "/api/v1/regime",
