@@ -293,5 +293,6 @@ event_resolver_model: "haiku"                 # Cheap model for per-post ticker 
 # ---------------------------------------------------------------------------
 # Messaging / notifications (P1)
 # ---------------------------------------------------------------------------
-messaging_enabled: false   # Master switch for outbound iMessage. false = dry-run (log only).
-                           # Destination handle is set via IMESSAGE_TO in .env (personal, not committed).
+messaging_enabled: true   # Master switch for outbound Telegram. false = dry-run (log only).
+                           # Bot token + chat id are set via STEEX_TELEGRAM_BOT_TOKEN and
+                           # STEEX_TELEGRAM_CHAT_ID in .env (secret, not committed).

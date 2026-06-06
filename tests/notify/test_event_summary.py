@@ -16,14 +16,14 @@ def _stub_summary(_event):
 
 def test_writes_user_update_and_sends(tmp_path):
     s = _settings(tmp_path)
-    with patch("src.notify.messaging.subprocess.run") as run:
+    with patch("requests.post") as post:
         rec = summarize_and_notify(
             {"id": "e1", "type": "event_trade", "ticker": "DELL",
              "context": {"headline": "buy a Dell"}},
             settings=s, summarizer=_stub_summary,
         )
-    # message attempted (dry-run -> osascript not actually called)
-    run.assert_not_called()
+    # message attempted (dry-run -> Telegram not actually called)
+    post.assert_not_called()
     assert rec is not None and rec.type == "event_trade" and rec.title == "Bought DELL"
     # recorded on the stream and retrievable by id (deep-link)
     got = user_updates.get_update(str(tmp_path), "e1")

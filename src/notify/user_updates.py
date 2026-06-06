@@ -1,7 +1,7 @@
 """The `user_updates` stream — the single canonical feed of user-facing events.
 
 One record is written by a producer (a buy/sell fill, an event-trade, a big move,
-a system note) and read by every surface: the iMessage notifier (P1-2) and the
+a system note) and read by every surface: the Telegram notifier (P1-2) and the
 dashboard "Today's Events" + event-trigger panels (P3-3/P3-4/P3-6). Defining it
 once here is what keeps those surfaces from diverging.
 

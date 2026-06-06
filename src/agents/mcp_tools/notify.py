@@ -15,10 +15,10 @@ logger = logging.getLogger("steex.mcp")
 
 @mcp.tool()
 def send_user_message(text: str, to: str = "") -> str:
-    """Send a short notification to the user (iMessage on the Mac mini).
+    """Send a short notification to the user (Telegram).
 
     Respects the `messaging_enabled` kill switch — when off, this is a dry run
-    that logs instead of sending. `to` optionally overrides the configured handle.
+    that logs instead of sending. `to` optionally overrides the configured chat id.
     """
     from src.notify.messaging import send_user_message as _send
     mgr = _state.init_manager()

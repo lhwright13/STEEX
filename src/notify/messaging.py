@@ -1,105 +1,95 @@
-"""Outbound user notifications — channel abstraction + iMessage sender (P1-1).
+"""Outbound user notifications — channel abstraction + Telegram sender (P1-1).
 
-The event-summary stage (P1-2) calls `send_user_message()` directly; agents call
-the MCP tool (`mcp_tools/notify.py`) that wraps the same function. Sending is
-gated by `settings.messaging_enabled`: off => dry-run (log only), so the whole
-pipeline is testable without touching a phone. A notification must never raise
-into a trading path, so failures are logged and returned, not propagated.
+Telegram works over plain HTTPS (no GUI, no desktop session, no permissions), so
+it sends reliably from cron on a headless Mac mini — unlike iMessage, which needs
+a logged-in Aqua session. Notifications arrive as a push message in the user's
+Telegram app.
 
-iMessage is sent via macOS `osascript`/AppleScript. The message text is passed
-as a *run-handler argument*, not interpolated into the script, so quotes/newlines
-in the text can't break or inject into the AppleScript.
+Sending is gated by `settings.messaging_enabled`: off => dry-run (log only), so
+the pipeline is testable without a phone. A notification must never raise into a
+trading path, so failures are logged and returned, not propagated.
 """
 from __future__ import annotations
 
 import logging
-import os
-import subprocess
 from abc import ABC, abstractmethod
 from typing import Optional
 
 logger = logging.getLogger("steex.messaging")
 
-# AppleScript that takes (handle, message) as run-handler args — no interpolation.
-# `launch` ensures Messages is running (a common cause of error -10810 is Messages
-# not being open / no GUI session). It needs an active Aqua login session, so the
-# Mac mini must be logged into the desktop (auto-login) for cron sends to work.
-_IMESSAGE_SCRIPT = (
-    "on run {targetHandle, msg}\n"
-    '    tell application "Messages"\n'
-    "        launch\n"
-    "        set svc to 1st service whose service type = iMessage\n"
-    "        set theBuddy to buddy targetHandle of svc\n"
-    "        send msg to theBuddy\n"
-    "    end tell\n"
-    "end run"
-)
+_TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
 class Channel(ABC):
-    """A delivery channel. iMessage today; SMS/Telegram/email can be added later."""
+    """A delivery channel. Telegram today; SMS/Pushover/email can be added later."""
 
     @abstractmethod
-    def send(self, to: str, text: str) -> bool:
+    def send(self, text: str) -> bool:
         ...
 
 
-class IMessageChannel(Channel):
-    """Send via macOS Messages using AppleScript. macOS-only; needs Automation
-    permission to control Messages (granted once in System Settings)."""
+class TelegramChannel(Channel):
+    """Send a message to a Telegram chat via the Bot API (HTTPS POST)."""
 
-    def send(self, to: str, text: str) -> bool:
-        base = ["osascript", "-e", _IMESSAGE_SCRIPT, to, text]
-        # Plain osascript works when we're already inside the GUI (Aqua) session
-        # (e.g. a Terminal opened via Screen Sharing). From a context with no GUI
-        # session (SSH shell / crontab) it fails with -10810; in that case try the
-        # `launchctl asuser <uid>` bridge into the logged-in session (may itself
-        # need privileges, so it's only a best-effort fallback).
-        attempts = [base, ["launchctl", "asuser", str(os.getuid())] + base]
-        last_err = ""
-        for cmd in attempts:
-            try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-                if r.returncode == 0:
-                    return True
-                last_err = (r.stderr or "").strip()[:300]
-                # Only the no-GUI-session failure is worth trying the bridge for.
-                if "-10810" not in last_err and "audit session" not in last_err:
-                    break
-            except Exception as e:
-                last_err = str(e)
-        logger.error("iMessage send failed: %s", last_err)
-        return False
+    def __init__(self, token: str, chat_id: str):
+        self.token = token
+        self.chat_id = chat_id
+
+    def send(self, text: str) -> bool:
+        if not self.token or not self.chat_id:
+            logger.error("Telegram token/chat_id missing; not sending")
+            return False
+        try:
+            import requests
+            r = requests.post(
+                _TELEGRAM_API.format(token=self.token),
+                json={"chat_id": self.chat_id, "text": text,
+                      "disable_web_page_preview": True},
+                timeout=15,
+            )
+            if r.status_code != 200:
+                logger.error("Telegram send failed (%d): %s", r.status_code, r.text[:300])
+                return False
+            return True
+        except Exception as e:
+            logger.error("Telegram send error: %s", e)
+            return False
 
 
 class DryRunChannel(Channel):
     """Logs the message instead of sending (messaging_enabled is off)."""
 
-    def send(self, to: str, text: str) -> bool:
-        logger.info("[messaging dry-run] would send to %s: %s", to or "<unset>", text)
+    def send(self, text: str) -> bool:
+        logger.info("[messaging dry-run] would send: %s", text)
         return True
 
 
-def get_channel(settings) -> Channel:
-    return IMessageChannel() if getattr(settings, "messaging_enabled", False) else DryRunChannel()
+def get_channel(settings, chat_id: Optional[str] = None) -> Channel:
+    if not getattr(settings, "messaging_enabled", False):
+        return DryRunChannel()
+    return TelegramChannel(
+        token=(getattr(settings, "telegram_bot_token", "") or "").strip(),
+        chat_id=(chat_id or getattr(settings, "telegram_chat_id", "") or "").strip(),
+    )
 
 
 def send_user_message(text: str, settings=None, to: Optional[str] = None) -> dict:
-    """Send a notification to the configured user. Returns a result dict.
+    """Send a notification to the configured user via Telegram. Returns a result dict.
 
-    Respects `settings.messaging_enabled` (off => dry-run log). `to` overrides
-    the configured `imessage_to` handle. Never raises.
+    Respects `settings.messaging_enabled` (off => dry-run log). `to` overrides the
+    configured chat_id. Never raises.
     """
     if settings is None:
         from config.settings import get_settings
         settings = get_settings()
 
     enabled = bool(getattr(settings, "messaging_enabled", False))
-    handle = (to or getattr(settings, "imessage_to", "") or "").strip()
+    token = (getattr(settings, "telegram_bot_token", "") or "").strip()
+    chat_id = (to or getattr(settings, "telegram_chat_id", "") or "").strip()
 
-    if enabled and not handle:
-        logger.error("messaging_enabled but no imessage_to configured — not sending")
-        return {"sent": False, "dry_run": False, "error": "no destination handle"}
+    if enabled and (not token or not chat_id):
+        logger.error("messaging_enabled but Telegram bot token / chat id not configured")
+        return {"sent": False, "dry_run": False, "error": "telegram not configured"}
 
-    ok = get_channel(settings).send(handle, text)
-    return {"sent": ok, "dry_run": not enabled, "to": handle if enabled else None}
+    ok = get_channel(settings, chat_id=chat_id).send(text)
+    return {"sent": ok, "dry_run": not enabled, "to": chat_id if enabled else None}

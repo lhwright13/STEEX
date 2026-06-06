@@ -508,11 +508,15 @@ class Settings(BaseSettings):
     # ---- Messaging / notifications (P1) -----------------------------------
     messaging_enabled: bool = Field(
         default=False,
-        description="Master switch for outbound user notifications (iMessage). Off = dry-run (log only).",
+        description="Master switch for outbound user notifications (Telegram). Off = dry-run (log only).",
     )
-    imessage_to: str = Field(
+    telegram_bot_token: str = Field(
         default="",
-        description="Destination iMessage handle (phone or Apple ID email). Set via IMESSAGE_TO in .env; personal, not committed.",
+        description="Telegram bot token from @BotFather. Set via STEEX_TELEGRAM_BOT_TOKEN in .env; secret, not committed.",
+    )
+    telegram_chat_id: str = Field(
+        default="",
+        description="Telegram chat id to notify. Set via STEEX_TELEGRAM_CHAT_ID in .env; not committed.",
     )
 
     # Agent trace settings
