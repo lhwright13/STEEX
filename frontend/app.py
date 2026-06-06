@@ -121,6 +121,20 @@ def create_app():
             logger.error(f"Error fetching event activity: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/system/workflow-graph")
+    @app.route("/api/v1/system/workflow-graph/<mode>")
+    def workflow_graph(mode=None):
+        """Workflow topology derived from the live compiled LangGraph (P0-4).
+
+        No mode -> every mode's graph; a mode -> just that one.
+        """
+        try:
+            service = get_dashboard_service()
+            return jsonify(service.get_workflow_topology(mode))
+        except Exception as e:
+            logger.error(f"Error building workflow topology: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/portfolio/holdings")
     def portfolio_holdings():
         """Get current open positions and portfolio summary."""

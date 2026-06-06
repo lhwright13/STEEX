@@ -934,6 +934,21 @@ class DashboardService:
     # Graph Structure (for transparency UI)
     # ====================================================================
 
+    def get_workflow_topology(self, mode: Optional[str] = None) -> Dict[str, Any]:
+        """Workflow graph(s) derived from the live compiled LangGraph (P0-4).
+
+        Single source of truth for the Workflows UI (P3-7): no mode given ->
+        every mode's topology; a mode -> just that one. Supersedes the older
+        get_graph_structure, which re-derived edges from ModeConfig.
+        """
+        from src.agents.graph_introspect import mode_topology, all_topologies
+        if mode:
+            return mode_topology(mode, registry=self.registry, settings=self.settings)
+        return {
+            "modes": all_topologies(registry=self.registry, settings=self.settings),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
     def get_graph_structure(self, mode: str) -> Dict[str, Any]:
         """Get the LangGraph structure for a given mode.
 
