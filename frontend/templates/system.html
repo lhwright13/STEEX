@@ -69,6 +69,23 @@
   .flowchart .node.sel text { fill: #fff; }
   .flowchart .node.sel .idx,
   .flowchart .node.sel .mt  { fill: #bdbdbd; }
+  /* P3-7 data-driven node kinds */
+  .flowchart .node.crit .box { fill: #1a1a1a; stroke: #1a1a1a; }
+  .flowchart .node.crit .nm, .flowchart .node.crit .mt { fill: #fff; }
+  .flowchart .node.par .box  { stroke: #0058b8; stroke-width: 1.6; }
+  .flowchart .node.act .box  { fill: #f4f4f4; stroke: #bbb; }
+  .flowchart .node.act .nm   { font-weight: 600; fill: #555; font-size: 12px; }
+  .flowchart .node.term .box { fill: #fff; stroke: #cfcfcf; }
+  .flowchart .node.term .nm  { font-size: 11px; fill: #999; }
+  /* only agent nodes are clickable -> neutralize hover on the rest */
+  .flowchart .node.act, .flowchart .node.term { cursor: default; }
+  .flowchart .node.act:hover .box  { fill: #f4f4f4; }
+  .flowchart .node.act:hover .nm   { fill: #555; }
+  .flowchart .node.term:hover .box { fill: #fff; }
+  .flowchart .node.term:hover .nm  { fill: #999; }
+  .wf-select { font-family: var(--mono); font-size: 12px; padding: 3px 7px; border: 1px solid var(--border); background: #fff; }
+  .wf-pick { cursor: pointer; transition: background 0.08s; }
+  .wf-pick:hover { background: #f6f6f6; outline: 1px solid var(--border-strong); outline-offset: -1px; }
   .flowchart .post rect { fill: #f0f0f0; stroke: #000; stroke-width: 1; }
   .flowchart .post text { fill: var(--dim); font-size: 11px; letter-spacing: 0.08em; }
   .flowchart .endcap { fill: #000; }
@@ -416,157 +433,113 @@
 
   <!-- ============ VIEW SWITCHER ============ -->
   <nav class="views" role="tablist">
-    <div class="v on"  data-view="graph">Graph</div>
+    <div class="v on"  data-view="workflows">Workflows</div>
     <div class="v"     data-view="schedules">Schedules</div>
     <div class="v"     data-view="agents">Agents</div>
     <div class="v"     data-view="tools">Tools</div>
-    <div class="v"     data-view="workflows">Workflows</div>
   </nav>
 
   <!-- =================================================================
        VIEW · GRAPH
        ================================================================= -->
-  <div class="view on" data-view="graph">
+  <div class="view on" data-view="workflows">
 
     <section class="panel">
       <header>
-        <h2>Pipeline Graph <span class="sub">screen mode · click any agent for details</span></h2>
+        <h2>Workflow Graph <span class="sub" id="wf-sub">live LangGraph topology · click any agent for details</span></h2>
         <div class="tools">
-          <span>nodes: 6</span><span>parallel: 3</span><span>critical: 3</span>
+          <label class="dim" style="font-size:11px;">mode</label>
+          <select id="wf-mode-select" class="wf-select"></select>
+          <span id="wf-counts" class="dim" style="margin-left:8px;"></span>
         </div>
       </header>
       <div class="body">
 
-<svg id="graph" class="flowchart" viewBox="0 0 1000 770" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pipeline flowchart">
+<svg id="graph" class="flowchart" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Workflow graph">
   <defs>
     <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#000"></path>
     </marker>
   </defs>
-
-  <!-- LINKS (drawn under boxes) -->
-  <g class="links">
-    <!-- data -> risk -->
-    <line x1="500" y1="130" x2="500" y2="158" marker-end="url(#arr)"></line>
-    <!-- risk -> fan-out bar -->
-    <line x1="500" y1="230" x2="500" y2="255"></line>
-    <!-- fan-out bar -->
-    <line class="bar" x1="190" y1="255" x2="810" y2="255"></line>
-    <!-- bar -> 3 parallel -->
-    <line x1="190" y1="255" x2="190" y2="278" marker-end="url(#arr)"></line>
-    <line x1="500" y1="255" x2="500" y2="278" marker-end="url(#arr)"></line>
-    <line x1="810" y1="255" x2="810" y2="278" marker-end="url(#arr)"></line>
-    <!-- 3 parallel -> merge bar -->
-    <line x1="190" y1="350" x2="190" y2="380"></line>
-    <line x1="500" y1="350" x2="500" y2="380"></line>
-    <line x1="810" y1="350" x2="810" y2="380"></line>
-    <line class="bar" x1="190" y1="380" x2="810" y2="380"></line>
-    <!-- merge -> meta -->
-    <line x1="500" y1="380" x2="500" y2="408" marker-end="url(#arr)"></line>
-    <!-- meta -> mgr -->
-    <line x1="500" y1="480" x2="500" y2="508" marker-end="url(#arr)"></line>
-    <!-- mgr -> exec -->
-    <line x1="500" y1="580" x2="500" y2="608" marker-end="url(#arr)"></line>
-    <!-- exec -> post -->
-    <line x1="500" y1="680" x2="500" y2="708" marker-end="url(#arr)"></line>
-  </g>
-
-  <!-- ANNOTATIONS -->
-  <text class="annot" x="500" y="247" text-anchor="middle">▾  FAN-OUT  ·  3 parallel branches</text>
-  <text class="annot" x="500" y="397" text-anchor="middle">▴  MERGE  ·  consensus synthesis</text>
-
-  <!-- NODES (clickable) -->
-  <g class="node crit" data-agent="DataAgent" transform="translate(390 60)">
-    <rect class="box" width="220" height="70"></rect>
-    <rect class="stripe" width="220" height="4"></rect>
-    <text class="idx" x="10" y="22">[1]</text>
-    <text class="st ok" x="210" y="22" text-anchor="end">✓ DONE · 8s</text>
-    <text class="nm" x="110" y="46" text-anchor="middle">DataAgent</text>
-    <text class="mt" x="110" y="62" text-anchor="middle">critical · 10T · alpaca★</text>
-  </g>
-
-  <g class="node crit" data-agent="RiskAgent" transform="translate(390 160)">
-    <rect class="box" width="220" height="70"></rect>
-    <rect class="stripe" width="220" height="4"></rect>
-    <text class="idx" x="10" y="22">[2]</text>
-    <text class="st ok" x="210" y="22" text-anchor="end">✓ DONE · 12s</text>
-    <text class="nm" x="110" y="46" text-anchor="middle">RiskAgent</text>
-    <text class="mt" x="110" y="62" text-anchor="middle">critical · 12T · regime cautious</text>
-  </g>
-
-  <g class="node par" data-agent="analysis_conservative" transform="translate(80 280)">
-    <rect class="box" width="220" height="70"></rect>
-    <rect class="stripe" width="220" height="4"></rect>
-    <text class="idx" x="10" y="22">[3A]</text>
-    <text class="st warn" x="210" y="22" text-anchor="end">⟳ 8/15</text>
-    <text class="nm" x="110" y="46" text-anchor="middle">conservative</text>
-    <text class="mt" x="110" y="62" text-anchor="middle">15T · 35s · 8 candidates</text>
-  </g>
-
-  <g class="node par" data-agent="analysis_aggressive" transform="translate(390 280)">
-    <rect class="box" width="220" height="70"></rect>
-    <rect class="stripe" width="220" height="4"></rect>
-    <text class="idx" x="10" y="22">[3B]</text>
-    <text class="st warn" x="210" y="22" text-anchor="end">⟳ 6/15</text>
-    <text class="nm" x="110" y="46" text-anchor="middle">aggressive</text>
-    <text class="mt" x="110" y="62" text-anchor="middle">15T · 38s · 15 candidates</text>
-  </g>
-
-  <g class="node par" data-agent="analysis_momentum" transform="translate(700 280)">
-    <rect class="box" width="220" height="70"></rect>
-    <rect class="stripe" width="220" height="4"></rect>
-    <text class="idx" x="10" y="22">[3C]</text>
-    <text class="st mute" x="210" y="22" text-anchor="end">▲ QUEUED</text>
-    <text class="nm" x="110" y="46" text-anchor="middle">momentum</text>
-    <text class="mt" x="110" y="62" text-anchor="middle">15T · 32s · trend only</text>
-  </g>
-
-  <g class="node reason" data-agent="MetaAnalysisAgent" transform="translate(390 410)">
-    <rect class="box" width="220" height="70"></rect>
-    <text class="idx" x="10" y="22">[4]</text>
-    <text class="st mute" x="210" y="22" text-anchor="end">▲ QUEUED</text>
-    <text class="nm" x="110" y="46" text-anchor="middle">MetaAnalysisAgent</text>
-    <text class="mt" x="110" y="62" text-anchor="middle">no tools · 5T · 15s</text>
-  </g>
-
-  <g class="node reason" data-agent="ManagerAgent" transform="translate(390 510)">
-    <rect class="box" width="220" height="70"></rect>
-    <text class="idx" x="10" y="22">[5]</text>
-    <text class="st mute" x="210" y="22" text-anchor="end">▲ QUEUED</text>
-    <text class="nm" x="110" y="46" text-anchor="middle">ManagerAgent</text>
-    <text class="mt" x="110" y="62" text-anchor="middle">no tools · 3T · 8s</text>
-  </g>
-
-  <g class="node crit" data-agent="ExecutionAgent" transform="translate(390 610)">
-    <rect class="box" width="220" height="70"></rect>
-    <rect class="stripe" width="220" height="4"></rect>
-    <text class="idx" x="10" y="22">[6]</text>
-    <text class="st mute" x="210" y="22" text-anchor="end">▲ QUEUED</text>
-    <text class="nm" x="110" y="46" text-anchor="middle">ExecutionAgent</text>
-    <text class="mt" x="110" y="62" text-anchor="middle">critical · 10T · alpaca★</text>
-  </g>
-
-  <!-- POST -->
-  <g class="post" transform="translate(390 710)">
-    <rect width="220" height="36"></rect>
-    <text x="110" y="22" text-anchor="middle">POST  ·  save  ·  report</text>
-  </g>
+  <!-- nodes + edges rendered from /api/v1/system/workflow-graph/<mode> (P3-7) -->
 </svg>
 
         <div class="legend">
-          <span><span class="swatch" style="background:#b80000;"></span><b>red bar</b> critical (failure aborts run)</span>
-          <span><span class="swatch" style="background:#0058b8;"></span><b>blue bar</b> parallel branch</span>
-          <span><span class="swatch" style="background:#fff;border:1px dashed #000;"></span><b>dashed</b> reasoning-only (no tools)</span>
-          <span><b>[N]</b> execution order</span>
-          <span><b>NT</b> max reasoning turns</span>
-          <span><b>✓</b> done  ·  <b>⟳</b> running  ·  <b>▲</b> queued</span>
-          <span class="dim">→ click any box to inspect</span>
+          <span><span class="swatch" style="background:#1a1a1a;"></span><b>dark</b> critical (failure aborts run)</span>
+          <span><span class="swatch" style="background:#0058b8;"></span><b>blue</b> parallel / analysis variant</span>
+          <span><span class="swatch" style="background:#fff;border:1px solid #bbb;"></span><b>grey</b> action node (load / save / merge / execute)</span>
+          <span><span class="swatch" style="background:#fff;border:1px dashed #888;"></span><b>dashed edge</b> conditional branch</span>
+          <span class="dim">→ click any agent to inspect · switch mode above</span>
         </div>
       </div>
     </section>
 
     <!-- AGENT DETAIL PANEL (populated by JS) -->
     <div id="agent-detail-host"></div>
+
+    <section class="panel">
+      <header>
+        <h2>Execution Workflows <span class="sub">click a workflow to load its live graph above</span></h2>
+        <div class="tools"><span>4 modes</span></div>
+      </header>
+      <div class="body" style="padding:0;">
+        <div class="wf-grid">
+          <div class="wf wf-pick" data-mode="screen" role="button" tabindex="0">
+            <h4>screen</h4>
+            <div class="freq">every 2.5h · 3 critical agents</div>
+            <ol>
+              <li><b>DataAgent</b> <span style="color:var(--dim)">10T</span></li>
+              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
+              <li><b>fan-out</b>
+                <ol style="margin:2px 0 4px;padding-left:16px;color:var(--dim);">
+                  <li>conservative 15T</li>
+                  <li>aggressive 15T</li>
+                  <li>momentum 15T</li>
+                </ol>
+              </li>
+              <li><b>MetaAnalysis</b> <span style="color:var(--dim)">5T</span></li>
+              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
+              <li><b>Fallback / save / report</b></li>
+            </ol>
+            <div class="footer">duration 2–3 min<br/>≈55 tool calls / run<br/>critical: data · risk · exec</div>
+          </div>
+
+          <div class="wf wf-pick" data-mode="enter" role="button" tabindex="0">
+            <h4>enter</h4>
+            <div class="freq">15 min after screen</div>
+            <ol>
+              <li><b>load_screen</b></li>
+              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
+              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
+              <li><b>ExecutionAgent</b> <span style="color:var(--dim)">10T</span></li>
+              <li><b>Report</b></li>
+            </ol>
+            <div class="footer">duration 1–2 min<br/>≈12 tool calls / run<br/>writes broker orders</div>
+          </div>
+
+          <div class="wf wf-pick" data-mode="monitor" role="button" tabindex="0">
+            <h4>monitor</h4>
+            <div class="freq">continuous · 5m checks</div>
+            <ol>
+              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
+              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
+              <li><b>Fallback / execute</b></li>
+            </ol>
+            <div class="footer">duration ~8s/check<br/>no entries · only exit signals<br/>watches stop-loss + VIX</div>
+          </div>
+
+          <div class="wf wf-pick" data-mode="learning" role="button" tabindex="0">
+            <h4>learning</h4>
+            <div class="freq">2× per week (Mon/Thu 09:00)</div>
+            <ol>
+              <li><b>LearningAgent</b> <span style="color:var(--dim)">25T</span></li>
+              <li><b>LearningManager</b> <span style="color:var(--dim)">3T</span></li>
+            </ol>
+            <div class="footer">duration 15–20 min<br/>writes new weights<br/>critical: learning agent</div>
+          </div>
+        </div>
+      </div>
+    </section>
 
   </div>
 
@@ -907,105 +880,6 @@
 
   </div>
 
-  <!-- =================================================================
-       VIEW · WORKFLOWS
-       ================================================================= -->
-  <div class="view" data-view="workflows">
-    <section class="panel">
-      <header>
-        <h2>Execution Workflows <span class="sub">side-by-side comparison</span></h2>
-        <div class="tools"><span>4 modes</span></div>
-      </header>
-      <div class="body" style="padding:0;">
-        <div class="wf-grid">
-          <div class="wf">
-            <h4>screen</h4>
-            <div class="freq">every 2.5h · 3 critical agents</div>
-            <ol>
-              <li><b>DataAgent</b> <span style="color:var(--dim)">10T</span></li>
-              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
-              <li><b>fan-out</b>
-                <ol style="margin:2px 0 4px;padding-left:16px;color:var(--dim);">
-                  <li>conservative 15T</li>
-                  <li>aggressive 15T</li>
-                  <li>momentum 15T</li>
-                </ol>
-              </li>
-              <li><b>MetaAnalysis</b> <span style="color:var(--dim)">5T</span></li>
-              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
-              <li><b>Fallback / save / report</b></li>
-            </ol>
-            <div class="footer">duration 2–3 min<br/>≈55 tool calls / run<br/>critical: data · risk · exec</div>
-          </div>
-
-          <div class="wf">
-            <h4>enter</h4>
-            <div class="freq">15 min after screen</div>
-            <ol>
-              <li><b>load_screen</b></li>
-              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
-              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
-              <li><b>ExecutionAgent</b> <span style="color:var(--dim)">10T</span></li>
-              <li><b>Report</b></li>
-            </ol>
-            <div class="footer">duration 1–2 min<br/>≈12 tool calls / run<br/>writes broker orders</div>
-          </div>
-
-          <div class="wf">
-            <h4>monitor</h4>
-            <div class="freq">continuous · 5m checks</div>
-            <ol>
-              <li><b>RiskAgent</b> <span style="color:var(--dim)">12T</span></li>
-              <li><b>Manager</b> <span style="color:var(--dim)">3T</span></li>
-              <li><b>Fallback / execute</b></li>
-            </ol>
-            <div class="footer">duration ~8s/check<br/>no entries · only exit signals<br/>watches stop-loss + VIX</div>
-          </div>
-
-          <div class="wf">
-            <h4>learning</h4>
-            <div class="freq">2× per week (Mon/Thu 09:00)</div>
-            <ol>
-              <li><b>LearningAgent</b> <span style="color:var(--dim)">25T</span></li>
-              <li><b>LearningManager</b> <span style="color:var(--dim)">3T</span></li>
-            </ol>
-            <div class="footer">duration 15–20 min<br/>writes new weights<br/>critical: learning agent</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <header>
-        <h2>Cost &amp; Latency Comparison <span class="sub">per-run averages, last 30 d</span></h2>
-        <div class="tools"></div>
-      </header>
-      <div class="body">
-        <table class="data">
-          <thead>
-            <tr>
-              <th>Mode</th>
-              <th class="num">Avg Dur</th>
-              <th class="num">P90 Dur</th>
-              <th class="num">Tool Calls</th>
-              <th class="num">LLM Tokens</th>
-              <th class="num">Cost / Run</th>
-              <th class="num">Runs / Day</th>
-              <th class="num">Daily $</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td class="t">screen</td>      <td class="num">2:17</td><td class="num">3:08</td><td class="num">~55</td><td class="num">42,180</td><td class="num">$0.087</td><td class="num">~9.6</td><td class="num">$0.84</td></tr>
-            <tr><td class="t">enter</td>       <td class="num">1:18</td><td class="num">1:42</td><td class="num">~12</td><td class="num">8,420</td><td class="num">$0.018</td><td class="num">~9.6</td><td class="num">$0.17</td></tr>
-            <tr><td class="t">monitor</td>     <td class="num">0:08</td><td class="num">0:14</td><td class="num">~4</td><td class="num">1,250</td><td class="num">$0.003</td><td class="num">~288</td><td class="num">$0.86</td></tr>
-            <tr><td class="t">post_market</td> <td class="num">3:45</td><td class="num">4:30</td><td class="num">~28</td><td class="num">28,700</td><td class="num">$0.059</td><td class="num">1</td><td class="num">$0.06</td></tr>
-            <tr><td class="t">learning</td>    <td class="num">17:20</td><td class="num">22:10</td><td class="num">~140</td><td class="num">186,400</td><td class="num">$0.385</td><td class="num">~0.3</td><td class="num">$0.11</td></tr>
-            <tr style="border-top:2px solid var(--border-strong);"><td class="t">total</td><td colspan="7" class="num"><b>~ $2.04 / day · ~$61 / month</b></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </div>
 
   <!-- ============ FOOTER ============ -->
   <footer>
@@ -1299,9 +1173,140 @@ async function selectAgent(name, hostId, fromGrid) {
   }
 }
 
+/* ---------- P3-7: data-driven workflow graph from the live LangGraph ------- */
+const WF_GRAPH_API = "/api/v1/system/workflow-graph";
+const NS = "http://www.w3.org/2000/svg";
+
+function wfNodeClass(n) {
+  if (n.kind === "terminal") return "node term";
+  if (n.kind === "action") return "node act";
+  const r = n.roles || [];
+  let c = "node";
+  if (r.includes("critical")) c += " crit";
+  if (r.includes("variant")) c += " par";
+  if (n.needs_tools === false) c += " reason";
+  return c;
+}
+
+// Longest-path layering of the DAG -> one row per rank.
+function layoutRanks(nodes, edges) {
+  const children = {}, ind = {};
+  nodes.forEach(n => { children[n.id] = []; ind[n.id] = 0; });
+  edges.forEach(e => {
+    if (children[e.source]) children[e.source].push(e.target);
+    if (e.target in ind) ind[e.target]++;
+  });
+  const rank = {}; nodes.forEach(n => rank[n.id] = 0);
+  const deg = Object.assign({}, ind);
+  const q = nodes.filter(n => ind[n.id] === 0).map(n => n.id);
+  while (q.length) {
+    const u = q.shift();
+    (children[u] || []).forEach(v => {
+      rank[v] = Math.max(rank[v], rank[u] + 1);
+      if (--deg[v] === 0) q.push(v);
+    });
+  }
+  return rank;
+}
+
+function renderWorkflowGraph(topo) {
+  const svg = document.getElementById("graph");
+  [...svg.querySelectorAll("g,line,text,rect")].forEach(el => el.remove());
+  const sub = document.getElementById("wf-sub");
+  const counts = document.getElementById("wf-counts");
+  const make = (tag, attrs, parent) => {
+    const el = document.createElementNS(NS, tag);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    (parent || svg).appendChild(el);
+    return el;
+  };
+
+  if (topo.graph_backed === false) {
+    svg.setAttribute("viewBox", "0 0 1000 140");
+    const t = make("text", { x: 500, y: 74, "text-anchor": "middle",
+      fill: "var(--dim)", "font-family": "var(--mono)" });
+    t.textContent = topo.note || "Runs via a dedicated path — no agent graph.";
+    if (sub) sub.textContent = `${topo.mode} · special runtime`;
+    if (counts) counts.textContent = "";
+    return;
+  }
+
+  const nodes = topo.nodes || [], edges = topo.edges || [];
+  const rank = layoutRanks(nodes, edges);
+  const rows = {};
+  nodes.forEach(n => { (rows[rank[n.id]] = rows[rank[n.id]] || []).push(n); });
+  const ranks = Object.keys(rows).map(Number).sort((a, b) => a - b);
+  const W = 1000, rowH = 96, nodeW = 168, nodeH = 50, top = 44;
+  svg.setAttribute("viewBox", `0 0 ${W} ${top + ranks.length * rowH}`);
+
+  const pos = {};
+  ranks.forEach((r, ri) => rows[r].forEach((n, i) => {
+    pos[n.id] = { x: W * (i + 1) / (rows[r].length + 1), y: top + ri * rowH + nodeH / 2 };
+  }));
+
+  edges.forEach(e => {
+    const a = pos[e.source], b = pos[e.target];
+    if (!a || !b) return;
+    make("line", {
+      x1: a.x, y1: a.y + nodeH / 2, x2: b.x, y2: b.y - nodeH / 2,
+      stroke: "#000", "stroke-width": 1.4, opacity: 0.8,
+      "marker-end": "url(#arr)", "stroke-dasharray": e.conditional ? "5 4" : "",
+    });
+  });
+
+  nodes.forEach(n => {
+    const p = pos[n.id], term = n.kind === "terminal";
+    const w = term ? 96 : nodeW, h = term ? 28 : nodeH;
+    const g = make("g", { class: wfNodeClass(n),
+      transform: `translate(${p.x - w / 2} ${p.y - h / 2})` });
+    if (n.kind === "agent") g.setAttribute("data-agent", n.id);
+    make("rect", { class: "box", width: w, height: h, rx: term ? 13 : 3 }, g);
+    make("rect", { class: "stripe", width: w, height: 4 }, g);
+    const nm = make("text", { class: "nm", x: w / 2, y: term ? 19 : 21, "text-anchor": "middle" }, g);
+    nm.textContent = n.id.length > 22 ? n.id.slice(0, 21) + "…" : n.id;
+    if (!term) {
+      const meta = make("text", { class: "mt", x: w / 2, y: 38, "text-anchor": "middle" }, g);
+      meta.textContent = (n.roles && n.roles.length) ? n.roles.join(" · ")
+        : (n.kind === "action" ? "action" : "");
+    }
+  });
+
+  if (sub) sub.textContent = `${topo.mode} mode · live LangGraph · click any agent`;
+  if (counts) counts.textContent = `nodes ${topo.node_count} · edges ${topo.edge_count}`;
+}
+
+async function loadWorkflow(mode) {
+  const sel = document.getElementById("wf-mode-select");
+  if (sel && sel.value !== mode) sel.value = mode;
+  try {
+    renderWorkflowGraph(await (await fetch(`${WF_GRAPH_API}/${mode}`)).json());
+  } catch (e) { console.error("workflow graph load failed", e); }
+}
+
+async function initWorkflows() {
+  const sel = document.getElementById("wf-mode-select");
+  let modes = ["screen", "enter", "monitor", "post_market", "learning"];
+  try {
+    const all = await (await fetch(WF_GRAPH_API)).json();
+    if (all && all.modes) modes = Object.keys(all.modes);
+  } catch (e) { /* fall back to the static list */ }
+  if (sel) {
+    sel.innerHTML = modes.map(m => `<option value="${m}">${m}</option>`).join("");
+    sel.addEventListener("change", () => loadWorkflow(sel.value));
+  }
+  document.querySelectorAll(".wf-pick").forEach(card => {
+    const go = () => loadWorkflow(card.dataset.mode);
+    card.addEventListener("click", go);
+    card.addEventListener("keydown", ev => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); }
+    });
+  });
+  loadWorkflow(modes.includes("screen") ? "screen" : modes[0]);
+}
+
 document.getElementById("graph").addEventListener("click", e => {
   const n = e.target.closest(".node");
-  if (!n) return;
+  if (!n || !n.dataset.agent) return;   // action/terminal nodes aren't inspectable
   selectAgent(n.dataset.agent, "agent-detail-host", false);
 });
 
@@ -1312,8 +1317,8 @@ document.getElementById("agent-grid").addEventListener("click", e => {
   selectAgent(n.dataset.agent, "agent-detail-host-2", true);
 });
 
-/* default selection for graph view */
-selectAgent("analysis_conservative", "agent-detail-host", false);
+/* P3-7: render the live workflow graph + populate the mode dropdown */
+initWorkflows();
 selectAgent("DataAgent", "agent-detail-host-2", false);
 
 /* ---------- Schedule control buttons ---------- */
