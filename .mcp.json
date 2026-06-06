@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "steex": {
+      "command": "venv/bin/python",
+      "args": ["src/agents/mcp_server.py", "--paper"]
+    }
+  }
+}
