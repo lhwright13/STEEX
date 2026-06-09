@@ -168,36 +168,30 @@
   }
 
   async function updateRecentRunsTable(data) {
-    if (!data || !data.runs) return;
-
-    // Find the recent runs table
-    const tables = qa('table.data tbody');
-    if (tables.length < 2) return;
-    const runsTable = tables[1]; // Second table should be recent runs
-
-    const rows = data.runs.slice(0, 5).map(run => {
-      const startDate = new Date(run.started_at);
-      const startStr = startDate.toLocaleString();
-      const elapsedStr = formatDuration(run.elapsed);
+    // Target the run log by a stable id (was a brittle positional selector that
+    // wrote 8-col rows into whatever the 2nd table.data was — never the run log).
+    const runsTable = q('#runlog-tbody');
+    if (!runsTable) return;
+    const runs = (data && data.runs) || [];
+    if (!runs.length) {
+      runsTable.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:14px;color:#999;">No recent runs.</td></tr>';
+      return;
+    }
+    runsTable.innerHTML = runs.slice(0, 12).map(run => {
+      const ts = run.completed_at || run.started_at;
+      const d = ts ? new Date(ts) : null;
+      const whenStr = (d && !isNaN(d)) ? d.toLocaleString() : '—';
       const statusTag = run.status === 'complete' ? '<span class="tag ok">OK</span>'
                       : run.status === 'running' ? '<span class="tag warn">RUNNING</span>'
-                      : '<span class="tag dim">—</span>';
-
+                      : `<span class="tag dim">${run.status || '—'}</span>`;
       return `
         <tr>
+          <td>${whenStr}</td>
           <td class="t">${run.mode || '—'}</td>
-          <td>—</td>
-          <td>${startStr} ${run.elapsed ? `<span class="warn">(${Math.floor(run.elapsed/60)}m)</span>` : ''}</td>
-          <td>—</td>
-          <td class="num">${elapsedStr}</td>
-          <td class="num">—</td>
           <td>${statusTag}</td>
-          <td class="dim">—</td>
-        </tr>
-      `;
+          <td class="num">${run.elapsed ? formatDuration(run.elapsed) : '—'}</td>
+        </tr>`;
     }).join('\n');
-
-    if (rows) runsTable.innerHTML = rows;
   }
 
   async function updateExecutionTrace(data) {

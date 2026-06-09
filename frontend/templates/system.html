@@ -431,9 +431,9 @@
     </div>
     <div class="statusline">
       <div class="left">
-        <span><span class="live-dot"></span><b>RUNNING</b></span>
-        <span>Last run: 2026-05-24 10:17:50</span>
-        <span>Next scheduled: 14:30:00 <b style="color:#000">(in 4 min)</b></span>
+        <span><span class="live-dot"></span><b>—</b></span>
+        <span>Last run: —</span>
+        <span>Next scheduled: —</span>
         <span>Frequency: every 2.5 h</span>
       </div>
       <div class="right"></div>
@@ -581,56 +581,7 @@
             </tr>
           </thead>
           <tbody id="schedules-tbody">
-            <tr>
-              <td class="t">screen</td>
-              <td>every 2.5 h</td>
-              <td>2026-05-24 14:30 <span class="warn">(4m)</span></td>
-              <td>2026-05-24 10:18</td>
-              <td class="num">2:17</td>
-              <td class="num ok">94%</td>
-              <td><span class="tag ok">OK</span></td>
-              <td class="dim">data → risk → 3-way → meta → mgr</td>
-            </tr>
-            <tr>
-              <td class="t">enter</td>
-              <td>15 min after screen</td>
-              <td>2026-05-24 14:35</td>
-              <td>2026-05-24 10:33</td>
-              <td class="num">1:18</td>
-              <td class="num ok">96%</td>
-              <td><span class="tag ok">OK</span></td>
-              <td class="dim">load → risk → mgr → exec</td>
-            </tr>
-            <tr>
-              <td class="t">monitor</td>
-              <td>continuous</td>
-              <td>always</td>
-              <td>2026-05-24 14:32</td>
-              <td class="num">0:08</td>
-              <td class="num ok">99%</td>
-              <td><span class="tag warn">RUNNING</span></td>
-              <td class="dim">risk → mgr</td>
-            </tr>
-            <tr>
-              <td class="t">post_market</td>
-              <td>16:00 ET daily</td>
-              <td>2026-05-24 16:00</td>
-              <td>2026-05-23 16:00</td>
-              <td class="num">3:45</td>
-              <td class="num ok">100%</td>
-              <td><span class="tag ok">OK</span></td>
-              <td class="dim">risk → research → mgr → exec</td>
-            </tr>
-            <tr>
-              <td class="t">learning</td>
-              <td>2× / week</td>
-              <td>2026-05-26 09:00</td>
-              <td>2026-05-22 09:15</td>
-              <td class="num">17:20</td>
-              <td class="num ok">92%</td>
-              <td><span class="tag ok">OK</span></td>
-              <td class="dim">learning_agent → mgr</td>
-            </tr>
+            <tr><td colspan="8" style="text-align:center;padding:14px;color:#999;">Loading schedules…</td></tr>
           </tbody>
         </table>
       </div>
@@ -638,93 +589,23 @@
 
     <section class="panel">
       <header>
-        <h2>Today's Schedule <span class="sub">2026-05-24 · all modes · UTC</span></h2>
-        <div class="tools"><span>now: 14:32:15</span></div>
+        <h2>Today's Schedule <span class="sub">all modes · UTC</span></h2>
+        <div class="tools"><span>now: —</span></div>
       </header>
       <div class="body">
 
-        <div class="gantt">
-          <!-- gantt rows: each track is 00:00 → 24:00 -->
-          <div class="gantt-row">
-            <div class="lbl">screen</div>
-            <div class="track">
-              <!-- 08:02, 10:15, 14:30 -->
-              <div class="block"        style="left:33.5%;width:1.5%;">08:02</div>
-              <div class="block"        style="left:42.7%;width:1.5%;">10:15</div>
-              <div class="block queued" style="left:60.4%;width:1.5%;">14:30</div>
-            </div>
-            <div class="meta">3 runs</div>
-          </div>
-
-          <div class="gantt-row">
-            <div class="lbl">enter</div>
-            <div class="track">
-              <div class="block"        style="left:34.5%;width:1.5%;">08:17</div>
-              <div class="block"        style="left:43.8%;width:1.5%;">10:33</div>
-              <div class="block queued" style="left:60.7%;width:1.5%;">14:35</div>
-            </div>
-            <div class="meta">3 runs</div>
-          </div>
-
-          <div class="gantt-row">
-            <div class="lbl">monitor</div>
-            <div class="track">
-              <div class="block continuous" style="left:0%;width:100%;">continuous · checks every 5m</div>
-            </div>
-            <div class="meta">∞</div>
-          </div>
-
-          <div class="gantt-row">
-            <div class="lbl">post_market</div>
-            <div class="track">
-              <div class="block queued" style="left:66.7%;width:2.5%;">16:00 ET (20:00 UTC)</div>
-            </div>
-            <div class="meta">1 run</div>
-          </div>
-
-          <div class="gantt-row">
-            <div class="lbl">learning</div>
-            <div class="track">
-              <div class="block queued" style="left:37.5%;width:9%;display:none;">—</div>
-              <span style="font-size:11px;color:var(--muted);padding:4px 8px;display:inline-block;">— next: Mon 2026-05-26 09:00 UTC</span>
-            </div>
-            <div class="meta">0 today</div>
-          </div>
-
-          <!-- now indicator -->
-          <div style="position:relative;height:0;">
-            <div style="position:absolute;left:calc(110px + 12px + (100% - 110px - 12px - 80px - 12px) * 0.605);width:1px;background:var(--bad);top:-148px;height:148px;"></div>
-          </div>
-
-          <div class="axis">
-            <div></div>
-            <div class="axis-ticks">
-              <span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span>
-            </div>
-            <div></div>
-          </div>
-        </div>
-
-        <div style="margin-top:18px;font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);">Run log — today</div>
+        <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);">Run log — recent</div>
         <table class="data" style="margin-top:6px;">
           <thead>
             <tr>
-              <th>Time</th>
+              <th>Completed</th>
               <th>Mode</th>
-              <th>Action</th>
-              <th>Agents</th>
               <th>Status</th>
-              <th class="num">Dur</th>
+              <th class="num">Duration</th>
             </tr>
           </thead>
-          <tbody>
-            <tr><td>08:02</td><td class="t">screen</td><td>Run screening</td><td class="dim">data→risk→3-way→meta→mgr</td><td><span class="tag ok">DONE</span></td><td class="num">1:58</td></tr>
-            <tr><td>08:17</td><td class="t">enter</td><td>Enter trades</td><td class="dim">load→risk→mgr→exec</td><td><span class="tag ok">DONE</span></td><td class="num">1:22</td></tr>
-            <tr><td>10:15</td><td class="t">screen</td><td>Run screening</td><td class="dim">data→risk→3-way→meta→mgr</td><td><span class="tag ok">DONE</span></td><td class="num">2:23</td></tr>
-            <tr><td>10:33</td><td class="t">enter</td><td>Enter trades</td><td class="dim">load→risk→mgr→exec</td><td><span class="tag ok">DONE</span></td><td class="num">1:14</td></tr>
-            <tr><td>14:30</td><td class="t">screen</td><td><b>Run screening</b></td><td class="dim">data→risk→3-way→meta→mgr</td><td><span class="tag warn">NEXT (4m)</span></td><td class="num mute">—</td></tr>
-            <tr><td>14:35</td><td class="t">enter</td><td>Enter trades</td><td class="dim">load→risk→mgr→exec</td><td><span class="tag mute">QUEUED</span></td><td class="num mute">—</td></tr>
-            <tr><td>16:00</td><td class="t">post_market</td><td>Day wrap</td><td class="dim">risk→research→mgr→exec</td><td><span class="tag mute">QUEUED</span></td><td class="num mute">—</td></tr>
+          <tbody id="runlog-tbody">
+            <tr><td colspan="4" style="text-align:center;padding:14px;color:#999;">Loading recent runs…</td></tr>
           </tbody>
         </table>
       </div>
