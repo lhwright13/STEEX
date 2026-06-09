@@ -606,7 +606,7 @@ def make_execution_node(executor_name: str, ctx: RunnerContext) -> Callable:
             "Execute exits first, then entries."
         )
 
-        _, trace = run_agent(
+        conclusion, trace = run_agent(
             ctx,
             role="ExecutionAgent",
             system_prompt=exec_prompt,
@@ -620,7 +620,13 @@ def make_execution_node(executor_name: str, ctx: RunnerContext) -> Callable:
             run_id=state["run_id"],
         )
 
-        return {"traces": [_trace_to_dict(trace)]}
+        # Persist the execution conclusion (entries/exits executed) into the run
+        # log like every other agent node, so the dashboard + "View Last Output"
+        # can show what execution actually did instead of an empty result.
+        new_conclusions = {**(state.get("conclusions") or {})}
+        if conclusion is not None:
+            new_conclusions[executor_name] = conclusion.model_dump()
+        return {"conclusions": new_conclusions, "traces": [_trace_to_dict(trace)]}
     return node
 
 
@@ -831,7 +837,7 @@ def make_report_node(mode: str, ctx: RunnerContext) -> Callable:
             logger.error("Failed to resolve report agent: %s", e)
             return {}
 
-        _, trace = run_agent(
+        conclusion, trace = run_agent(
             ctx,
             role="ReportAgent",
             system_prompt=report_prompt,
@@ -845,7 +851,10 @@ def make_report_node(mode: str, ctx: RunnerContext) -> Callable:
             run_id=state["run_id"],
         )
 
-        return {"traces": [_trace_to_dict(trace)]}
+        new_conclusions = {**(state.get("conclusions") or {})}
+        if conclusion is not None:
+            new_conclusions["report"] = conclusion.model_dump()
+        return {"conclusions": new_conclusions, "traces": [_trace_to_dict(trace)]}
     return node
 
 

@@ -80,47 +80,58 @@ class SystemMixin:
         }
 
     def get_agent_last_output(self, agent_name: str) -> Dict[str, Any]:
-        """Get last execution output for a specific agent."""
+        """Most recent output for an agent.
+
+        Scans back to the latest non-event_scan run that actually INCLUDED this
+        agent — so e.g. 'execution' isn't blank just because the very latest run
+        was a 'screen' (which has no execution node). Falls back to the top-level
+        manager_decision for the manager (stored there, not under conclusions).
+        """
         agent_name = self._resolve_agent(agent_name)
-        run_file = self._get_latest_run_file()
-        if not run_file:
-            return {
-                "agent": agent_name,
-                "output": None,
-                "message": "No run data available",
-            }
+        runs_dir = self.data_dir / "runs"
+        if not runs_dir.exists():
+            return {"agent": agent_name, "conclusion": None, "message": "No run data available"}
 
-        run_data = self._load_json(run_file)
-        if not run_data:
-            return {
-                "agent": agent_name,
-                "output": None,
-                "message": "No run data available",
-            }
+        scanned = 0
+        for run_file in sorted(runs_dir.glob("run_*.jsonl"), reverse=True):
+            if scanned >= 80:
+                break
+            data = self._load_json(run_file)
+            if not data or data.get("mode") == "event_scan":
+                continue
+            scanned += 1
 
-        # Check conclusions for this agent
-        conclusions = run_data.get("conclusions", {})
-        agent_conclusion = conclusions.get(agent_name)
-        if not agent_conclusion:
-            # Check variant conclusions
-            variant_conclusions = run_data.get("variant_conclusions", [])
-            if isinstance(variant_conclusions, list):
-                for vc in variant_conclusions:
+            conclusion = (data.get("conclusions") or {}).get(agent_name)
+            if not conclusion:
+                for vc in data.get("variant_conclusions") or []:
                     if vc.get("variant") == agent_name:
-                        agent_conclusion = vc.get("conclusion")
+                        conclusion = vc.get("conclusion")
                         break
+            if not conclusion and agent_name == "manager":
+                conclusion = data.get("manager_decision")
 
-        traces = run_data.get("traces", [])
-        agent_trace = None
-        if isinstance(traces, list):
-            agent_trace = next((t for t in traces if t.get("agent") == agent_name), None)
+            traces = data.get("traces") or []
+            agent_trace = next(
+                (t for t in traces if t.get("agent") == agent_name
+                 or str(t.get("role", "")).lower().startswith(agent_name)),
+                None,
+            )
 
-        return {
-            "agent": agent_name,
-            "conclusion": agent_conclusion,
-            "trace_summary": agent_trace.get("summary") if agent_trace else None,
-            "timestamp": run_data.get("started_at"),
-        }
+            # This run included the agent if it has its conclusion or a trace.
+            if conclusion or agent_trace:
+                return {
+                    "agent": agent_name,
+                    "conclusion": conclusion,
+                    "trace_summary": agent_trace.get("summary") if agent_trace else None,
+                    "run_id": data.get("run_id"),
+                    "mode": data.get("mode"),
+                    "timestamp": data.get("completed_at") or data.get("started_at"),
+                    "message": (None if conclusion
+                                else "Agent ran but recorded no conclusion in this run."),
+                }
+
+        return {"agent": agent_name, "conclusion": None,
+                "message": "No recent output for this agent."}
 
     def get_agent_timeline(self, run_id: str = None) -> Dict[str, Any]:
         """Per-run agent execution timeline: the sequence of agents with
