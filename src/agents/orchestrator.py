@@ -650,6 +650,16 @@ class Orchestrator:
 
         self._finalize_session(session)
         cleanup_mcp(ctx)
+
+        # After the morning screen, send a once-per-day market brief to the user
+        # (idempotent per date, so the every-2.5h screen only sends the first run).
+        if mode == "screen" and not final_state.get("abort"):
+            try:
+                from src.notify.morning_digest import send_morning_digest
+                send_morning_digest(final_state, self.settings)
+            except Exception as e:  # a notification must never break a trading run
+                logger.error("morning digest failed: %s", e)
+
         return report
 
 

@@ -504,6 +504,11 @@ class Settings(BaseSettings):
     big_move_cooldown_minutes: int = Field(
         default=180, description="Per-ticker cooldown before re-alerting on a continued move"
     )
+    morning_digest_enabled: bool = Field(
+        default=True,
+        description="After the morning screen, send a once-per-day market brief (regime, "
+                    "portfolio, picks, what we're watching) to Telegram + Today's Events",
+    )
 
     # ---- Messaging / notifications (P1) -----------------------------------
     messaging_enabled: bool = Field(
