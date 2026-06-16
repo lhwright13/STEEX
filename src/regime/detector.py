@@ -5,8 +5,7 @@ of VIX, yield curve, market breadth, dollar strength, and sector rotation.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import yfinance as yf
 
@@ -239,39 +238,3 @@ class RegimeDetector:
                 "composite_risk": round(composite, 1),
             },
         )
-
-    def get_regime_history(self, days: int = 252) -> List[Tuple[datetime, str]]:
-        """Get approximate regime history based on VIX levels.
-
-        This is a simplified reconstruction for backtest segmentation.
-        Full multi-factor history would require cached macro data.
-
-        Args:
-            days: Number of calendar days of history
-
-        Returns:
-            List of (date, regime_name) tuples
-        """
-        vix_data = self.vix_provider.fetch(days=days)
-        if vix_data.empty:
-            return []
-
-        history = []
-        for date, row in vix_data.iterrows():
-            vix = row.get("Close")
-            if vix is None:
-                continue
-
-            if vix < 15:
-                name = "risk_on"
-            elif vix <= 25:
-                name = "risk_on"
-            elif vix <= 35:
-                name = "cautious"
-            else:
-                name = "crisis"
-
-            dt = date.to_pydatetime() if hasattr(date, "to_pydatetime") else date
-            history.append((dt, name))
-
-        return history
