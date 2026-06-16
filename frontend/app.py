@@ -1,12 +1,38 @@
+import math
 import os
 import logging
 from datetime import datetime
 from flask import Flask, render_template, jsonify
+from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
 
 from .services import get_dashboard_service
 
 logger = logging.getLogger("steex.dashboard")
+
+
+class _SafeJSONProvider(DefaultJSONProvider):
+    """Replace NaN/Infinity with null so every response is valid JSON.
+
+    Python's json (and Flask's jsonify) emit bare ``NaN``/``Infinity`` tokens,
+    which the browser's ``JSON.parse`` rejects — blanking the whole widget. A
+    data-feed outage that returns NaN prices (see the big-move NaN bug) must
+    never be able to break an endpoint, so sanitize at the one place every
+    response passes through.
+    """
+
+    @staticmethod
+    def _clean(o):
+        if isinstance(o, float):
+            return o if math.isfinite(o) else None
+        if isinstance(o, dict):
+            return {k: _SafeJSONProvider._clean(v) for k, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [_SafeJSONProvider._clean(v) for v in o]
+        return o
+
+    def dumps(self, obj, **kwargs):
+        return super().dumps(self._clean(obj), **kwargs)
 
 
 def create_app():
@@ -17,6 +43,9 @@ def create_app():
         static_folder=str(Path(__file__).parent / "static"),
     )
     app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-key-change-in-prod")
+    # Defensive: NaN/Infinity (e.g. from a price-feed outage) -> null, so a bad
+    # value can never produce invalid JSON that breaks a dashboard widget.
+    app.json = _SafeJSONProvider(app)
 
     # Configure logging
     if not app.debug:

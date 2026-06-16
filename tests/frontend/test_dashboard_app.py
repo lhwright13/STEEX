@@ -360,6 +360,28 @@ class TestAgentDetailAPI:
         assert response.status_code == 404
 
 
+class TestNaNSafeJSON:
+    """A NaN/Infinity in any response must serialize to null (valid JSON), so a
+    price-feed outage can never break a dashboard widget."""
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_nan_becomes_null(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.get_portfolio_holdings.return_value = {
+            "positions": [{"ticker": "X", "current_price": float("nan"),
+                           "market_value": float("inf")}],
+            "summary": {"equity": float("nan")},
+        }
+        mock_get_service.return_value = mock_service
+        r = client.get("/api/v1/portfolio/holdings")
+        assert r.status_code == 200
+        assert b"NaN" not in r.data and b"Infinity" not in r.data
+        data = json.loads(r.data)  # would raise if NaN leaked
+        assert data["positions"][0]["current_price"] is None
+        assert data["positions"][0]["market_value"] is None
+        assert data["summary"]["equity"] is None
+
+
 class TestSignalHealthAPI:
     """P4-4 signal-health endpoint."""
 
