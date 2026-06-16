@@ -37,7 +37,7 @@ min_history_days: 126            # Minimum trading history required (6 months)
 # -----------------------------------------------------------------------------
 # Position Management
 # -----------------------------------------------------------------------------
-max_positions: 15                # Aggressive: more concurrent positions (was 10)
+max_positions: 35                # Aggressive: large diversified book (was 15). NOTE: at 6% sizing cash binds ~16; lower position_size_pct to ~0.027 to actually run ~35.
 daily_picks: 12                  # Aggressive: bigger funnel into portfolio construction (was 8)
 position_size_pct: 0.06          # Aggressive: 6% base position size (was 4%)
 max_sector_pct: 0.45             # Aggressive: allow sector overweight for momentum clusters (was 0.35)

@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     )
 
     # Position management
-    max_positions: int = Field(default=15, description="Maximum concurrent positions (aggressive)")
+    max_positions: int = Field(default=35, description="Maximum concurrent positions (aggressive; large book)")
     daily_picks: int = Field(default=12, description="Number of stocks to pick daily (aggressive)")
     position_size_pct: float = Field(
         default=0.06, description="Position size as fraction of portfolio (6%, aggressive)"
