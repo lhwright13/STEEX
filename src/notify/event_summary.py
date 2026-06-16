@@ -13,6 +13,7 @@ a trading path.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from typing import Callable, Dict, Optional
 
@@ -66,7 +67,16 @@ def _default_title(event: Dict) -> str:
     if t == "big_move":
         ctx = event.get("context", {})
         arrow = "▲" if ctx.get("direction") == "up" else "▼"
-        return f"{tk} {arrow} {abs(ctx.get('move_pct', 0))}%" if tk else "Big move"
+        if not tk:
+            return "Big move"
+        # Defensive: a missing/NaN move_pct must never render "nan%".
+        try:
+            mp = abs(float(ctx.get("move_pct")))
+            if math.isfinite(mp):
+                return f"{tk} {arrow} {mp}%"
+        except (TypeError, ValueError):
+            pass
+        return f"{tk} {arrow} big move"
     return event.get("title") or "Update"
 
 

@@ -98,3 +98,31 @@ def test_disabled_returns_nothing(tmp_path):
     mgr = _Mgr([_Pos("DELL", 100.0)], {"DELL": 150.0})
     w = MoveWatcher(mgr, _settings(tmp_path, enabled=False))
     assert w.scan() == []
+
+
+def test_nan_price_never_alerts(tmp_path):
+    """A NaN/inf price (data-feed outage) must NOT fire a 'nan%' alert."""
+    mgr = _Mgr([_Pos("DELL", 100.0)], {"DELL": 100.0})
+    s = _settings(tmp_path)
+    w = MoveWatcher(mgr, s)
+    w.scan()                                   # ref @ 100
+    mgr._prices["DELL"] = float("nan")         # feed returns NaN
+    assert w.scan() == []                      # no garbage alert
+    mgr._prices["DELL"] = float("inf")
+    assert w.scan() == []
+    # and a good price afterwards still works (ref preserved at 100)
+    mgr._prices["DELL"] = 112.0
+    e = w.scan()
+    assert len(e) == 1 and e[0]["move_pct"] == 12.0
+
+
+def test_nan_first_sighting_does_not_seed_bad_reference(tmp_path):
+    """A NaN on first sight must not become the stored reference."""
+    mgr = _Mgr([_Pos("DELL", 100.0)], {"DELL": float("nan")})
+    w = MoveWatcher(mgr, _settings(tmp_path))
+    assert w.scan() == []                      # NaN skipped, no ref seeded
+    mgr._prices["DELL"] = 100.0
+    assert w.scan() == []                      # now seeds clean ref @ 100
+    mgr._prices["DELL"] = 90.0                 # -10%
+    e = w.scan()
+    assert len(e) == 1 and e[0]["move_pct"] == -10.0

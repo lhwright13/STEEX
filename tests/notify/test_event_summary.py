@@ -62,6 +62,17 @@ def test_default_titles():
                            "context": {"direction": "up", "move_pct": 12.0}}) == "NVDA ▲ 12.0%"
 
 
+def test_big_move_title_never_renders_nan():
+    """A missing/NaN move_pct must degrade to '<tk> ▼ big move', never 'nan%'."""
+    nan = float("nan")
+    assert _default_title({"type": "big_move", "ticker": "MO",
+                           "context": {"direction": "down", "move_pct": nan}}) == "MO ▼ big move"
+    assert _default_title({"type": "big_move", "ticker": "MO",
+                           "context": {"direction": "down", "move_pct": None}}) == "MO ▼ big move"
+    assert _default_title({"type": "big_move", "ticker": "MO",
+                           "context": {"direction": "down"}}) == "MO ▼ big move"
+
+
 def test_severity_mapping(tmp_path):
     s = _settings(tmp_path)
     big = summarize_and_notify({"id": "m1", "type": "big_move", "ticker": "NVDA",

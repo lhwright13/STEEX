@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
@@ -59,19 +60,25 @@ class MoveWatcher:
 
         for pos in self.mgr.position_manager.get_all_positions():
             price = self.mgr.price_provider.get_latest_price(pos.ticker)
-            if not price or price <= 0:
+            # NaN guard: `not price`/`price <= 0` both let NaN through (nan is
+            # truthy and nan<=0 is False), so a data-feed outage that returns NaN
+            # would compute move=NaN and — since abs(nan) < threshold is False —
+            # fire a garbage "nan%" alert for every holding. Require a finite,
+            # positive price.
+            if price is None or not math.isfinite(price) or price <= 0:
                 continue
 
             entry = ledger.get(pos.ticker)
-            if not entry or not entry.get("ref_price"):
-                # First sighting — set the reference, don't alert.
+            ref = entry.get("ref_price") if entry else None
+            if not ref or not math.isfinite(ref) or ref <= 0:
+                # First sighting (or a bad/legacy reference) — (re)set the
+                # reference to this clean price, don't alert.
                 ledger[pos.ticker] = {"ref_price": price, "ref_ts": now_iso,
-                                      "last_alert_ts": ""}
+                                      "last_alert_ts": (entry or {}).get("last_alert_ts", "")}
                 continue
 
-            ref = entry["ref_price"]
-            move = (price - ref) / ref if ref else 0.0
-            if abs(move) < threshold:
+            move = (price - ref) / ref
+            if not math.isfinite(move) or abs(move) < threshold:
                 continue
 
             # Cooldown since the last alert for this ticker.
