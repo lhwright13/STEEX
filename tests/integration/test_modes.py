@@ -516,9 +516,7 @@ class TestLearningMode:
             mock_loop.run.return_value = {
                 "postmortem": {"trades_analyzed": 25, "win_rate": 0.60},
                 "alpha_decay": {"degrading": []},
-                "signal_research": None,
-                "oos_validation": None,
-                "changes_applied": False,
+                "gaps": [],
             }
 
             result = mgr.run_learning(dry_run=False)

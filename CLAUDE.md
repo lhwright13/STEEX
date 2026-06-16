@@ -12,7 +12,7 @@ The STEEX MCP server is wired up in [`.mcp.json`](.mcp.json), so its tools are
 available to Claude Code as `mcp__steex__<tool>` (run `/mcp` to confirm it's
 connected). You drive the system by asking in plain language — "what are my
 positions?", "run a screen", "what did the event trigger do today?" — and Claude
-calls the tools. **42 tools** are exposed; the ones you'll use most:
+calls the tools. **40 tools** are exposed; the ones you'll use most:
 
 | You want to… | Tool(s) |
 |---|---|
@@ -22,10 +22,10 @@ calls the tools. **42 tools** are exposed; the ones you'll use most:
 | Run a screen (find candidates) | `run_screening` (or `run_screening_variant`) |
 | Place a buy | `generate_buy_list` → `size_buy_list` → `execute_entries` (or `place_paper_order` for a direct order) |
 | Place a sell / exit | `generate_sell_list` → `execute_exits` |
-| Research a name / postmortem | `run_signal_research`, `run_postmortem`, `get_unusual_options_activity` |
+| Research a name / postmortem | `run_postmortem`, `get_unusual_options_activity` |
 | Read / change config | `get_current_weights`, `propose_config_changes`, `apply_config_changes`, `get_config_change_history` |
 | Notify your phone | `send_user_message` (Telegram) |
-| Learning loop | `run_learning_loop`, `check_alpha_decay`, `validate_oos` |
+| Learning loop | `run_learning_loop`, `check_alpha_decay` |
 
 The dashboard (read-only view of all this) runs separately:
 `./start_dash.sh` → http://localhost:5055.
@@ -61,7 +61,7 @@ The dashboard (read-only view of all this) runs separately:
 ## Where things are
 
 - `config/agents.yaml` — agent/mode definitions · `config/settings.py` — tunables (`STEEX_` env prefix)
-- `src/agents/` — orchestrator, graph, nodes, `mcp_tools/` (the 42 tools)
+- `src/agents/` — orchestrator, graph, nodes, `mcp_tools/` (the 40 tools)
 - `src/strategy/` — manager (execution), event_trigger, control (kill switch)
 - `src/notify/` — messaging (Telegram), event_summary, user_updates stream
 - `frontend/` — Flask dashboard (`app.py`, `services/`, ES-module `static/js/`)

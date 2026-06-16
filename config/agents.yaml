@@ -146,8 +146,6 @@ agents:
       - get_trade_history
       - run_postmortem
       - check_alpha_decay
-      - run_signal_research
-      - validate_oos
       - propose_config_changes
       - apply_config_changes
       - get_learning_journal

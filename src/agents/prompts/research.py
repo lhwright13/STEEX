@@ -32,7 +32,6 @@ After your analysis, output your conclusion as a single JSON object:
     "win_rate": <float or null>,
     "signals_degrading": ["list of degrading signal names"],
     "weight_changes_proposed": {},
-    "oos_validated": false,
     "changes_applied": false,
     "gaps_flagged": ["list of knowledge gaps for human / learning-mode review"],
     "reasoning": "Your research findings and recommendations",

@@ -471,14 +471,14 @@ class TestConfigChanges:
 
     def test_apply_config_blocks_market_hours(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        with patch("src.learning.loop._is_market_hours", return_value=True):
+        with patch("src.learning.config_writer._is_market_hours", return_value=True):
             result = _parse(mcp_mod.apply_config_changes('{"weight_momentum": 0.35}', "test"))
             assert result["applied"] is False
             assert "market hours" in result["reason"].lower()
 
     def test_apply_config_invalid_json(self, inject_manager):
         import src.agents.mcp_server as mcp_mod
-        with patch("src.learning.loop._is_market_hours", return_value=False):
+        with patch("src.learning.config_writer._is_market_hours", return_value=False):
             result = _parse(mcp_mod.apply_config_changes("bad json", "test"))
             assert "error" in result
 

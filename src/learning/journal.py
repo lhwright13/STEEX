@@ -16,9 +16,7 @@ from config.settings import get_settings
 ACTION_TYPES = {
     "postmortem_analysis",
     "alpha_decay_check",
-    "signal_research",
     "weight_recommendation",
-    "oos_validation",
     "config_change",
     "gap_identified",
 }

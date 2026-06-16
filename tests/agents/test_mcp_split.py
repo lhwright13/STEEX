@@ -24,8 +24,8 @@ EXPECTED_TOOLS = {
     "load_screen_results", "place_paper_order", "prefetch_data",
     "propose_config_changes", "rank_candidates", "rank_candidates_with_weights",
     "refresh_data", "run_learning_loop", "run_postmortem", "run_screening",
-    "run_screening_variant", "run_signal_research", "save_screen_results",
-    "size_buy_list", "sync_broker", "validate_oos",
+    "run_screening_variant", "save_screen_results",
+    "size_buy_list", "sync_broker",
     "send_user_message",  # P1-1
 }
 
@@ -34,8 +34,8 @@ def _registered_names():
     return {t.name for t in mcp_server.mcp._tool_manager.list_tools()}
 
 
-def test_exactly_42_tools_registered():
-    assert len(EXPECTED_TOOLS) == 42  # 41 from P0-2 + send_user_message (P1-1)
+def test_exactly_40_tools_registered():
+    assert len(EXPECTED_TOOLS) == 40  # removed run_signal_research + validate_oos (backtest rip-out)
     names = _registered_names()
     assert names == EXPECTED_TOOLS, {
         "missing": EXPECTED_TOOLS - names,

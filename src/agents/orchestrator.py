@@ -821,7 +821,6 @@ class Orchestrator:
                 "win_rate": learning.win_rate,
                 "signals_degrading": learning.signals_degrading,
                 "weight_changes_proposed": learning.weight_changes_proposed,
-                "oos_validated": learning.oos_validated,
                 "config_changes_applied": learning.config_changes_applied,
                 "prompt_evolutions": [
                     r.model_dump() for r in learning.prompt_evolution_recommendations

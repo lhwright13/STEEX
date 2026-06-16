@@ -52,7 +52,6 @@ class TestLearningConclusion:
         lc = LearningConclusion(reasoning="No trades to analyze")
         assert lc.trades_analyzed == 0
         assert lc.win_rate is None
-        assert lc.oos_validated is False
         assert lc.config_changes_applied is False
         assert lc.prompt_evolution_recommendations == []
         assert lc.gaps_flagged == []
@@ -63,7 +62,6 @@ class TestLearningConclusion:
             win_rate=0.56,
             signals_degrading=["momentum_score"],
             weight_changes_proposed={"weight_momentum": 0.25},
-            oos_validated=True,
             config_changes_applied=True,
             prompt_evolution_recommendations=[
                 PromptEvolutionRecommendation(
@@ -105,7 +103,6 @@ class TestLearningConclusion:
             "win_rate": None,
             "signals_degrading": [],
             "weight_changes_proposed": {},
-            "oos_validated": False,
             "config_changes_applied": False,
             "prompt_evolution_recommendations": [],
             "agent_insights_used": [],

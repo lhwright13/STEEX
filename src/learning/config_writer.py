@@ -14,6 +14,26 @@ from typing import Any, Dict, List, Optional, Tuple
 from config.settings import get_settings, CONFIG_FILE
 
 
+def _is_market_hours() -> bool:
+    """Check if current time is during US market hours (9:30-16:00 ET weekdays).
+
+    Used as a guardrail: config writebacks are refused while the market is open
+    so a parameter change can never land mid-session between cron one-shots.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("America/New_York"))
+    if now.weekday() >= 5:
+        return False
+
+    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    return market_open <= now <= market_close
+
+
 # Maps each tunable parameter to (min, max, max_delta_per_cycle, tier).
 # tier="frequent" -> weekly cadence (scoring weights)
 # tier="rare"     -> monthly cadence (stops, sizing, hold days)

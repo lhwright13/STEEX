@@ -18,7 +18,7 @@ def get_signal_confidence() -> str:
     """Get confidence scores and recommended weights for each signal.
 
     Reads AlphaDecayMonitor for per-signal rolling win rates.
-    Reads signal research output from learning journal for recommended weights.
+    Reads recommended weights from the learning journal when present.
     Returns overall confidence and per-signal status.
     """
     mgr = _state.init_manager()
@@ -79,11 +79,11 @@ def run_postmortem() -> str:
 
 @mcp.tool()
 def run_learning_loop() -> str:
-    """Run the full self-learning cycle.
+    """Run the deterministic self-learning cycle (observe-only).
 
-    Chains: PostMortem -> Alpha Decay -> Signal Research -> OOS Validation
-    -> ConfigWriter. Validates all changes via out-of-sample backtest
-    before applying. Refuses to run during market hours.
+    Chains: PostMortem -> Alpha Decay -> Gap identification over real
+    completed trades. This fallback does not write config; parameter tuning
+    is the learning agent's job, bounded by ConfigWriter guardrails.
 
     Respects dry-run mode.
     """
@@ -110,61 +110,6 @@ def check_alpha_decay() -> str:
         monitor = AlphaDecayMonitor(settings=mgr.settings)
         report = monitor.generate_report()
         return _safe_json(report)
-    except Exception as e:
-        return _safe_json({"error": str(e)})
-
-@mcp.tool()
-def run_signal_research() -> str:
-    """Run signal hypothesis testing and weight optimization.
-
-    Generates a historical feature matrix, tests each signal's
-    predictive power via t-tests and information coefficients,
-    identifies redundant signal pairs, and optimizes weights.
-
-    This is a read-only analysis. Use propose_config_changes
-    to actually propose weight updates, then validate_oos to
-    test them, and apply_config_changes to write them.
-
-    Returns hypotheses, redundant pairs, recommended weights,
-    and feature count.
-    """
-    mgr = _state.init_manager()
-    try:
-        from src.learning.loop import LearningLoop
-        loop = LearningLoop(settings=mgr.settings)
-        result = loop._run_signal_research()
-        if result is None:
-            return _safe_json({"error": "Signal research returned no results"})
-        return _safe_json(result)
-    except Exception as e:
-        return _safe_json({"error": str(e)})
-
-@mcp.tool()
-def validate_oos(proposed_weights: str) -> str:
-    """Run walk-forward out-of-sample validation on proposed weights.
-
-    Executes a 2-fold walk-forward backtest with the proposed weights
-    and checks that average OOS Sharpe > 0 and win_rate > 50%.
-
-    Args:
-        proposed_weights: JSON string mapping signal names to weights,
-            e.g. '{"weight_momentum": 0.30, "weight_insider": 0.25}'
-
-    Returns validation result: passed, sharpe, win_rate, fold details.
-    """
-    mgr = _state.init_manager()
-    try:
-        weights = json.loads(proposed_weights)
-    except json.JSONDecodeError:
-        return _safe_json({"error": "Invalid JSON for proposed_weights"})
-
-    try:
-        from src.learning.loop import LearningLoop
-        loop = LearningLoop(settings=mgr.settings)
-        result = loop._run_oos_validation(weights)
-        if result is None:
-            return _safe_json({"error": "OOS validation returned no results"})
-        return _safe_json(result)
     except Exception as e:
         return _safe_json({"error": str(e)})
 
@@ -215,7 +160,7 @@ def apply_config_changes(validated_proposal: str, reason: str) -> str:
         return _safe_json({"applied": False, "reason": "Dry run mode - changes not applied"})
 
     try:
-        from src.learning.loop import _is_market_hours
+        from src.learning.config_writer import _is_market_hours
         if _is_market_hours():
             return _safe_json({"applied": False, "reason": "Cannot apply during market hours"})
     except ImportError:
@@ -240,8 +185,7 @@ def get_learning_journal(limit: int = 20) -> str:
     """Get recent learning journal entries.
 
     Returns timestamped log of learning actions: postmortem analyses,
-    alpha decay checks, signal research, weight recommendations,
-    OOS validations, and config changes.
+    alpha decay checks, weight recommendations, and config changes.
 
     Args:
         limit: Maximum number of entries to return (default 20)
@@ -364,4 +308,4 @@ def generate_report(mode: str = "screen") -> str:
         "performance": report.get("performance", {}),
     })
 
-__all__ = ['get_signal_confidence', 'run_postmortem', 'run_learning_loop', 'check_alpha_decay', 'run_signal_research', 'validate_oos', 'propose_config_changes', 'apply_config_changes', 'get_learning_journal', 'get_learning_gaps', 'get_config_change_history', 'get_pending_recommendations', 'cross_reference_findings', 'generate_report']
+__all__ = ['get_signal_confidence', 'run_postmortem', 'run_learning_loop', 'check_alpha_decay', 'propose_config_changes', 'apply_config_changes', 'get_learning_journal', 'get_learning_gaps', 'get_config_change_history', 'get_pending_recommendations', 'cross_reference_findings', 'generate_report']

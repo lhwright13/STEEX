@@ -114,14 +114,6 @@ options_bearish_pc_threshold: 1.0  # Put/call ratio above this is bearish
 options_cache_ttl: 3600          # Cache TTL in seconds (1 hour)
 
 # -----------------------------------------------------------------------------
-# Walk-Forward Backtest
-# -----------------------------------------------------------------------------
-walkforward_train_months: 6        # Training window in months
-walkforward_test_months: 2         # Test window in months
-walkforward_folds: 4               # Number of walk-forward folds
-walkforward_signal_interval: 7     # Days between signal generations
-
-# -----------------------------------------------------------------------------
 # Portfolio Construction
 # -----------------------------------------------------------------------------
 portfolio_max_pairwise_corr: 0.88  # Aggressive: allow correlated momentum clusters (was 0.80)
@@ -225,11 +217,6 @@ learning_enabled: true               # Enable the self-learning loop
 learning_dry_run: false              # Run learning without applying changes
 learning_weight_change_cap: 0.10     # Max weight change per cycle (10%)
 learning_min_trades_for_analysis: 15 # Min trades for reliable analysis
-learning_oos_min_sharpe: 0.0         # Minimum OOS Sharpe for validation
-learning_oos_min_win_rate: 0.50      # Minimum OOS win rate for validation
-learning_feature_lookback_months: 2  # Months of feature data for research
-learning_validation_train_months: 3  # OOS validation training window
-learning_validation_test_months: 1   # OOS validation test window
 
 # -----------------------------------------------------------------------------
 # Manager Settings

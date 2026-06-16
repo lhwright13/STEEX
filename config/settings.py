@@ -219,20 +219,6 @@ class Settings(BaseSettings):
         default=3600, description="Options data cache TTL in seconds (1 hour)"
     )
 
-    # Walk-Forward Backtest
-    walkforward_train_months: int = Field(
-        default=6, description="Walk-forward training window in months"
-    )
-    walkforward_test_months: int = Field(
-        default=2, description="Walk-forward test window in months"
-    )
-    walkforward_folds: int = Field(
-        default=4, description="Number of walk-forward folds"
-    )
-    walkforward_signal_interval: int = Field(
-        default=7, description="Days between signal generations in walk-forward"
-    )
-
     # Portfolio Construction
     portfolio_max_pairwise_corr: float = Field(
         default=0.88, description="Max pairwise correlation for portfolio selection (aggressive)"
@@ -393,21 +379,6 @@ class Settings(BaseSettings):
     )
     learning_min_trades_for_analysis: int = Field(
         default=15, description="Minimum trades required for reliable analysis"
-    )
-    learning_oos_min_sharpe: float = Field(
-        default=0.0, description="Minimum OOS Sharpe ratio for validation"
-    )
-    learning_oos_min_win_rate: float = Field(
-        default=0.50, description="Minimum OOS win rate for validation"
-    )
-    learning_feature_lookback_months: int = Field(
-        default=6, description="Months of feature data for signal research"
-    )
-    learning_validation_train_months: int = Field(
-        default=3, description="Training window for OOS validation folds"
-    )
-    learning_validation_test_months: int = Field(
-        default=1, description="Test window for OOS validation folds"
     )
 
     # Agent settings (Claude AI multi-agent mode)

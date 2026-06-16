@@ -244,7 +244,6 @@ class ResearchConclusion(BaseModel):
     win_rate: Optional[float] = Field(default=None)
     signals_degrading: List[str] = Field(default_factory=list)
     weight_changes_proposed: Dict[str, float] = Field(default_factory=dict)
-    oos_validated: bool = Field(default=False)
     changes_applied: bool = Field(default=False)
     gaps_flagged: List[str] = Field(default_factory=list)
     reasoning: str = Field(description="Research findings and recommendations")
@@ -354,7 +353,6 @@ class LearningConclusion(BaseModel):
     win_rate: Optional[float] = Field(default=None)
     signals_degrading: List[str] = Field(default_factory=list)
     weight_changes_proposed: Dict[str, float] = Field(default_factory=dict)
-    oos_validated: bool = Field(default=False)
     config_changes_applied: bool = Field(default=False)
     prompt_evolution_recommendations: List[PromptEvolutionRecommendation] = Field(
         default_factory=list,

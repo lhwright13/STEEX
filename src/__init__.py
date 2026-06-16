@@ -7,7 +7,6 @@ from .data import PriceProvider, Universe, VixProvider, EarningsCalendar
 from .indicators import MomentumCalculator, TechnicalIndicators
 from .strategy import StockScreener, StockRanker, SignalGenerator
 from .portfolio import Position, PositionManager, RiskManager, TradeTracker
-from .backtest import BacktestEngine, BacktestResult
 
 __all__ = [
     # Data providers
@@ -27,7 +26,4 @@ __all__ = [
     "PositionManager",
     "RiskManager",
     "TradeTracker",
-    # Backtest
-    "BacktestEngine",
-    "BacktestResult",
 ]

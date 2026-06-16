@@ -3,12 +3,13 @@
 
 Usage:
     python scripts/run_learning.py                    # Full learning cycle
-    python scripts/run_learning.py --dry-run          # Propose but don't apply
     python scripts/run_learning.py --phase postmortem  # Run specific phase only
-    python scripts/run_learning.py --force-research   # Force signal research
     python scripts/run_learning.py --gaps             # Show knowledge gaps
     python scripts/run_learning.py --history          # Show config change history
     python scripts/run_learning.py --verbose          # Detailed output
+
+This is the deterministic, observe-only fallback (postmortem, alpha decay,
+gaps). Parameter tuning is handled by the learning agent within guardrails.
 """
 
 import argparse
@@ -122,16 +123,11 @@ def run_learning(args):
     console.print(Panel.fit(
         "[bold]STEEX Learning Loop[/bold]\n"
         f"Mode: {'DRY RUN' if dry_run else 'LIVE'}"
-        + (f" | Phase: {args.phase}" if args.phase else " | All phases")
-        + (" | Force research" if args.force_research else ""),
+        + (f" | Phase: {args.phase}" if args.phase else " | All phases"),
         border_style="magenta",
     ))
 
-    results = loop.run(
-        dry_run=dry_run,
-        force_research=args.force_research,
-        phases=phases,
-    )
+    results = loop.run(dry_run=dry_run, phases=phases)
 
     if results.get("error"):
         console.print(f"[red]Error: {results['error']}[/red]")
@@ -159,42 +155,6 @@ def run_learning(args):
         else:
             console.print("\n[bold]Alpha Decay:[/bold] All signals healthy")
 
-    # Signal Research summary
-    research = results.get("signal_research")
-    if research and not research.get("error"):
-        console.print(f"\n[bold]Signal Research:[/bold] {research.get('feature_count', 0)} observations")
-        weights = research.get("recommended_weights", {})
-        if weights:
-            console.print("  Recommended weights:")
-            for k, v in sorted(weights.items()):
-                console.print(f"    {k}: {v:.4f}")
-
-    # OOS Validation summary
-    oos = results.get("oos_validation")
-    if oos:
-        passed = oos.get("passed", False)
-        color = "green" if passed else "red"
-        console.print(
-            f"\n[bold]OOS Validation:[/bold] [{color}]{'PASSED' if passed else 'FAILED'}[/{color}] "
-            f"Sharpe={oos.get('sharpe', 0):.2f}, Win Rate={oos.get('win_rate', 0):.1%}"
-        )
-
-    # Apply summary
-    apply_result = results.get("apply")
-    if apply_result:
-        if apply_result.get("dry_run"):
-            console.print("\n[bold yellow]Apply:[/bold yellow] DRY RUN - changes not applied")
-            proposal = apply_result.get("would_apply", {})
-            changes = proposal.get("changes", {})
-            if changes:
-                for param, info in changes.items():
-                    console.print(
-                        f"  {param}: {info['current']} -> {info['validated']} "
-                        f"(delta: {info['delta']:+.4f})"
-                    )
-        elif apply_result.get("applied"):
-            console.print(f"\n[bold green]Applied {apply_result.get('count', 0)} config changes[/bold green]")
-
     # Gaps summary
     gaps = results.get("gaps", [])
     if gaps:
@@ -216,10 +176,7 @@ def main():
     )
     parser.add_argument(
         "--phase",
-        choices=[
-            "postmortem", "alpha_decay", "signal_research",
-            "oos_validation", "apply", "gaps",
-        ],
+        choices=["postmortem", "alpha_decay", "gaps"],
         help="Run a specific phase only",
     )
     parser.add_argument(
@@ -231,11 +188,6 @@ def main():
         "--history",
         action="store_true",
         help="Show config change history",
-    )
-    parser.add_argument(
-        "--force-research",
-        action="store_true",
-        help="Force signal research even if no degradation detected",
     )
     parser.add_argument(
         "--verbose", "-v",
