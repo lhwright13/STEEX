@@ -126,16 +126,18 @@ A 4-factor model governs position sizing and entry permission:
 
 ## Self-Learning Loop
 
-A weekly optimization cycle (Fridays 6:00 PM ET) that:
+A weekly learning cycle (Fridays after close) that is **observe-only, grounded in
+real completed trades** (no synthetic backtesting):
 
-1. **Post-mortem** -- analyzes recent trades, categorizes losses (whipsaw, dead money, gap down)
-2. **Alpha decay** -- monitors signal health, detects degrading factors
-3. **Signal research** -- tests factor importance, proposes optimized weights
-4. **OOS validation** -- 2-fold walk-forward backtest (requires Sharpe > 0, win rate > 50%)
-5. **Apply** -- writes validated changes to config with safety bounds (max 10% change/cycle, auto-normalized to sum to 1.0)
-6. **Gap flagging** -- flags unresolvable issues for human review
+1. **Post-mortem** -- analyzes recent *real* trades, categorizes losses (whipsaw, dead money, gap down)
+2. **Alpha decay** -- monitors per-signal health against the live trade record, detects degrading factors
+3. **Gap flagging** -- flags knowledge gaps / unresolvable issues for human review
 
-Changes are never applied during market hours. Full audit trail in `data/learning/`.
+The deterministic loop never self-tunes config. Parameter changes are the learning
+**agent's** job (`propose_config_changes` / `apply_config_changes`), bounded by the
+deterministic guardrails in `config_writer.py` (`PARAM_BOUNDS`: max change/cycle,
+auto-normalized to sum to 1.0) and never applied during market hours. Full audit
+trail in `data/learning/`.
 
 ---
 
@@ -339,11 +341,8 @@ STEEX/
     sec/
       scanners/insider.py    # SEC EDGAR Form 4 scanner
     learning/
-      loop.py                # Self-learning orchestrator
-      config_writer.py       # Safe config updates with audit trail
-    backtest/
-      walkforward.py         # Walk-forward backtesting (no lookahead bias)
-      engine.py              # Backtest simulation engine
+      loop.py                # Observe-only learning cycle (post-mortem + alpha decay)
+      config_writer.py       # Safe agent-driven config updates (PARAM_BOUNDS + audit)
   scripts/
     run_manager.py           # CLI entry point
     run_learning.py          # Learning loop CLI

@@ -107,7 +107,7 @@ Verifies:
 #### Run logs (`data/runs/run_*.jsonl`)
 The agent orchestrator writes a JSONL log per run directly
 (`src/agents/run_log.py`): one `running` line at start and a consolidated final
-line at finish. The dashboard (`frontend/services.py`) reads the most recent file
+line at finish. The dashboard (`frontend/services/`) reads the most recent file
 and parses its last line. There is no separate ingest step — the old
 `ingest_run.py` (which populated a SQLite `dashboard.db`) was removed when the
 pipeline moved to LangGraph.

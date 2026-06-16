@@ -103,7 +103,7 @@ Key implementation facts:
 - **The server runs as a stdio subprocess** started by the Claude CLI — never invoked directly. The CLI speaks JSON-RPC to it over stdin/stdout, which is why rich console output is redirected to stderr ([mcp_server.py:32](../src/agents/mcp_server.py#L32)).
 - **Lazy init** — `_init_manager()` ([mcp_server.py:125](../src/agents/mcp_server.py#L125)) builds the `QuantManager` (and connects to the broker) only on the first tool call, so starting the server is cheap.
 - **Per-call config** — `--paper` / `--dry-run` flags passed in the MCP config decide whether the broker is paper/live and whether orders are simulated.
-- **~40 tools**, grouped: data (`prefetch_data`, `refresh_data`), risk (`get_regime`, `assess_portfolio_risk`, `get_exit_signals`), analysis (`run_screening`, `run_screening_variant`, `rank_candidates_with_weights`), execution (`execute_entries`, `execute_exits`), research/learning (`run_postmortem`, `run_signal_research`, `validate_oos`, `apply_config_changes`), and reporting.
+- **~40 tools**, grouped: data (`prefetch_data`, `refresh_data`), risk (`get_regime`, `assess_portfolio_risk`, `get_exit_signals`), analysis (`run_screening`, `run_screening_variant`, `rank_candidates_with_weights`), execution (`execute_entries`, `execute_exits`), research/learning (`run_postmortem`, `check_alpha_decay`, `get_current_weights`, `propose_config_changes`, `apply_config_changes`), notification (`send_user_message`), and reporting.
 - **Per-agent allowlist** — each agent's `allowed_tools` in [agents.yaml](../config/agents.yaml) restricts what it can touch (e.g. only `execution` may place orders).
 
 ### External MCP servers

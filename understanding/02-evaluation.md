@@ -4,7 +4,7 @@ This document covers how STEEX evaluates itself today, then proposes a richer ev
 
 A key thing to understand up front: STEEX has **two different notions of "evaluation"** that are easy to conflate.
 
-1. **Strategy evaluation** — *is the trading strategy making money?* Measured by backtest metrics, post-mortems, and the weekly learning loop. This is mature.
+1. **Strategy evaluation** — *is the trading strategy making money?* Measured over **real completed trades** by post-mortems, per-signal alpha-decay, and the weekly learning loop. (Synthetic backtesting was removed — evaluation is grounded in the live trade record, not simulation.)
 2. **Agent evaluation** — *are the agents themselves behaving well?* (Did the agent pick good tools, return valid output, not time out, reason soundly?) This is **largely absent** today and is where the biggest opportunity is.
 
 ---
@@ -37,29 +37,35 @@ Weights live in [config/config.yaml:81](../config/config.yaml#L81) and (after co
 
 Invariants enforced by the config writer: weights sum to 1.0, momentum stays dominant (>0.25), options > fundamental.
 
-### Backtest metrics
+### Trade metrics
 
-[src/backtest/metrics.py](../src/backtest/metrics.py) computes the standard quant battery: win rate, profit factor, avg winner/loser, Sharpe, Sortino, max drawdown, CAGR, Calmar, avg hold days, plus benchmark alpha/beta/correlation.
+[src/portfolio/tracker.py](../src/portfolio/tracker.py) (`TradeTracker`) is the system of
+record for *real* closed trades: win rate, profit factor, avg winner/loser, max drawdown,
+hold days, and benchmark alpha — all computed from actual fills, not a simulator.
 
-### The weekly learning loop (the real eval engine)
+### The weekly learning loop (observe-only)
 
-[scripts/run_learning.py](../scripts/run_learning.py) → [src/learning/loop.py](../src/learning/loop.py) runs a six-phase cycle weekly:
+[scripts/run_learning.py](../scripts/run_learning.py) → [src/learning/loop.py](../src/learning/loop.py)
+runs a deterministic, **observe-only** cycle weekly over real completed trades. It does
+**not** self-tune config:
 
-1. **Post-mortem** — analyzes closed trades; classifies losses (`bad_signal`, `bad_timing`, `bad_regime`, `bad_luck`); computes **score↔return correlation** (if < 0.10, the signals aren't predictive → triggers research); measures missed upside.
-2. **Alpha decay** — rolling-window hit rate per signal; flags a signal "degrading" if win rate drops >15% vs baseline ([alpha_monitor.py](../src/research/alpha_monitor.py)).
-3. **Signal research (conditional)** — per-signal Information Coefficient (Spearman vs 21-day forward return), t-tests, win-rate-when-strong, redundancy correlations; proposes new weights via ridge regression.
-4. **Out-of-sample validation (conditional)** — walk-forward backtest with proposed weights; gates: OOS Sharpe > 0 **and** OOS win rate > 50%.
-5. **Config apply (conditional)** — only if OOS passes; caps weight changes at 10%/cycle, re-normalizes to 1.0, writes an audit trail.
-6. **Gap identification** — flags what it *couldn't* resolve (too little data, degrading signal with no fix, dominant loss category) into [data/learning/gaps.json](../data/learning/gaps.json) for human review.
+1. **Post-mortem** — analyzes closed trades; classifies losses (`bad_signal`, `bad_timing`, `bad_regime`, `bad_luck`); computes **score↔return correlation** (if < 0.10, the signals aren't predictive → flags a research gap).
+2. **Alpha decay** — rolling-window hit rate per signal against the live trade record; flags a signal "degrading" if win rate drops >15% vs baseline ([alpha_monitor.py](../src/research/alpha_monitor.py)).
+3. **Gap identification** — flags what it *couldn't* resolve (too little data, degrading signal, dominant loss category) into [data/learning/gaps.json](../data/learning/gaps.json) for human review.
 
-This is a genuinely strong, closed-loop evaluation system **for the strategy**.
+**Parameter changes are the learning *agent's* job** (`propose_config_changes` /
+`apply_config_changes`), not the loop's — bounded by the deterministic guardrails in
+[config_writer.py](../src/learning/config_writer.py) (`PARAM_BOUNDS`: caps change/cycle,
+re-normalizes weights to 1.0, blocks writes during market hours, writes an audit trail).
+Promotion is grounded in the *real* trade evidence above, validated by paper-trading the
+change — there is no synthetic walk-forward/OOS backtest (that stack was removed).
 
 ### Where results are stored
 
 | File | Contents |
 |---|---|
 | `data/learning/learning_journal.json` | Timestamped log of every learning action |
-| `data/learning/weight_recommendations.json` | Latest proposed weights + OOS validation |
+| `data/learning/weight_recommendations.json` | Latest agent-proposed weights + rationale |
 | `data/learning/config_history.json` | Audit trail of applied param changes (old→new, reason) |
 | `data/learning/gaps.json` | Unresolved gaps for human review |
 | `data/reports/report_*.json` | Daily P&L / risk / trade summaries |
