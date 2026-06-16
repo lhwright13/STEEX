@@ -224,7 +224,7 @@ learning_min_trades_for_analysis: 15 # Min trades for reliable analysis
 manager_portfolio_value: 50000   # Total portfolio value for position sizing
 manager_report_dir: "data/reports"  # Directory for daily reports
 manager_max_daily_entries: 10    # Aggressive: more new positions per day (was 6)
-manager_min_score_entry: 42.0    # Aggressive: accept lower-conviction picks (was 47.0)
+manager_min_score_entry: 40.0    # More aggressive: accept lower-conviction picks (was 42; at the PARAM_BOUNDS floor)
 manager_require_insider: false   # Require insider activity for entry
 
 # -----------------------------------------------------------------------------

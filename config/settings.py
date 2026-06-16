@@ -519,7 +519,7 @@ class Settings(BaseSettings):
         default=10, description="Maximum new positions per day (aggressive)"
     )
     manager_min_score_entry: float = Field(
-        default=42.0, description="Minimum composite score for entry (aggressive)"
+        default=40.0, description="Minimum composite score for entry (aggressive; PARAM_BOUNDS floor)"
     )
     manager_require_insider: bool = Field(
         default=False, description="Require insider activity for entry"
