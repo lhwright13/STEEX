@@ -162,7 +162,8 @@ class MetaAnalysisConclusion(BaseModel):
     )
     speculative_excluded: List[str] = Field(
         default_factory=list,
-        description="Tickers picked by only 1 variant (excluded)",
+        description="Tickers dropped as genuinely weak. Strong single-variant picks "
+                    "are now INCLUDED in candidates (smaller starter size), not excluded.",
     )
     variant_summaries: Dict[str, int] = Field(
         default_factory=dict,
