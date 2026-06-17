@@ -96,6 +96,14 @@ def test_enforce_length_passes_short_through():
     assert _enforce_length("") == ""
 
 
+def test_enforce_length_none_skips_clamp():
+    """The multi-section daily brief/recap pass max_sentences=None to keep their
+    deterministic bullet blocks intact."""
+    eight = " ".join(f"Sentence {i}." for i in range(1, 9))
+    assert _enforce_length(eight, None) == eight
+    assert _enforce_length(eight, 2).count(".") == 2
+
+
 def test_summary_length_enforced_end_to_end(tmp_path):
     """A verbose summarizer is clamped before it's stored on the stream."""
     s = _settings(tmp_path)

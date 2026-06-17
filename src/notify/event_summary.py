@@ -31,22 +31,24 @@ def _split_sentences(text: str):
     return re.findall(r"[^.!?]+[.!?]+|\S[^.!?]*$", text.strip())
 
 
-def _enforce_length(text: str) -> str:
+def _enforce_length(text: str, max_sentences: Optional[int] = _MAX_SENTENCES) -> str:
     """Enforce the plan's 3-5 sentence bound (P1-2).
 
-    Hard-caps at _MAX_SENTENCES (the real risk is a wall-of-text bloating the
-    notification + UI payload); logs when a summary falls outside [3, 5] so the
+    Hard-caps at ``max_sentences`` (the real risk is a wall-of-text bloating the
+    notification + UI payload); logs when a summary falls outside [3, max] so the
     prompt can be tuned, but a short summary is still delivered rather than
-    dropped.
+    dropped. Pass ``max_sentences=None`` to skip the clamp entirely — used by the
+    multi-section daily brief/recap, which compose deterministic bullet sections
+    that the sentence count would otherwise truncate.
     """
     text = (text or "").strip()
-    if not text:
+    if not text or max_sentences is None:
         return text
     parts = _split_sentences(text)
     n = len(parts)
-    if n > _MAX_SENTENCES:
-        logger.info("event summary had %d sentences; clamping to %d", n, _MAX_SENTENCES)
-        return "".join(parts[:_MAX_SENTENCES]).strip()
+    if n > max_sentences:
+        logger.info("event summary had %d sentences; clamping to %d", n, max_sentences)
+        return "".join(parts[:max_sentences]).strip()
     if n < _MIN_SENTENCES:
         logger.info("event summary had only %d sentence(s); expected >= %d", n, _MIN_SENTENCES)
     return text
@@ -117,12 +119,14 @@ def summarize_and_notify(
     settings=None,
     summarizer: Optional[Callable[[Dict], str]] = None,
     send: bool = True,
+    max_sentences: Optional[int] = _MAX_SENTENCES,
 ):
     """Summarize one event, record it on user_updates, and notify the user.
 
     `event` requires: id, type (buy|sell|event_trade|big_move|system). Optional:
-    ticker, title, context (dict), links (list). Returns the UserUpdate, or None
-    if it was already notified (idempotent) or had no id.
+    ticker, title, context (dict), links (list). `max_sentences` caps the summary
+    length (None = no clamp, for multi-section briefs). Returns the UserUpdate, or
+    None if it was already notified (idempotent) or had no id.
     """
     if not event.get("id"):
         logger.error("summarize_and_notify: event has no id; skipping")
@@ -143,7 +147,7 @@ def summarize_and_notify(
     except Exception as e:
         logger.error("event summary failed (%s); using title", e)
         summary = ""
-    summary = _enforce_length(summary)
+    summary = _enforce_length(summary, max_sentences)
 
     title = event.get("title") or _default_title(event)
     payload = dict(event.get("context", {}))

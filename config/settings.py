@@ -478,7 +478,12 @@ class Settings(BaseSettings):
     morning_digest_enabled: bool = Field(
         default=True,
         description="After the morning screen, send a once-per-day market brief (regime, "
-                    "portfolio, picks, what we're watching) to Telegram + Today's Events",
+                    "portfolio, picks, close calls, sell-watch) to Telegram + Today's Events",
+    )
+    daily_recap_enabled: bool = Field(
+        default=True,
+        description="After the post-market run, send a once-per-day end-of-day recap (today's "
+                    "P&L, closed trades, alpha vs SPY, signal health) to Telegram + Today's Events",
     )
 
     # ---- Messaging / notifications (P1) -----------------------------------

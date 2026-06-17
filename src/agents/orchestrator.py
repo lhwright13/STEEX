@@ -660,6 +660,15 @@ class Orchestrator:
             except Exception as e:  # a notification must never break a trading run
                 logger.error("morning digest failed: %s", e)
 
+        # After the post-market wrap-up, send a once-per-day end-of-day recap
+        # (today's P&L, closed trades, alpha vs SPY). Idempotent per date.
+        if mode == "post_market" and not final_state.get("abort"):
+            try:
+                from src.notify.daily_recap import send_daily_recap
+                send_daily_recap(final_state, self.settings)
+            except Exception as e:  # a notification must never break a trading run
+                logger.error("daily recap failed: %s", e)
+
         return report
 
 
