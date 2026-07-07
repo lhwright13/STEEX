@@ -52,15 +52,19 @@ vol_low_threshold: 0.03          # ATR% threshold for low volatility (3%)
 vol_med_threshold: 0.06          # ATR% threshold for medium volatility (6%)
 vol_low_position_pct: 0.06       # Position size for low volatility stocks (6%)
 vol_med_position_pct: 0.05       # Position size for medium volatility stocks (5%)
-vol_high_position_pct: 0.03      # Position size for high volatility stocks (3%)
+vol_high_position_pct: 0.05      # 07-03 audit: was 0.03 — vol-sizing shrank exactly the
+                                 # momentum winners (DELL 4.4%, SNDK 2.6% vs losers CCI 7.8%,
+                                 # MNST 11.7%); losers averaged 28% larger than winners
 
 # -----------------------------------------------------------------------------
 # Exit Parameters
 # -----------------------------------------------------------------------------
 initial_stop_pct: 0.14           # Aggressive: wider stop, more drawdown tolerance (was 0.10)
 max_hold_days: 60                # Aggressive: hold winners longer (was 30)
-dead_money_days: 10              # Days below entry before exit as dead money
-dead_money_enabled: false        # Disabled - let stops handle exits
+dead_money_days: 20              # 07-03 audit: recycle capital parked below entry 20+ trading
+                                 # days (~$10.9k sat 16-49d for -$133 while cash was pinned at
+                                 # the floor). 20d, not 10, so slow starters like SNDK survive.
+dead_money_enabled: true         # 07-03 audit: was false — enabled to free dead capital
 cooling_off_days: 14             # Trading days to block re-entry after stop-loss
 
 # -----------------------------------------------------------------------------
@@ -73,9 +77,12 @@ vix_tight_stop_pct: 0.05         # Tighter stop when VIX is elevated (5%)
 # -----------------------------------------------------------------------------
 # Trailing Stop Levels
 # -----------------------------------------------------------------------------
-trail_stop_10: 0.12              # Trail distance after 10% gain
-trail_stop_20: 0.15              # Trail distance after 20% gain
-trail_stop_30: 0.20              # Aggressive: let big winners run further (was 0.15)
+trail_stop_10: 0.12              # Trail distance after 10% gain (unchanged: avoids whipsaw
+                                 # on the way up — DELL passed +10/+20 en route to +142%)
+trail_stop_20: 0.15              # Trail distance after 20% gain (unchanged)
+trail_stop_30: 0.12              # 07-03 audit: was 0.20 — big winners gave back too much
+                                 # (DELL 48pts of gain, SNDK 35pts; ~$634 recapturable from
+                                 # this tier alone on a 12-trade history)
 
 # -----------------------------------------------------------------------------
 # Scoring Weights (must sum to 1.0)

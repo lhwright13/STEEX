@@ -117,7 +117,8 @@ class Settings(BaseSettings):
         default=0.05, description="Position size for medium volatility stocks (5%)"
     )
     vol_high_position_pct: float = Field(
-        default=0.03, description="Position size for high volatility stocks (3%)"
+        default=0.05, description="Position size for high volatility stocks "
+        "(5%; 3% systematically undersized the momentum winners — 07-03 audit)"
     )
 
     # Exit parameters
@@ -128,10 +129,11 @@ class Settings(BaseSettings):
         default=60, description="Maximum holding period in trading days (aggressive)"
     )
     dead_money_days: int = Field(
-        default=10, description="Days below entry before exit as dead money"
+        default=20, description="Trading days below entry before exit as dead money "
+        "(20 so slow starters like SNDK survive — 07-03 audit)"
     )
     dead_money_enabled: bool = Field(
-        default=False, description="Enable dead money exit signal"
+        default=True, description="Enable dead money exit signal (recycle parked capital)"
     )
     cooling_off_days: int = Field(
         default=14, description="Trading days to block re-entry after stop-loss"
@@ -156,7 +158,8 @@ class Settings(BaseSettings):
         default=0.15, description="Trail distance after 20% gain"
     )
     trail_stop_30: float = Field(
-        default=0.20, description="Trail distance after 30% gain (aggressive)"
+        default=0.12, description="Trail distance after 30% gain (tightened from 0.20: "
+        "big winners gave back 35-48pts of gain — 07-03 audit)"
     )
 
     # Scoring weights (must sum to 1.0) — aggressive, momentum-led
