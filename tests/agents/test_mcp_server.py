@@ -63,6 +63,10 @@ def mock_manager():
     mgr.settings.manager_min_score_entry = 60
     mgr.settings.initial_stop_pct = 0.10
     mgr.settings.max_hold_days = 30
+    # B4 notional sizing: explicit real values (a bare MagicMock attr is truthy
+    # and un-comparable, which breaks the price>=min_price gate).
+    mgr.settings.notional_orders_enabled = False
+    mgr.settings.notional_min_price = 500.0
     mgr.broker = MagicMock()
     mgr.position_manager = MagicMock()
     mgr.price_provider = MagicMock()

@@ -57,6 +57,16 @@ vol_high_position_pct: 0.05      # 07-03 audit: was 0.03 — vol-sizing shrank e
                                  # MNST 11.7%); losers averaged 28% larger than winners
 
 # -----------------------------------------------------------------------------
+# Order execution
+# -----------------------------------------------------------------------------
+notional_orders_enabled: true    # 07-03 audit: deploy exact $ allocation via fractional market
+                                 # buys when integer shares under-deploy (rounding ate ~13% of
+                                 # SNDK). Fractional qty can't hold a broker stop -> whole-share
+                                 # floor gets the GTC stop, monitor covers the remainder.
+notional_min_price: 500.0        # Use notional at/above this price; cheaper names keep the
+                                 # integer limit path (with buy->market escalation).
+
+# -----------------------------------------------------------------------------
 # Exit Parameters
 # -----------------------------------------------------------------------------
 initial_stop_pct: 0.14           # Aggressive: wider stop, more drawdown tolerance (was 0.10)

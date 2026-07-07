@@ -405,6 +405,50 @@ class AlpacaBroker(Broker):
         """Place a market sell order and poll for fill."""
         return self._place_market_order(ticker, qty, OrderSide.SELL)
 
+    def buy_notional(self, ticker: str, notional: float) -> OrderResult:
+        """Place a notional (dollar-amount) market buy; fills fractional shares.
+
+        Alpaca notional orders must be market + DAY. Returns the fractional
+        filled_qty so the caller can size a floor-share stop.
+        """
+        notional = round(float(notional), 2)
+        order_data = MarketOrderRequest(
+            symbol=ticker,
+            notional=notional,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY,
+        )
+        try:
+            order = self.client.submit_order(order_data)
+        except APIError as e:
+            logger.error("Notional buy failed for %s ($%.2f): %s", ticker, notional, e)
+            return OrderResult(status="failed", error=str(e))
+
+        order_id = str(order.id)
+        logger.info("Notional buy submitted: %s $%.2f (id=%s)", ticker, notional, order_id)
+
+        elapsed = 0.0
+        while elapsed < FILL_TIMEOUT:
+            time.sleep(FILL_POLL_INTERVAL)
+            elapsed += FILL_POLL_INTERVAL
+            try:
+                order = self.client.get_order_by_id(order_id)
+            except APIError:
+                continue
+            if order.status == OrderStatus.FILLED:
+                return OrderResult(
+                    order_id=order_id,
+                    filled_qty=float(order.filled_qty),      # fractional
+                    filled_price=float(order.filled_avg_price),
+                    status="filled",
+                )
+            if order.status in (OrderStatus.CANCELED, OrderStatus.EXPIRED, OrderStatus.REJECTED):
+                return OrderResult(order_id=order_id, status=order.status.value,
+                                   error=f"Order {order.status.value}")
+        self.cancel_order(order_id)
+        return OrderResult(order_id=order_id, status="cancelled",
+                           error=f"Fill timeout ({FILL_TIMEOUT:.0f}s)")
+
     # -----------------------------------------------------------------
     # Single position lookup
     # -----------------------------------------------------------------

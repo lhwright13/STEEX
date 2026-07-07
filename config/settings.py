@@ -362,6 +362,16 @@ class Settings(BaseSettings):
     buy_limit_buffer_pct: float = Field(
         default=0.005, description="Buy limit price buffer above screen price (tolerates opening gaps)"
     )
+    notional_orders_enabled: bool = Field(
+        default=True, description="Deploy the exact dollar allocation via notional (fractional) "
+        "market buys when integer shares would under-deploy (07-03 audit: integer rounding ate "
+        "~13% of SNDK's intended size). Fractional qty can't carry a broker GTC stop, so the "
+        "whole-share floor gets the stop and the monitor covers the fractional remainder."
+    )
+    notional_min_price: float = Field(
+        default=500.0, description="Use notional buys for names at/above this price (where integer "
+        "rounding drag is worst); cheaper names keep the integer limit path with buy escalation"
+    )
 
     # Data paths
     data_dir: str = Field(default="data", description="Directory for cached data")

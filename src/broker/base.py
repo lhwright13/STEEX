@@ -86,6 +86,15 @@ class Broker(ABC):
         ...
 
     @abstractmethod
+    def buy_notional(self, ticker: str, notional: float) -> OrderResult:
+        """Place a notional (dollar-amount) market buy; fills fractional shares.
+
+        Deploys the exact intended allocation on high-priced names where integer
+        shares under-deploy. `filled_qty` on the result may be fractional.
+        """
+        ...
+
+    @abstractmethod
     def sell_market(self, ticker: str, qty: int) -> OrderResult:
         """Place a market sell order."""
         ...

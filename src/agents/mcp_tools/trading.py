@@ -114,21 +114,38 @@ def _size_unsized_entries(mgr, entries: List[Dict]) -> Tuple[List[Dict], List[Di
 
         size_pct = mgr._calculate_position_size_pct(ticker, regime)
         target_value = portfolio_value * size_pct
-        shares = int(target_value / price)
-        if shares < 1:
-            skipped.append({"ticker": ticker, "reason": "size < 1 share"})
-            continue
+        whole_shares = int(target_value / price)
 
-        cost = round(price * shares, 2)
-        if cost > cash:
-            skipped.append({"ticker": ticker, "reason": f"cost ${cost} > cash ${cash:.0f}"})
-            continue
+        # B4 (agent-mode path): notional/fractional buy when integer shares
+        # would under-deploy — rounds to zero, or an expensive name where the
+        # rounding drag is worst. Mirrors QuantManager.generate_buy_list.
+        use_notional = getattr(mgr.settings, "notional_orders_enabled", False) and (
+            whole_shares < 1 or price >= getattr(mgr.settings, "notional_min_price", 500.0)
+        )
+        if use_notional:
+            cost = round(target_value, 2)
+            if cost > cash:
+                skipped.append({"ticker": ticker, "reason": f"cost ${cost} > cash ${cash:.0f}"})
+                continue
+            shares = round(target_value / price, 4)
+            notional = cost
+        else:
+            if whole_shares < 1:
+                skipped.append({"ticker": ticker, "reason": "size < 1 share"})
+                continue
+            cost = round(price * whole_shares, 2)
+            if cost > cash:
+                skipped.append({"ticker": ticker, "reason": f"cost ${cost} > cash ${cash:.0f}"})
+                continue
+            shares = whole_shares
+            notional = None
 
         stop_price = round(price * (1 - mgr.settings.initial_stop_pct), 2)
         entry.update({
             "price": price,
             "shares": shares,
             "cost": cost,
+            "notional": notional,
             "stop": stop_price,
             "size_pct": round(size_pct * 100, 1),
         })

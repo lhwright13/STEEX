@@ -16,7 +16,7 @@ from rich.table import Table
 from rich import box
 
 from config.settings import Settings, get_settings
-from ..broker.base import AccountInfo, Broker
+from ..broker.base import AccountInfo, Broker, OrderResult
 from ..data.geopolitical import get_ticker_sector
 from ..data.prefetch import DataPrefetcher
 from ..data.price import PriceProvider
@@ -207,6 +207,10 @@ class QuantManager:
                 continue
             # Use the stop price as approximate exit price
             exit_price = pos.current_stop if pos.current_stop else pos.entry_price
+            # B3: reconstruct WHICH stop tier fired from the high-water mark
+            # instead of the useless catch-all "server_stop" (which was 11/12
+            # of all exits, making "are the stops right?" unanswerable).
+            exit_reason = self._classify_stop_exit(pos)
             self.trade_tracker.record_trade(
                 ticker=ticker,
                 entry_date=pos.entry_datetime,
@@ -214,18 +218,41 @@ class QuantManager:
                 entry_price=pos.entry_price,
                 exit_price=exit_price,
                 shares=pos.shares,
-                exit_reason="server_stop",
+                exit_reason=exit_reason,
                 score=pos.score,
                 reasons=pos.reasons,
             )
             console.print(
-                f"    [yellow]Recorded server-stop exit for {ticker} "
+                f"    [yellow]Recorded {exit_reason} exit for {ticker} "
                 f"@ ~${exit_price:.2f}[/yellow]"
             )
-            self._log("sync", f"Server-stop exit detected for {ticker}")
+            self._log("sync", f"Stop exit ({exit_reason}) detected for {ticker}")
 
         # Cache account info
         self._account = self.broker.get_account()
+
+    def _classify_stop_exit(self, pos) -> str:
+        """Reconstruct which stop tier fired for a broker-filled stop (B3).
+
+        A server-side stop that fills while we're offline arrives as a bare
+        "position vanished" event with no reason. But the position's
+        high-water mark tells us which tier was active: a stop only trails up
+        once the gain crosses each threshold, so the peak gain maps 1:1 to the
+        tier that was protecting it. Everything below the first trail threshold
+        is the fixed initial stop.
+        """
+        try:
+            peak_gain = (pos.high_since_entry - pos.entry_price) / pos.entry_price
+        except (TypeError, ZeroDivisionError):
+            return "server_stop"  # can't reconstruct; keep the catch-all
+        # Thresholds mirror settings.trailing_stops keys (0.10/0.20/0.30).
+        applicable = None
+        for threshold in sorted(self.settings.trailing_stops):
+            if peak_gain >= threshold:
+                applicable = threshold
+        if applicable is None:
+            return "initial_stop"          # never reached +10% → fixed 14% stop
+        return f"trail_{int(applicable * 100)}"  # trail_10 / trail_20 / trail_30
 
     def _get_portfolio_value(self) -> float:
         """Get current portfolio value from broker, falling back to config."""
@@ -804,9 +831,28 @@ class QuantManager:
 
             size_pct = self._calculate_position_size_pct(ticker, regime)
             target_value = portfolio_value * size_pct
-            shares = int(target_value / price)
-            if shares < 1:
-                continue
+            whole_shares = int(target_value / price)
+
+            # B4: deploy the exact allocation via a notional (fractional) order
+            # when integer shares would under-deploy — either it rounds to zero
+            # (a name pricier than the whole clip) or it's an expensive name
+            # where the rounding drag is worst. Cheaper names keep the
+            # integer-limit path (with buy escalation).
+            use_notional = getattr(self.settings, "notional_orders_enabled", False) and (
+                whole_shares < 1 or price >= getattr(self.settings, "notional_min_price", 500.0)
+            )
+            if use_notional:
+                cost = round(target_value, 2)
+                if cost > cash:  # respect remaining cash like the integer path
+                    continue
+                shares = round(target_value / price, 4)  # display; fractional
+                notional = cost
+            else:
+                if whole_shares < 1:
+                    continue
+                shares = whole_shares
+                cost = round(price * shares, 2)
+                notional = None
 
             stop_price = price * (1 - self.settings.initial_stop_pct)
 
@@ -814,12 +860,12 @@ class QuantManager:
             summary = self.ranker.format_pick_summary(pick)
             reasons = summary.get("reasons", [])
 
-            cost = round(price * shares, 2)
             buy_list.append({
                 "ticker": ticker,
                 "price": price,
                 "shares": shares,
                 "cost": cost,
+                "notional": notional,  # dollar amount if fractional, else None
                 "stop": round(stop_price, 2),
                 "score": round(pick.composite_score, 1),
                 "size_pct": round(size_pct * 100, 1),
@@ -976,12 +1022,18 @@ class QuantManager:
             # Execute the entry
             entry_price = entry["price"]
             entry_shares = entry["shares"]
+            notional = entry.get("notional")
 
             if self.broker:
-                limit_price = round(
-                    entry_price * (1 + self.settings.buy_limit_buffer_pct), 2
-                )
-                result = self.broker.buy(entry["ticker"], entry_shares, limit_price)
+                if notional:
+                    # B4: notional (fractional) market buy — deploys the exact
+                    # dollar allocation on a high-priced name.
+                    result = self.broker.buy_notional(entry["ticker"], notional)
+                else:
+                    limit_price = round(
+                        entry_price * (1 + self.settings.buy_limit_buffer_pct), 2
+                    )
+                    result = self.broker.buy(entry["ticker"], entry_shares, limit_price)
                 if result.status == "filled":
                     # Track execution quality
                     if self.execution_quality_tracker is not None:
@@ -993,28 +1045,44 @@ class QuantManager:
                             order_id=result.order_id,
                         )
                     entry_price = result.filled_price
-                    entry_shares = int(result.filled_qty)
+                    # Keep fractional qty for notional fills; integer otherwise.
+                    entry_shares = (
+                        round(float(result.filled_qty), 4) if notional
+                        else int(result.filled_qty)
+                    )
                     console.print(
                         f"  [green]Broker filled: {entry_shares} shares "
                         f"@ ${entry_price:.2f}[/green]"
                     )
 
-                    # Place server-side GTC stop as crash-proof safety net
+                    # Place server-side GTC stop as crash-proof safety net.
+                    # Fractional qty can't carry a broker stop, so stop the
+                    # whole-share FLOOR broker-side; the monitor's deterministic
+                    # exit covers the remaining <1 fractional share.
                     if self.settings.server_stops_enabled:
                         server_stop = round(
                             entry["stop"] * (1 - self.settings.server_stop_offset_pct), 2
                         )
-                        stop_result = self.broker.place_stop_order(
-                            entry["ticker"], entry_shares, server_stop
-                        )
+                        stop_qty = int(entry_shares)  # floor; 0 if pure-fractional
+                        if stop_qty < 1:
+                            self._log(
+                                "execution",
+                                f"{entry['ticker']}: {entry_shares} shares is sub-1; "
+                                f"no broker stop, monitor covers exit",
+                            )
+                            stop_result = OrderResult(status="skipped")
+                        else:
+                            stop_result = self.broker.place_stop_order(
+                                entry["ticker"], stop_qty, server_stop
+                            )
                         if stop_result.status == "failed":
-                            # Retry once
+                            # Retry once (same floor qty as the first attempt)
                             import time as _time
                             _time.sleep(1)
                             stop_result = self.broker.place_stop_order(
-                                entry["ticker"], entry_shares, server_stop
+                                entry["ticker"], stop_qty, server_stop
                             )
-                        if stop_result.status != "failed":
+                        if stop_result.status not in ("failed",):
                             console.print(
                                 f"  Server stop placed: ${server_stop:.2f}"
                             )

@@ -229,6 +229,27 @@ class TestBuy:
         assert mock_client.submit_order.call_args_list[1][0][0].type == OrderType.MARKET
 
 
+    def test_buy_notional_submits_dollar_order_and_returns_fractional(self, broker, mock_client):
+        """B4: notional buy submits a dollar-amount market order and returns
+        the fractional filled qty (for exact-allocation deployment)."""
+        submitted = _make_order(order_id="not-1", status=OrderStatus.NEW,
+                                order_type=OrderType.MARKET)
+        filled = _make_order(
+            order_id="not-1", status=OrderStatus.FILLED, order_type=OrderType.MARKET,
+            filled_avg_price=1858.0, filled_qty=0.7535,
+        )
+        mock_client.submit_order.return_value = submitted
+        mock_client.get_order_by_id.return_value = filled
+
+        with patch("src.broker.alpaca.time.sleep"):
+            result = broker.buy_notional("SNDK", 1400.0)
+
+        assert result.status == "filled"
+        assert result.filled_qty == 0.7535  # fractional preserved
+        req = mock_client.submit_order.call_args[0][0]
+        assert req.notional == 1400.0 and req.side == OrderSide.BUY
+
+
 # ---------------------------------------------------------------------------
 # A2: sell() tests
 # ---------------------------------------------------------------------------
