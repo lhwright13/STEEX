@@ -44,6 +44,20 @@ def test_build_context_picks_out_todays_exits(tmp_path):
     assert c["perf_1d"] is None or "portfolio_return_pct" in c["perf_1d"]
 
 
+def test_build_context_matches_exits_with_human_format_today(tmp_path):
+    """Regression: orchestrator sets today='Thursday, July 02, 2026' (human
+    format); the ISO comparison never matched, so '💰 Closed today' was
+    permanently empty in every production recap."""
+    trades = [{"ticker": "TER", "exit_date": "2026-07-02T08:01:00", "pnl_dollars": 14.68,
+               "pnl_pct": 0.009, "exit_reason": "server_stop"}]
+    (tmp_path / "trades.json").write_text(json.dumps(trades))
+    final = {"today": "Thursday, July 02, 2026", "mode": "post_market"}
+    c = _build_context(final, _settings(tmp_path))
+    assert c["date"] == "2026-07-02"
+    assert [e["ticker"] for e in c["today_exits"]] == ["TER"]
+    assert c["realized_today"] == 14.68
+
+
 def test_format_sections_renders_recap_blocks():
     ctx = {
         "perf_1d": {"start_equity": 50000, "end_equity": 50750, "portfolio_return_pct": 1.5},

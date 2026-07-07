@@ -112,7 +112,7 @@ def test_format_sections_renders_three_blocks():
         "sell_watch": [{"ticker": "GOOGL", "reason": "4.2% above stop"}],
     }
     out = _format_sections(ctx)
-    assert "🎯 Bought: MO (55)" in out
+    assert "🎯 Approved to buy: MO (55)" in out
     assert "👀 Close calls: AMD (35) — below score gate" in out
     assert "⚠️ Watching to sell: GOOGL — 4.2% above stop" in out
 
@@ -122,8 +122,26 @@ def test_format_sections_caps_and_counts_remainder():
         {"ticker": f"T{i}", "score": 50 - i, "reason": "passed by manager"} for i in range(6)
     ], "sell_watch": []}
     out = _format_sections(ctx)
-    assert "🎯 Bought: no new entries today" in out
+    assert "🎯 Approved to buy: none today" in out
     assert "+3 more" in out  # 6 close calls, capped at 3
+
+
+def test_sell_watch_handles_exit_recommendation_dicts(tmp_path):
+    """Regression: risk's exits_recommended holds ExitRecommendation DICTS; a
+    stringified dict once leaked into the 07-01 Telegram brief as a 'ticker'."""
+    final = {"conclusions": {"risk": {"exits_recommended": [
+        {"ticker": "MAR", "reason": "below_ma", "urgency": "end_of_day"},
+    ]}}}
+    sw = _sell_watch(final, _settings(tmp_path), positions={})
+    assert sw == [{"ticker": "MAR", "reason": "flagged by risk (below_ma)", "rank": 0}]
+    assert "{" not in sw[0]["ticker"]  # never a stringified dict
+
+
+def test_iso_day_normalizes_orchestrator_human_format():
+    from src.notify.morning_digest import iso_day
+    assert iso_day({"today": "Thursday, July 02, 2026"}) == "2026-07-02"
+    assert iso_day({"today": "2026-06-08"}) == "2026-06-08"
+    assert len(iso_day({})) == 10  # falls back to today, ISO shaped
 
 
 def test_build_context_attaches_close_calls_and_sell_watch(tmp_path):

@@ -96,6 +96,16 @@ def test_enforce_length_passes_short_through():
     assert _enforce_length("") == ""
 
 
+def test_enforce_length_does_not_split_decimals():
+    """Regression: 'gained 9.4%' was split at 'gained 9.' — big-move alerts
+    ended mid-number (MRNA/WDC, 06-29/06-30)."""
+    six = ("The stock gained 9.4% today on volume. It closed at $102.35 strong. "
+           "Stop sits at $95.5 now. Fourth sentence here. Fifth one too. Sixth extra.")
+    out = _enforce_length(six)
+    assert "9.4%" in out and "$102.35" in out and "$95.5" in out
+    assert out.rstrip().endswith("Fifth one too.")  # clamped at 5 real sentences
+
+
 def test_enforce_length_none_skips_clamp():
     """The multi-section daily brief/recap pass max_sentences=None to keep their
     deterministic bullet blocks intact."""

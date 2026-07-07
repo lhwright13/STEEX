@@ -27,8 +27,13 @@ _MAX_SENTENCES = 5
 
 def _split_sentences(text: str):
     """Split into sentences, keeping terminal punctuation; tolerant of a final
-    fragment with no period."""
-    return re.findall(r"[^.!?]+[.!?]+|\S[^.!?]*$", text.strip())
+    fragment with no period.
+
+    A period only ends a sentence when followed by whitespace or end-of-string,
+    so decimals don't split: the old pattern cut "gained 9.4%" at "gained 9." —
+    users saw alerts ending mid-number (MRNA/WDC big-moves, 06-29/06-30).
+    """
+    return re.findall(r".+?[.!?]+(?=\s|$)|.+$", text.strip(), flags=re.DOTALL)
 
 
 def _enforce_length(text: str, max_sentences: Optional[int] = _MAX_SENTENCES) -> str:

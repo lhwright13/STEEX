@@ -33,6 +33,28 @@ _MAX_HOLD_BUFFER_DAYS = 10     # within this many trading days of max hold → f
 _SECTION_CAP = 3               # max rows per section (keeps it a brief)
 
 
+def iso_day(final_state: Dict) -> str:
+    """Normalize the pipeline's day to ISO YYYY-MM-DD.
+
+    The orchestrator sets final_state["today"] to a HUMAN format
+    ("Thursday, July 02, 2026"). The recap compared that against ISO
+    exit_dates (never matched → '💰 Closed today' was permanently empty) and
+    it leaked into update ids (digest_Thursday, July 02, 2026 vs the
+    documented digest_<YYYY-MM-DD>). Accept ISO, the human format, or nothing.
+    """
+    raw = (final_state or {}).get("today") or ""
+    if raw:
+        try:  # already ISO?
+            return datetime.strptime(raw[:10], "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            pass
+        try:  # orchestrator's human format
+            return datetime.strptime(raw, "%A, %B %d, %Y").date().isoformat()
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 def _load_positions(settings) -> Dict[str, Dict]:
     """Locally tracked open positions (data/positions.json), keyed by ticker."""
     try:
@@ -114,11 +136,22 @@ def _sell_watch(final_state: Dict, settings, positions: Dict[str, Dict]) -> List
     """
     concl = (final_state or {}).get("conclusions") or {}
     risk = concl.get("risk") or {}
-    flagged = {str(t).upper() for t in (risk.get("exits_recommended") or [])}
+    # exits_recommended holds ExitRecommendation DICTS from the risk agent
+    # (ticker/reason/urgency/...), not bare ticker strings — str(dict).upper()
+    # once leaked a stringified dict into the 07-01 Telegram brief. Accept both.
+    flagged: Dict[str, str] = {}
+    for t in (risk.get("exits_recommended") or []):
+        if isinstance(t, dict):
+            tk = str(t.get("ticker") or "").upper()
+            why = str(t.get("reason") or "").strip()
+        else:
+            tk, why = str(t).upper(), ""
+        if tk:
+            flagged[tk] = f"flagged by risk ({why})" if why else "flagged by risk"
 
     rows: Dict[str, Dict] = {}
-    for tk in flagged:
-        rows[tk] = {"ticker": tk, "reason": "flagged by risk", "rank": 0}
+    for tk, reason in flagged.items():
+        rows[tk] = {"ticker": tk, "reason": reason, "rank": 0}
 
     if not positions:  # nothing to scan; avoid importing price/signal providers
         return list(rows.values())
@@ -144,7 +177,13 @@ def _sell_watch(final_state: Dict, settings, positions: Dict[str, Dict]) -> List
             stop = p.get("current_stop")
             if price and stop:
                 pct_above = (price - stop) / price * 100
-                if 0 <= pct_above <= _STOP_PROXIMITY_PCT:
+                if pct_above < 0:
+                    # Gapped THROUGH the stop overnight — the most urgent case
+                    # (exit will fire at the next monitor run). Previously the
+                    # `0 <=` bound silently excluded exactly this.
+                    reasons.append(f"BELOW stop by {-pct_above:.1f}%")
+                    rank = min(rank, -1.0)
+                elif pct_above <= _STOP_PROXIMITY_PCT:
                     reasons.append(f"{pct_above:.1f}% above stop")
                     rank = min(rank, pct_above)
             # Approaching max hold.
@@ -227,12 +266,16 @@ def _format_sections(ctx: Dict) -> str:
     """Deterministic bullet sections appended under the Claude lede."""
     lines: List[str] = []
 
+    # "Approved", not "Bought": the digest fires after the SCREEN run, but fills
+    # happen later in the enter mode (and can be dropped by sizing, cash reserve,
+    # kill switch, or the broker). Claiming "Bought" here was factually wrong —
+    # actual fills are confirmed by the buy notifications and the EOD recap.
     picks = ctx.get("picks") or []
     if picks:
         body = ", ".join(f"{p['ticker']} ({_fmt_score(p.get('score'))})" for p in picks if p.get("ticker"))
-        lines.append(f"🎯 Bought: {body}")
+        lines.append(f"🎯 Approved to buy: {body}")
     else:
-        lines.append("🎯 Bought: no new entries today")
+        lines.append("🎯 Approved to buy: none today")
 
     cc = ctx.get("close_calls") or []
     if cc:
@@ -285,13 +328,20 @@ def _digest_summarizer(settings) -> Callable[[Dict], str]:
             "below your lede. Use the specific numbers given. No preamble, no "
             'markdown. Output ONLY JSON: {"summary": "..."}'
         )
-        conclusion, _ = run_agent(
-            ctx, role="MorningDigest", system_prompt=prompt,
-            task_message=f"This morning's data:\n{event.get('context')}",
-            conclusion_type=EventSummary, max_turns=1, needs_tools=False,
-            model=getattr(settings, "event_resolver_model", None) or None,
-        )
-        lede = (conclusion.summary if conclusion else "") or "Morning market brief."
+        # LLM lede is best-effort: if the CLI is down (auth outage, 07-02) we
+        # still ship the deterministic sections under a canned lede instead of
+        # letting the exception erase the whole brief.
+        try:
+            conclusion, _ = run_agent(
+                ctx, role="MorningDigest", system_prompt=prompt,
+                task_message=f"This morning's data:\n{event.get('context')}",
+                conclusion_type=EventSummary, max_turns=1, needs_tools=False,
+                model=getattr(settings, "event_resolver_model", None) or None,
+            )
+            lede = (conclusion.summary if conclusion else "") or "Morning market brief."
+        except Exception as e:
+            logger.warning("digest lede LLM call failed (%s); using canned lede", e)
+            lede = "Morning market brief (auto-generated; summary agent unavailable)."
         sections = _format_sections(event.get("context") or {})
         return f"{lede}\n\n{sections}".strip()
     return summarize
@@ -308,9 +358,16 @@ def send_morning_digest(
     if not getattr(settings, "morning_digest_enabled", True):
         return None
 
+    from src.notify import user_updates
     from src.notify.event_summary import summarize_and_notify
 
-    day = (final_state or {}).get("today") or datetime.now(timezone.utc).date().isoformat()
+    day = iso_day(final_state)
+    # Idempotency check BEFORE building context: _build_context runs a
+    # per-position price + 50-day-MA network scan; every non-first screen run
+    # of the day was paying that full scan just to be dropped by the
+    # already-sent check inside summarize_and_notify.
+    if user_updates.get_update(settings.data_dir, f"digest_{day}"):
+        return None
     context = _build_context(final_state, settings)
     return summarize_and_notify(
         {

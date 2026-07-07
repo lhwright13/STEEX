@@ -205,16 +205,65 @@ def _classify_transient_cli_error(
     blob = f"{stdout or ''}\n{stderr or ''}".lower()
     if not blob.strip():
         return None
+    # Hard logout is TERMINAL, not transient: retrying can never succeed until a
+    # human runs /login. Check first — on 07-02 raw substring matching sometimes
+    # classified a logged-out CLI as "server 502" because a session UUID in the
+    # init JSON happened to contain a 5xx digit run, burning the retry budget.
+    if "authentication_failed" in blob or "not logged in" in blob:
+        return None
+    # Max-turns exhaustion is a workflow-length problem, not API weather —
+    # retrying replays the same too-long workflow (07-06: 3 x ~13min wasted
+    # in the enter run when a stray digit-run matched "500").
+    if "error_max_turns" in blob:
+        return None
+    # Word-boundary match so status codes aren't found inside UUIDs/hex ids.
     for code, label in (
         ("401", "auth 401"), ("403", "auth 403"), ("429", "rate-limit 429"),
         ("500", "server 500"), ("502", "server 502"), ("503", "server 503"),
         ("529", "overloaded 529"),
     ):
-        if code in blob:
+        if re.search(rf"\b{code}\b", blob):
             return label
     if any(k in blob for k in ("overloaded", "rate limit", "econnreset", "etimedout")):
         return "transient"
     return None
+
+
+def _is_auth_logout(stdout: Optional[str], stderr: Optional[str]) -> bool:
+    """Hard CLI logout — the whole agent layer is down until /login is run."""
+    blob = f"{stdout or ''}\n{stderr or ''}".lower()
+    return "authentication_failed" in blob or "not logged in" in blob
+
+
+def _alert_auth_logout(ctx: RunnerContext, role: str) -> None:
+    """Telegram the operator ONCE per UTC day that the CLI is logged out.
+
+    Both prior auth outages (06-01, 07-02) ran all day with zero operator
+    notification — every agent silently fell back to the deterministic
+    pipeline. Idempotent via the user_updates id; deterministic summarizer
+    because the LLM path is exactly what's broken.
+    """
+    try:
+        from datetime import datetime, timezone
+        from src.notify.event_summary import summarize_and_notify
+        day = datetime.now(timezone.utc).date().isoformat()
+        summarize_and_notify(
+            {
+                "id": f"auth_down_{day}",
+                "type": "system",
+                "title": "🚨 Claude CLI logged out — agent layer down",
+                "context": {"first_failed_agent": role,
+                            "fix": "ssh to the mini and run: claude /login"},
+            },
+            settings=ctx.settings,
+            summarizer=lambda _e: (
+                f"The claude CLI on the trading box is logged out ({role} failed with "
+                f"authentication_failed). All agents are falling back to the deterministic "
+                f"pipeline and the event trigger is blind until you run /login on the mini."
+            ),
+        )
+    except Exception:
+        logger.exception("auth-logout alert failed")
 
 
 def run_agent(
@@ -333,6 +382,10 @@ def run_agent(
                 role, result.returncode, stderr_text[:500], stdout_text[:500], fail_path,
             )
             console.print(f"  [red]{role} failed[/red] (see {fail_path})")
+            # Hard logout: alert the operator (once/day) — both prior auth
+            # outages (06-01, 07-02) ran silently all day on the fallback.
+            if _is_auth_logout(stdout_text, stderr_text):
+                _alert_auth_logout(ctx, role)
             # Distinct label so an outage isn't mislabeled as a risk-logic failure.
             label = (
                 f"{transient} outage (exhausted retries)" if transient
@@ -354,6 +407,8 @@ def run_agent(
             error_msg = envelope.get("result", "unknown error")
             logger.error("%s returned error: %s", role, error_msg)
             console.print(f"  [red]{role} error: {error_msg}[/red]")
+            if _is_auth_logout(str(error_msg), None):
+                _alert_auth_logout(ctx, role)
             trace.finish(success=False, error=str(error_msg))
             return None, trace
 

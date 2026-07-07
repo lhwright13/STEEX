@@ -610,6 +610,20 @@ class Orchestrator:
             session.fallback_used = True
             self._finalize_session(session)
             cleanup_mcp(ctx)
+            # Still send the daily briefs on the fallback path — on 07-02 the
+            # agent-layer outage meant no morning brief and no EOD recap at all
+            # (the hooks below were only reached on the happy path). Both are
+            # idempotent per day and their deterministic sections don't need
+            # the LLM; the summarizers degrade to a canned lede if it's down.
+            try:
+                if mode == "screen":
+                    from src.notify.morning_digest import send_morning_digest
+                    send_morning_digest(final_state, self.settings)
+                elif mode == "post_market":
+                    from src.notify.daily_recap import send_daily_recap
+                    send_daily_recap(final_state, self.settings)
+            except Exception as e:  # a notification must never break a trading run
+                logger.error("fallback-path digest/recap failed: %s", e)
             return final_state.get("manager_decision") or {}
 
         # Deserialize decision for report building

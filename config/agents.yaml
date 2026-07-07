@@ -104,13 +104,23 @@ agents:
   execution:
     prompt: "execution"
     conclusion: "ExecutionConclusion"
-    max_turns: 10
+    # 18, not 10: the exit chain added 3 tool calls (get_exit_signals ->
+    # generate_sell_list -> execute_exits) and ToolSearch schema loads burn
+    # ~3 more turns — the 07-06 enter run died at max_turns(10) mid-workflow
+    # before it could execute exits or emit its conclusion.
+    max_turns: 18
     needs_tools: true
     allowed_tools:
       - sync_broker
       - load_screen_results
       - size_buy_list
       - execute_entries
+      # Exit chain: execute_exits hard-requires generate_sell_list, which
+      # hard-requires get_exit_signals (per-process MCP state). Without all
+      # three granted, every pipeline exit was permission-denied — audit
+      # 2026-07-02 found exits_executed>0 in ZERO runs ever.
+      - get_exit_signals
+      - generate_sell_list
       - execute_exits
       - get_order_status
       - get_positions

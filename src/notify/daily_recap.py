@@ -27,7 +27,12 @@ _SECTION_CAP = 5
 
 
 def _today(final_state: Dict) -> str:
-    return (final_state or {}).get("today") or datetime.now(timezone.utc).date().isoformat()
+    # ISO-normalized: the orchestrator's final_state["today"] is a human string
+    # ("Thursday, July 02, 2026"), which could never equal trades.json's ISO
+    # exit_date — so '💰 Closed today' was ALWAYS empty and realized_today
+    # always $0 (audit 2026-07-02). iso_day handles both formats.
+    from src.notify.morning_digest import iso_day
+    return iso_day(final_state)
 
 
 def _load_trades(settings) -> List[Dict]:
@@ -217,13 +222,19 @@ def _recap_summarizer(settings) -> Callable[[Dict], str]:
             "the bullet sections below your lede. Use the specific figures given. "
             'No preamble, no markdown. Output ONLY JSON: {"summary": "..."}'
         )
-        conclusion, _ = run_agent(
-            ctx, role="DailyRecap", system_prompt=prompt,
-            task_message=f"Today's results:\n{event.get('context')}",
-            conclusion_type=EventSummary, max_turns=1, needs_tools=False,
-            model=getattr(settings, "event_resolver_model", None) or None,
-        )
-        lede = (conclusion.summary if conclusion else "") or "End-of-day recap."
+        # LLM lede is best-effort: still ship the deterministic sections with a
+        # canned lede when the CLI is down (see morning_digest for rationale).
+        try:
+            conclusion, _ = run_agent(
+                ctx, role="DailyRecap", system_prompt=prompt,
+                task_message=f"Today's results:\n{event.get('context')}",
+                conclusion_type=EventSummary, max_turns=1, needs_tools=False,
+                model=getattr(settings, "event_resolver_model", None) or None,
+            )
+            lede = (conclusion.summary if conclusion else "") or "End-of-day recap."
+        except Exception as e:
+            logger.warning("recap lede LLM call failed (%s); using canned lede", e)
+            lede = "End-of-day recap (auto-generated; summary agent unavailable)."
         sections = _format_sections(event.get("context") or {})
         return f"{lede}\n\n{sections}".strip()
     return summarize

@@ -187,15 +187,27 @@ class EventTrigger:
                     _record(ev, "skipped", "no resolver for untickered event", "noise")
                     continue
                 res = resolver(ev)
+                if res is None:
+                    # Resolver FAILED (CLI auth/turn-limit/crash) — this is an
+                    # infrastructure error, NOT a verdict. Previously this was
+                    # recorded as classification="noise" with a fabricated
+                    # all-false verdict, silently discarding actionable posts
+                    # (2026-07-02: a bullish Micron post was dropped this way
+                    # while the CLI was logged out). Record it distinctly so
+                    # the dashboard/operator can see resolver-down.
+                    result["skipped"].append({"reason": "resolver error (no verdict)", "headline": ev.headline[:120]})
+                    _record(ev, "skipped", "resolver error (no verdict)", "resolver_error")
+                    result["resolver_errors"] = result.get("resolver_errors", 0) + 1
+                    continue
                 verdict = {
-                    "mentions_company": bool(getattr(res, "mentions_company", False)) if res else False,
-                    "ticker": getattr(res, "ticker", None) if res else None,
-                    "is_bullish": bool(getattr(res, "is_bullish", False)) if res else False,
-                    "confidence": getattr(res, "confidence", None) if res else None,
-                    "company": getattr(res, "company_name", None) if res else None,
-                    "reasoning": _clip(getattr(res, "reasoning", None)) if res else None,
+                    "mentions_company": bool(getattr(res, "mentions_company", False)),
+                    "ticker": getattr(res, "ticker", None),
+                    "is_bullish": bool(getattr(res, "is_bullish", False)),
+                    "confidence": getattr(res, "confidence", None),
+                    "company": getattr(res, "company_name", None),
+                    "reasoning": _clip(getattr(res, "reasoning", None)),
                 }
-                if not res or not getattr(res, "mentions_company", False) or not getattr(res, "is_bullish", False):
+                if not getattr(res, "mentions_company", False) or not getattr(res, "is_bullish", False):
                     result["skipped"].append({"reason": "not a bullish company signal", "headline": ev.headline[:120]})
                     _record(ev, "skipped", "not a bullish company signal", "noise", verdict=verdict)
                     continue
@@ -293,4 +305,38 @@ class EventTrigger:
                 _record(ev, "skipped", "execution returned no fill", "near_miss", ticker=ticker, verdict=verdict, score=score)
 
         self._save_trades(trades)
+
+        # Resolver-down alert: if every resolver call in a scan failed, the
+        # event trigger is effectively blind (posts recorded as resolver_error,
+        # no verdicts). Tell the operator via Telegram once per UTC day —
+        # idempotent via the user_updates id, so a broken resolver doesn't spam
+        # every minute of event_scan.
+        errors = result.get("resolver_errors", 0)
+        if errors and not result["actionable"] and not result["executed"]:
+            try:
+                from src.notify.event_summary import summarize_and_notify
+                day = now.date().isoformat()
+                summarize_and_notify(
+                    {
+                        "id": f"resolver_down_{day}",
+                        "type": "system",
+                        "title": "⚠️ Event trigger blind: ticker resolver failing",
+                        "context": {
+                            "resolver_errors": errors,
+                            "posts_scanned": result["scanned"],
+                            "hint": "claude CLI auth or turn-limit failure; check "
+                                    "data/agents/failures/ and run /login if logged out",
+                        },
+                        # deterministic text; don't depend on the (likely broken) LLM
+                    },
+                    settings=self.settings,
+                    summarizer=lambda _e: (
+                        f"The event ticker resolver failed on {errors} post(s) this scan, "
+                        f"so posts are being skipped without real verdicts. Likely the "
+                        f"claude CLI is logged out or erroring — check the mini."
+                    ),
+                )
+            except Exception:
+                logger.exception("resolver-down alert failed")
+
         return result
