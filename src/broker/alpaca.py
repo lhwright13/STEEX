@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 FILL_POLL_INTERVAL = 2.0  # seconds between fill checks
 FILL_TIMEOUT = 300.0  # max seconds to wait for fill (5 min)
 SELL_LIMIT_FALLBACK_SECS = 60.0  # escalate sell limit to market after this many seconds
+# Buys escalate too: sized limits use 15-min-delayed quotes, so at the open the
+# limit often sits below a rising market and times out (PM 06-05/07-02, KLAC/DVA
+# 07-06 — zero entries filled). 90s gives the limit a fair shot first.
+BUY_LIMIT_FALLBACK_SECS = 90.0
 
 
 class AlpacaBroker(Broker):
@@ -700,29 +704,30 @@ class AlpacaBroker(Broker):
             side.value, ticker, qty, side.value, limit_price, order_id,
         )
 
-        # Poll for fill; escalate sell limit -> market if it stalls
+        # Poll for fill; escalate a stalled limit -> market (sells at 60s,
+        # buys at 90s — both sides suffered stale-quote limit timeouts).
         elapsed = 0.0
         escalated = False
+        fallback_secs = (
+            SELL_LIMIT_FALLBACK_SECS if side == OrderSide.SELL else BUY_LIMIT_FALLBACK_SECS
+        )
         while elapsed < FILL_TIMEOUT:
             time.sleep(FILL_POLL_INTERVAL)
             elapsed += FILL_POLL_INTERVAL
 
-            # Escalate a stalled sell limit order to a market order
-            if (
-                not escalated
-                and side == OrderSide.SELL
-                and elapsed >= SELL_LIMIT_FALLBACK_SECS
-            ):
+            # Escalate a stalled limit order to a market order
+            if not escalated and elapsed >= fallback_secs:
                 logger.warning(
-                    "Sell limit order %s for %s not filled after %.0fs — "
+                    "%s limit order %s for %s not filled after %.0fs — "
                     "cancelling and re-submitting as market order",
-                    order_id, ticker, elapsed,
+                    side.value, order_id, ticker, elapsed,
                 )
                 self.cancel_order(order_id)
                 escalated = True
-                market_result = self._place_market_order(ticker, qty, OrderSide.SELL)
+                market_result = self._place_market_order(ticker, qty, side)
                 logger.info(
-                    "Market sell escalation result for %s: %s", ticker, market_result.status
+                    "Market %s escalation result for %s: %s",
+                    side.value, ticker, market_result.status,
                 )
                 return market_result
 

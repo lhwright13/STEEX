@@ -196,6 +196,38 @@ class TestBuy:
 
         assert result.status == "filled"
 
+    def test_buy_limit_escalates_to_market_when_stalled(self, broker, mock_client):
+        """A stalled buy LIMIT is cancelled and re-submitted as a market order.
+
+        Regression (07-06): sized buy limits use 15-min-delayed quotes and sat
+        below a rising open, timing out with zero fills. Buys now escalate
+        limit->market after BUY_LIMIT_FALLBACK_SECS like sells do.
+        """
+        limit_pending = _make_order(order_id="lim-1", status=OrderStatus.NEW)
+        market_filled = _make_order(
+            order_id="mkt-1", status=OrderStatus.FILLED,
+            order_type=OrderType.MARKET, filled_avg_price=101.25, filled_qty=5,
+        )
+        # First submit = the limit order; second submit = the escalated market.
+        mock_client.submit_order.side_effect = [limit_pending, market_filled]
+        # Limit polls never fill (stays NEW); once escalated, the market poll fills.
+        mock_client.get_order_by_id.side_effect = [
+            limit_pending, limit_pending, market_filled,
+        ]
+
+        with patch("src.broker.alpaca.time.sleep"), \
+             patch("src.broker.alpaca.FILL_POLL_INTERVAL", 1.0), \
+             patch("src.broker.alpaca.BUY_LIMIT_FALLBACK_SECS", 2.0), \
+             patch("src.broker.alpaca.FILL_TIMEOUT", 30.0):
+            result = broker.buy("AAPL", 5, 100.00)
+
+        assert result.status == "filled"
+        assert result.filled_price == 101.25
+        # the stalled limit was cancelled, then a market order submitted
+        mock_client.cancel_order_by_id.assert_called_once_with("lim-1")
+        assert mock_client.submit_order.call_count == 2
+        assert mock_client.submit_order.call_args_list[1][0][0].type == OrderType.MARKET
+
 
 # ---------------------------------------------------------------------------
 # A2: sell() tests

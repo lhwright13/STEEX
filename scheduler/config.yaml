@@ -42,6 +42,15 @@ modes:
     schedule: "30 10 * * 1-5"     # 10:30 AM PST = 1:30 PM ET, weekdays
     mode_name: "monitor"
 
+  # Near-close monitor: last chance to execute end_of_day exits (below_ma etc.)
+  # while the market is still open. run_monitor escalates end_of_day->immediate
+  # when the close is <50 min away. Without this, those exits deferred to
+  # post_market (16:30 ET, after close) and timed out 100% of the time.
+  monitor_close:
+    enabled: true
+    schedule: "20 12 * * 1-5"     # 12:20 PM PST = 3:20 PM ET, weekdays
+    mode_name: "monitor"
+
   stop_sync:
     enabled: true
     schedule: "45 12 * * 1-5"     # 12:45 PM PST = 3:45 PM ET, weekdays

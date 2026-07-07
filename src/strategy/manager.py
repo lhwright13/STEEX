@@ -250,6 +250,34 @@ class QuantManager:
             entry["data"] = data
         self.log.append(entry)
 
+    def _market_is_open(self) -> bool:
+        """Broker market clock; fail-open=False (no broker/clock -> treat closed)."""
+        if not self.broker:
+            return False
+        try:
+            return bool(self.broker.get_clock().get("is_open"))
+        except Exception:
+            return False
+
+    def _market_closes_within(self, minutes: int) -> bool:
+        """True when the market is open AND closes within `minutes`.
+
+        Used by the near-close monitor run to escalate end_of_day exits to
+        immediate while a market sell can still fill. Fail-closed (False) so a
+        clock hiccup never triggers a spurious escalation.
+        """
+        if not self.broker:
+            return False
+        try:
+            clock = self.broker.get_clock()
+            if not clock.get("is_open") or not clock.get("next_close"):
+                return False
+            next_close = datetime.fromisoformat(clock["next_close"])
+            now = datetime.now(next_close.tzinfo) if next_close.tzinfo else datetime.now()
+            return (next_close - now).total_seconds() <= minutes * 60
+        except Exception:
+            return False
+
     # -------------------------------------------------------------------------
     # DataAgent
     # -------------------------------------------------------------------------
@@ -1043,6 +1071,22 @@ class QuantManager:
         if not sell_list:
             return executed
 
+        # Near-close escalation lives HERE (not just run_monitor) so it covers
+        # BOTH paths: the deterministic pipeline and the agent-mode MCP tool.
+        # On 07-06 the agent-mode monitor_close approved IRM/JBL (end_of_day)
+        # and MAR (next_session, dead_money) but execute_exits only fires
+        # "immediate" — 0 exits filled all day. Inside the last ~50 min of a
+        # session, deferred urgencies become immediate so they fill while the
+        # market is still open.
+        if not dry_run and self._market_closes_within(minutes=50):
+            for item in sell_list:
+                if item["urgency"] in ("end_of_day", "next_session"):
+                    console.print(
+                        f"  [yellow]Escalating {item['urgency']} exit to immediate "
+                        f"(market closes soon): {item['ticker']}[/yellow]"
+                    )
+                    item["urgency"] = "immediate"
+
         for item in sell_list:
             is_immediate = item["urgency"] == "immediate"
             pnl_color = "green" if item["pnl_dollars"] >= 0 else "red"
@@ -1095,6 +1139,24 @@ class QuantManager:
                             "execution",
                             f"Broker sell failed for {item['ticker']}: {result.error}",
                         )
+                        # CRITICAL: the stop was cancelled above before the sell
+                        # attempt. If the sell fails, RE-PLACE the stop so the
+                        # position is never left unprotected — after 07-02's
+                        # post-close sell timeouts, MAR/IRM/JBL sat stop-less
+                        # until the next risk sync (over the long weekend).
+                        if (
+                            self.broker
+                            and self.settings.server_stops_enabled
+                            and position.current_stop
+                        ):
+                            restore = self.broker.place_stop_order(
+                                item["ticker"], position.shares, position.current_stop
+                            )
+                            self._log(
+                                "execution",
+                                f"Re-placed stop for {item['ticker']} after failed sell "
+                                f"@ ${position.current_stop:.2f} ({restore.status})",
+                            )
                         continue
 
                 self.trade_tracker.record_trade(
@@ -1579,6 +1641,9 @@ class QuantManager:
         sell_list = self.generate_sell_list(exit_signals)
 
         if sell_list:
+            # Near-close escalation (end_of_day/next_session -> immediate)
+            # happens inside execute_exits so it also covers the agent-mode
+            # MCP path, not just this deterministic one.
             self.execute_exits(sell_list, dry_run=dry_run)
         else:
             console.print("   No exit signals")
@@ -1622,10 +1687,21 @@ class QuantManager:
         sell_list = self.generate_sell_list(exit_signals)
 
         if sell_list:
-            # For post-market, also execute end_of_day urgency exits
-            for item in sell_list:
-                if item["urgency"] == "end_of_day":
-                    item["urgency"] = "immediate"
+            # Escalate end_of_day exits ONLY if the market is still open.
+            # post_market's cron slot (16:30 ET) is after the close, where a
+            # DAY market sell can never fill — each attempt burned 300s then
+            # cancelled ("Fill timeout"), leaving the position open anyway.
+            # The near-close monitor run now handles the escalation; here we
+            # just recommend so the signal is visible in the report.
+            if self._market_is_open():
+                for item in sell_list:
+                    if item["urgency"] == "end_of_day":
+                        item["urgency"] = "immediate"
+            else:
+                console.print(
+                    "   [dim]Market closed — end-of-day exits deferred to the "
+                    "next session (recommendation only)[/dim]"
+                )
             self.execute_exits(sell_list, dry_run=dry_run)
         else:
             console.print("   No exit signals")
