@@ -30,6 +30,11 @@ from .trace import AgentTrace, parse_stream_json_output
 logger = logging.getLogger("steex.nodes")
 console = Console()
 
+# get_mcp_config runs once per agent invocation, but a missing Alpha Vantage key
+# is a run-wide condition. Track whether we've already warned so the "key not set"
+# line appears at most once per process (run) instead of ~42×/log (one per agent).
+_av_key_warned = False
+
 
 def get_mcp_config(ctx: RunnerContext) -> str:
     """Write a temp MCP config file for the claude CLI.
@@ -103,7 +108,11 @@ def get_mcp_config(ctx: RunnerContext) -> str:
                 "args": [av_key],
             }
         else:
-            logger.warning("Alpha Vantage MCP enabled but ALPHA_VANTAGE_API_KEY not set")
+            # Skip the server entry and warn once per run (not once per agent).
+            global _av_key_warned
+            if not _av_key_warned:
+                logger.warning("Alpha Vantage MCP enabled but ALPHA_VANTAGE_API_KEY not set")
+                _av_key_warned = True
 
     config = {"mcpServers": servers}
     fd, path = tempfile.mkstemp(suffix=".json", prefix="steex_mcp_")
@@ -536,6 +545,7 @@ def make_agent_node(agent_name: str, is_critical: bool, ctx: RunnerContext) -> C
             external_servers=agent_cfg.external_servers,
             mode=state["mode"],
             run_id=state["run_id"],
+            model=ctx.registry.resolve_model(agent_name, ctx.settings.agent_default_model),
         )
 
         new_conclusions = {**state["conclusions"]}
@@ -622,6 +632,7 @@ def make_manager_node(
             needs_tools=manager_config.needs_tools,
             mode=mode,
             run_id=state["run_id"],
+            model=ctx.registry.resolve_model(manager_name, ctx.settings.agent_default_model),
         )
 
         if decision is None:
@@ -673,6 +684,7 @@ def make_execution_node(executor_name: str, ctx: RunnerContext) -> Callable:
             external_servers=exec_config.external_servers,
             mode=state["mode"],
             run_id=state["run_id"],
+            model=ctx.registry.resolve_model(executor_name, ctx.settings.agent_default_model),
         )
 
         # Persist the execution conclusion (entries/exits executed) into the run
@@ -904,6 +916,7 @@ def make_report_node(mode: str, ctx: RunnerContext) -> Callable:
             external_servers=report_config.external_servers,
             mode=mode,
             run_id=state["run_id"],
+            model=ctx.registry.resolve_model("report", ctx.settings.agent_default_model),
         )
 
         new_conclusions = {**(state.get("conclusions") or {})}
@@ -1008,6 +1021,7 @@ def make_variant_agent_node(agent_name: str, ctx: RunnerContext) -> Callable:
             external_servers=agent_cfg.external_servers,
             mode=state["mode"],
             run_id=state["run_id"],
+            model=ctx.registry.resolve_model(agent_name, ctx.settings.agent_default_model),
         )
 
         variant_item = {
@@ -1089,6 +1103,7 @@ def make_merge_variants_node(
             external_servers=meta_cfg.external_servers,
             mode=state["mode"],
             run_id=state["run_id"],
+            model=ctx.registry.resolve_model(meta_agent_name, ctx.settings.agent_default_model),
         )
 
         new_conclusions = {**state["conclusions"]}

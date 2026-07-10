@@ -37,6 +37,10 @@ class AgentConfig:
     needs_tools: bool = True
     allowed_tools: List[str] = field(default_factory=list)
     external_servers: List[str] = field(default_factory=list)
+    # Optional per-agent Claude model tier (e.g. "opus", "sonnet", "haiku").
+    # When None, the pipeline falls back to settings.agent_default_model — the
+    # agents no longer inherit the CLI's default model.
+    model: Optional[str] = None
 
 
 @dataclass
@@ -81,6 +85,7 @@ class AgentRegistry:
                 needs_tools=cfg.get("needs_tools", True),
                 allowed_tools=cfg.get("allowed_tools", []),
                 external_servers=cfg.get("external_servers", []),
+                model=cfg.get("model"),
             )
 
         for name, cfg in data.get("modes", {}).items():
@@ -143,6 +148,22 @@ class AgentRegistry:
             f"No prompt found for agent '{agent_name}' "
             f"(checked {disk_path} and src/agents/prompts/{prompt_key}.py::{var_name})"
         )
+
+    def resolve_model(self, agent_name: str, default_model: str) -> str:
+        """Resolve the Claude model tier for an agent.
+
+        Priority:
+        1. Explicit `model:` on the agent in config/agents.yaml
+        2. `default_model` (settings.agent_default_model)
+
+        The CLI's own default model is deliberately NOT consulted — the trading
+        pipeline is pinned by STEEX config so operator `/model` switches don't
+        silently change what the agents run on.
+        """
+        agent = self.agents.get(agent_name)
+        if agent is not None and agent.model:
+            return agent.model
+        return default_model
 
     def resolve_conclusion_type(self, agent_name: str) -> Type[BaseModel]:
         """Resolve the Pydantic conclusion model for an agent."""

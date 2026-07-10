@@ -421,7 +421,7 @@ class Settings(BaseSettings):
         default=False, description="Enable Polygon/Massive MCP for aggregates, news, options flow"
     )
     mcp_alphavantage_enabled: bool = Field(
-        default=True, description="Enable Alpha Vantage MCP for technical indicators and economic data"
+        default=False, description="Enable Alpha Vantage MCP for technical indicators and economic data"
     )
 
     # Event-trigger subsystem (news-driven fast-path; see src/strategy/event_trigger.py)
@@ -475,6 +475,15 @@ class Settings(BaseSettings):
     event_resolver_model: str = Field(
         default="haiku",
         description="Claude model for the per-post ticker resolver (cheap; runs on every new post)",
+    )
+    agent_default_model: str = Field(
+        default="opus",
+        description=(
+            "Default Claude model for pipeline agents that don't pin one in "
+            "config/agents.yaml. Pins the trading pipeline to a STEEX-chosen "
+            "model so the operator's CLI /model switches no longer silently "
+            "change what the trading agents run on."
+        ),
     )
 
     # ---- Big-move detector (P1-3) -----------------------------------------

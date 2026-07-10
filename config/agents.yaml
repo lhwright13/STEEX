@@ -5,11 +5,19 @@
 # external_servers: list of external MCP server names this agent can access.
 # Available: alpaca (real-time quotes, orders), polygon (aggregates, news),
 #            alphavantage (technical indicators, economic data)
+#
+# model: optional per-agent Claude tier ("opus" | "sonnet" | "haiku"). When
+#   omitted, the agent falls back to settings.agent_default_model — the pipeline
+#   no longer inherits the CLI's default model. Tiers (WP7 / C1): manager +
+#   meta_analysis run on opus (judgment-heavy); data / risk / analysis variants /
+#   execution / research / learning run on sonnet; the event resolver + notify
+#   summarizers stay on settings.event_resolver_model (haiku), set elsewhere.
 
 agents:
   data:
     prompt: "data"
     conclusion: "DataConclusion"
+    model: "sonnet"
     max_turns: 10
     needs_tools: true
     allowed_tools:
@@ -22,6 +30,7 @@ agents:
   risk:
     prompt: "risk"
     conclusion: "RiskConclusion"
+    model: "sonnet"
     max_turns: 12
     needs_tools: true
     allowed_tools:
@@ -36,6 +45,7 @@ agents:
   analysis:
     prompt: "analysis"
     conclusion: "AnalysisConclusion"
+    model: "sonnet"
     max_turns: 15
     needs_tools: true
     allowed_tools:
@@ -47,6 +57,7 @@ agents:
   analysis_conservative:
     prompt: "analysis_conservative"
     conclusion: "AnalysisConclusion"
+    model: "sonnet"
     max_turns: 15
     needs_tools: true
     allowed_tools:
@@ -62,6 +73,7 @@ agents:
   analysis_aggressive:
     prompt: "analysis_aggressive"
     conclusion: "AnalysisConclusion"
+    model: "sonnet"
     max_turns: 15
     needs_tools: true
     allowed_tools:
@@ -77,6 +89,7 @@ agents:
   analysis_momentum:
     prompt: "analysis_momentum"
     conclusion: "AnalysisConclusion"
+    model: "sonnet"
     max_turns: 15
     needs_tools: true
     allowed_tools:
@@ -92,18 +105,21 @@ agents:
   meta_analysis:
     prompt: "meta_analysis"
     conclusion: "MetaAnalysisConclusion"
+    model: "opus"
     max_turns: 5
     needs_tools: false
 
   manager:
     prompt: "manager"
     conclusion: "ManagerDecision"
+    model: "opus"
     max_turns: 3
     needs_tools: false
 
   execution:
     prompt: "execution"
     conclusion: "ExecutionConclusion"
+    model: "sonnet"
     # 18, not 10: the exit chain added 3 tool calls (get_exit_signals ->
     # generate_sell_list -> execute_exits) and ToolSearch schema loads burn
     # ~3 more turns — the 07-06 enter run died at max_turns(10) mid-workflow
@@ -130,6 +146,7 @@ agents:
   research:
     prompt: "research"
     conclusion: "ResearchConclusion"
+    model: "sonnet"
     max_turns: 10
     needs_tools: true
     allowed_tools:
@@ -150,6 +167,7 @@ agents:
   learning_agent:
     prompt: "learning"
     conclusion: "LearningConclusion"
+    model: "sonnet"
     max_turns: 25
     needs_tools: true
     allowed_tools:
