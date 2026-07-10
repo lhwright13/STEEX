@@ -295,6 +295,17 @@ def create_app():
             logger.error(f"Error fetching system schedules: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/v1/system/health")
+    def system_health():
+        """Heartbeat integrity status + read-only quarantined-trades listing."""
+        try:
+            service = get_dashboard_service()
+            data = service.get_system_health()
+            return jsonify(data)
+        except Exception as e:
+            logger.error(f"Error fetching system health: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/v1/system/agent/<agent_name>/detail")
     def agent_detail(agent_name):
         """Get detailed configuration and prompt for a specific agent."""

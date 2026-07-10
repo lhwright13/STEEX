@@ -274,6 +274,47 @@ class TestSystemAgentsAPI:
 
 
 # ========================================================================
+# Test: API Endpoints - System Health (WP8)
+# ========================================================================
+
+
+class TestSystemHealthAPI:
+    """Test system health API endpoint (integrity + quarantine)."""
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_system_health_returns_json(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.get_system_health.return_value = {
+            "integrity": {"status": "OK", "violations": [], "error": None},
+            "overall": "OK",
+            "heartbeat_at": "2026-07-09T20:00:00",
+            "quarantine": {"count": 1, "rows": [
+                {"ticker": "BK", "exit_date": "2026-05-21", "reason": "no matching filled broker sell order"},
+            ]},
+        }
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["integrity"]["status"] == "OK"
+        assert data["quarantine"]["count"] == 1
+        assert data["quarantine"]["rows"][0]["ticker"] == "BK"
+
+    @patch("frontend.app.get_dashboard_service")
+    def test_system_health_error_returns_500(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.get_system_health.side_effect = Exception("boom")
+        mock_get_service.return_value = mock_service
+
+        response = client.get("/api/v1/system/health")
+
+        assert response.status_code == 500
+        assert "error" in json.loads(response.data)
+
+
+# ========================================================================
 # Test: API Endpoints - System Schedules
 # ========================================================================
 

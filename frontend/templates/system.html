@@ -610,6 +610,31 @@
         </table>
       </div>
     </section>
+
+    <section class="panel">
+      <header>
+        <h2>System Health <span class="sub" id="health-sub">heartbeat integrity · read-only</span></h2>
+        <div class="tools"><span id="health-status-pill">—</span></div>
+      </header>
+      <div class="body">
+        <div id="health-integrity" style="font-family:var(--sans);font-size:13px;color:var(--dim);">Loading health…</div>
+        <div style="font-family:var(--sans);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin-top:14px;">
+          Quarantined trades — <span id="quarantine-count">0</span>
+        </div>
+        <table class="data" style="margin-top:6px;">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Exit Date</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="quarantine-tbody">
+            <tr><td colspan="3" style="text-align:center;padding:14px;color:#999;">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <!-- =================================================================

@@ -236,9 +236,79 @@
     }
   }
 
+  // ── System health (integrity + quarantine) ──────────────────────────────
+
+  async function fetchSystemHealth() {
+    try {
+      const r = await fetch('/api/v1/system/health');
+      return await r.json();
+    } catch (e) {
+      console.error('Error fetching system health:', e);
+      return null;
+    }
+  }
+
+  function esc(v) {
+    if (v === null || v === undefined) return '—';
+    return String(v).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  async function updateSystemHealth(data) {
+    if (!data) return;
+    const integrity = data.integrity || {};
+    const status = integrity.status || 'UNKNOWN';
+
+    const pill = q('#health-status-pill');
+    if (pill) {
+      const cls = status === 'OK' ? 'ok' : status === 'WARNING' ? 'warn' : 'dim';
+      pill.innerHTML = `<span class="tag ${cls}">${esc(status)}</span>`;
+    }
+
+    const integrityEl = q('#health-integrity');
+    if (integrityEl) {
+      const violations = integrity.violations || [];
+      if (integrity.error) {
+        integrityEl.innerHTML = `Integrity check error: ${esc(integrity.error)}`;
+      } else if (violations.length) {
+        integrityEl.innerHTML = 'Integrity violations:<ul style="margin:6px 0 0 16px;">'
+          + violations.map(v => `<li>${esc(v)}</li>`).join('') + '</ul>';
+      } else {
+        integrityEl.innerHTML = 'No integrity violations. Trade book is clean.';
+      }
+    }
+
+    const quarantine = data.quarantine || { count: 0, rows: [] };
+    const countEl = q('#quarantine-count');
+    if (countEl) countEl.textContent = quarantine.count || 0;
+
+    const tbody = q('#quarantine-tbody');
+    if (tbody) {
+      const rows = quarantine.rows || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:14px;color:#999;">No quarantined trades.</td></tr>';
+      } else {
+        tbody.innerHTML = rows.map(row => {
+          const d = row.exit_date ? new Date(row.exit_date) : null;
+          const when = (d && !isNaN(d)) ? d.toLocaleDateString() : (row.exit_date || '—');
+          return `
+            <tr>
+              <td class="t">${esc(row.ticker)}</td>
+              <td>${esc(when)}</td>
+              <td>${esc(row.reason)}</td>
+            </tr>`;
+        }).join('\n');
+      }
+    }
+  }
+
   async function refreshLiveData() {
     const schedulesData = await fetchSchedules();
     const recentRunsData = await fetchRecentRuns();
+    const healthData = await fetchSystemHealth();
+
+    if (healthData) await updateSystemHealth(healthData);
 
     if (schedulesData) await updateSchedulesTable(schedulesData);
     if (recentRunsData) {

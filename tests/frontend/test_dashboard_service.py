@@ -758,3 +758,85 @@ class TestSignalHealth:
                    side_effect=Exception("boom")):
             out = service.get_signal_health()
         assert out["available"] is False and out["signals"] == []
+
+
+# ========================================================================
+# Test: System Health (WP8 — integrity + quarantine surfacing)
+# ========================================================================
+
+
+class TestSystemHealth:
+    """get_system_health surfaces heartbeat integrity + quarantine listing."""
+
+    def _write(self, service, tmp_path, heartbeat=None, quarantine=None):
+        service.data_dir = tmp_path
+        if heartbeat is not None:
+            (tmp_path / "heartbeat.json").write_text(json.dumps(heartbeat))
+        if quarantine is not None:
+            (tmp_path / "trades_quarantine.json").write_text(json.dumps(quarantine))
+
+    def test_integrity_ok_no_quarantine(self, service, tmp_path):
+        self._write(
+            service, tmp_path,
+            heartbeat={"overall": "OK", "timestamp": "2026-07-09T20:00:00",
+                       "checks": {"integrity": {"status": "OK", "violations": []}}},
+            quarantine=[],
+        )
+        out = service.get_system_health()
+        assert out["integrity"]["status"] == "OK"
+        assert out["integrity"]["violations"] == []
+        assert out["overall"] == "OK"
+        assert out["quarantine"]["count"] == 0
+        assert out["quarantine"]["rows"] == []
+
+    def test_integrity_violations_surface(self, service, tmp_path):
+        self._write(
+            service, tmp_path,
+            heartbeat={"overall": "WARNING", "timestamp": "2026-07-09T20:00:00",
+                       "checks": {"integrity": {"status": "WARNING",
+                                                "violations": ["duplicate exit rows: 2"]}}},
+        )
+        out = service.get_system_health()
+        assert out["integrity"]["status"] == "WARNING"
+        assert out["integrity"]["violations"] == ["duplicate exit rows: 2"]
+
+    def test_quarantine_rows_projected(self, service, tmp_path):
+        self._write(
+            service, tmp_path,
+            heartbeat={"checks": {"integrity": {"status": "OK", "violations": []}}},
+            quarantine=[
+                {"ticker": "BK", "exit_date": "2026-05-21T05:15:22",
+                 "exit_reason": "server_stop",
+                 "_quarantine_reason": "no matching filled broker sell order"},
+                {"ticker": "NTRS", "exit_date": "2026-07-07T08:00:19",
+                 "exit_reason": "trail_20"},
+            ],
+        )
+        out = service.get_system_health()
+        assert out["quarantine"]["count"] == 2
+        row0 = out["quarantine"]["rows"][0]
+        assert row0["ticker"] == "BK"
+        assert row0["exit_date"] == "2026-05-21T05:15:22"
+        # prefers the explicit quarantine reason over exit_reason
+        assert row0["reason"] == "no matching filled broker sell order"
+        # falls back to exit_reason when no quarantine reason present
+        assert out["quarantine"]["rows"][1]["reason"] == "trail_20"
+        # projection is read-only: only the three surfaced fields
+        assert set(row0.keys()) == {"ticker", "exit_date", "reason"}
+
+    def test_missing_files_graceful(self, service, tmp_path):
+        service.data_dir = tmp_path  # no heartbeat / quarantine files written
+        out = service.get_system_health()
+        assert out["integrity"]["status"] == "UNKNOWN"
+        assert out["quarantine"]["count"] == 0
+
+    def test_malformed_quarantine_ignored(self, service, tmp_path):
+        self._write(
+            service, tmp_path,
+            heartbeat={"checks": {"integrity": {"status": "WARNING", "error": "boom"}}},
+            quarantine=["not-a-dict", {"ticker": "MO", "exit_date": "x", "exit_reason": "r"}],
+        )
+        out = service.get_system_health()
+        assert out["integrity"]["error"] == "boom"
+        assert out["quarantine"]["count"] == 1
+        assert out["quarantine"]["rows"][0]["ticker"] == "MO"

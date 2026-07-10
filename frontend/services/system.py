@@ -186,6 +186,46 @@ class SystemMixin:
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
 
+    def get_system_health(self) -> Dict[str, Any]:
+        """Heartbeat integrity status + a read-only quarantined-trades listing.
+
+        Surfaces the health_check.py `integrity` check (07-07/07-08 phantom-
+        trades incident) and the count/contents of data/trades_quarantine.json
+        so the operator can see, on the System page, whether the book is clean.
+        Read-only: no buttons, no mutation.
+        """
+        hb = self._load_json_file(self.data_dir / "heartbeat.json") or {}
+        integrity = (hb.get("checks") or {}).get("integrity") or {}
+
+        integrity_status = integrity.get("status") or "UNKNOWN"
+        health = {
+            "integrity": {
+                "status": integrity_status,
+                "violations": integrity.get("violations") or [],
+                "error": integrity.get("error"),
+            },
+            "overall": hb.get("overall"),
+            "heartbeat_at": hb.get("timestamp"),
+        }
+
+        quarantine = self._load_json_file(self.data_dir / "trades_quarantine.json")
+        rows = []
+        if isinstance(quarantine, list):
+            for q in quarantine:
+                if not isinstance(q, dict):
+                    continue
+                rows.append({
+                    "ticker": q.get("ticker"),
+                    "exit_date": q.get("exit_date"),
+                    "reason": q.get("_quarantine_reason") or q.get("exit_reason"),
+                })
+
+        health["quarantine"] = {
+            "count": len(rows),
+            "rows": rows,
+        }
+        return health
+
     def _get_agent_tools(self, agent_name: str) -> List[Dict[str, str]]:
         """Get tools available to agent."""
         agent_config = self.registry.agents.get(agent_name)
