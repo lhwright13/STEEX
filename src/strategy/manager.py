@@ -6,6 +6,7 @@ and reporting into a single end-to-end pipeline.
 
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -200,13 +201,44 @@ class QuantManager:
             for t in result["removed"]:
                 console.print(f"    [red]-{t}[/red] (stale local)")
 
-        # Record trades for positions removed by sync (server-side stop fills)
-        for ticker in result.get("removed", []):
+        # Record trades for positions removed by sync (server-side stop fills).
+        # INTEGRITY (07-08 incident): only record an exit when a FILLED broker
+        # sell order actually exists for the ticker — a transient read or a
+        # ticker rename (BK->BNY) used to fabricate phantom exit records with
+        # made-up prices. When found, use the order's REAL fill price.
+        removed = result.get("removed", [])
+        filled_sells: Dict[str, Dict] = {}
+        if removed:
+            try:
+                for o in self.broker.get_order_history(status="closed", limit=100):
+                    if (
+                        o.get("side") == "sell"
+                        and o.get("status") == "filled"
+                        and o.get("ticker") not in filled_sells
+                    ):
+                        filled_sells[o["ticker"]] = o
+            except Exception as e:
+                logger.warning("Order-history lookup failed during sync: %s", e)
+        for ticker in removed:
             pos = local_before.get(ticker)
             if pos is None:
                 continue
-            # Use the stop price as approximate exit price
-            exit_price = pos.current_stop if pos.current_stop else pos.entry_price
+            order = filled_sells.get(ticker)
+            if order is None:
+                console.print(
+                    f"    [red]{ticker} vanished from broker with NO filled sell "
+                    f"order — NOT recording a trade (transient read or ticker "
+                    f"rename?); flagged for review[/red]"
+                )
+                self._log(
+                    "sync",
+                    f"INTEGRITY: {ticker} removed by sync without a matching filled "
+                    f"sell order; no trade recorded — manual review",
+                )
+                continue
+            exit_price = order.get("filled_avg_price") or (
+                pos.current_stop if pos.current_stop else pos.entry_price
+            )
             # B3: reconstruct WHICH stop tier fired from the high-water mark
             # instead of the useless catch-all "server_stop" (which was 11/12
             # of all exits, making "are the stops right?" unanswerable).
@@ -224,7 +256,7 @@ class QuantManager:
             )
             console.print(
                 f"    [yellow]Recorded {exit_reason} exit for {ticker} "
-                f"@ ~${exit_price:.2f}[/yellow]"
+                f"@ ${exit_price:.2f} (order {order.get('order_id', '?')[:8]})[/yellow]"
             )
             self._log("sync", f"Stop exit ({exit_reason}) detected for {ticker}")
 
@@ -1175,14 +1207,55 @@ class QuantManager:
                     continue
 
                 exit_price = item["price"]
+                sell_qty = position.shares
 
-                # Cancel server-side stop before managed sell
+                if self.broker:
+                    # INVARIANT (07-07 incident): verify the position still
+                    # exists AT THE BROKER immediately before a managed sell.
+                    # A server-side stop may have just exited it (gap-down at
+                    # the open) — selling the locally-cached qty on top of that
+                    # made a long-only book go SHORT (-9 JBL) and spawned
+                    # phantom trade records. Sell at most the broker qty; if
+                    # it's gone, the exit already happened — don't sell again.
+                    live = self.broker.get_position(item["ticker"])
+                    if live is None or live.qty <= 0:
+                        console.print(
+                            f"  [yellow]{item['ticker']}: no longer held at broker "
+                            f"(server stop likely filled) — skipping managed sell[/yellow]"
+                        )
+                        self._log(
+                            "execution",
+                            f"{item['ticker']}: broker shows no long position; "
+                            f"managed sell skipped (stop-fill race avoided)",
+                        )
+                        continue
+                    sell_qty = min(sell_qty, live.qty)
+
+                # Cancel server-side stop before managed sell — and WAIT for
+                # the cancel to clear. Alpaca cancels are async: selling while
+                # the stop still holds the shares is why liquid names "timed
+                # out" during market hours (MNST/MAR 07-07).
                 if self.broker and self.settings.server_stops_enabled:
                     self.broker.cancel_stop_for_ticker(item["ticker"])
+                    deadline = time.time() + 5.0
+                    while time.time() < deadline:
+                        if not self.broker.get_stop_order(item["ticker"]):
+                            break
+                        time.sleep(0.25)
+                    else:
+                        console.print(
+                            f"  [red]{item['ticker']}: stop did not clear in 5s — "
+                            f"deferring managed sell (shares still held by stop)[/red]"
+                        )
+                        self._log(
+                            "execution",
+                            f"{item['ticker']}: stop cancel unconfirmed; sell deferred",
+                        )
+                        continue
 
                 if self.broker:
                     result = self.broker.sell_market(
-                        item["ticker"], position.shares
+                        item["ticker"], sell_qty
                     )
                     if result.status == "filled":
                         # Track execution quality
@@ -1218,7 +1291,7 @@ class QuantManager:
                             and position.current_stop
                         ):
                             restore = self.broker.place_stop_order(
-                                item["ticker"], position.shares, position.current_stop
+                                item["ticker"], sell_qty, position.current_stop
                             )
                             self._log(
                                 "execution",
@@ -1233,12 +1306,12 @@ class QuantManager:
                     exit_date=datetime.now(),
                     entry_price=position.entry_price,
                     exit_price=exit_price,
-                    shares=position.shares,
+                    shares=sell_qty,  # what actually sold, never > broker qty
                     exit_reason=item["reason"],
                     score=position.score,
                     reasons=position.reasons,
                 )
-                exit_shares = position.shares
+                exit_shares = sell_qty
                 self.position_manager.remove_position(item["ticker"])
                 executed.append(item)
 

@@ -146,6 +146,83 @@ def run_health_check():
         if overall == "OK":
             overall = "WARNING"
 
+    # 6. Data integrity invariants (07-07/07-08 incident: phantom trades,
+    #    negative shares, score-0 fabricated positions). Catches corruption in
+    #    hours instead of days.
+    integrity = {"status": "OK", "violations": []}
+    try:
+        trades_path = Path(settings.data_dir) / "trades.json"
+        pos_path = Path(settings.data_dir) / "positions.json"
+        trades = json.loads(trades_path.read_text()) if trades_path.exists() else []
+        positions = json.loads(pos_path.read_text()) if pos_path.exists() else {}
+
+        neg_trades = [t["ticker"] for t in trades if (t.get("shares") or 0) <= 0]
+        if neg_trades:
+            integrity["violations"].append(f"negative/zero-share trades: {neg_trades}")
+
+        neg_pos = [k for k, v in positions.items() if (v.get("shares") or 0) <= 0]
+        if neg_pos:
+            integrity["violations"].append(f"negative/zero-share positions: {neg_pos}")
+
+        # An "exited" ticker that is still in the live book = phantom exit.
+        held = set(positions.keys())
+        today_iso = date.today().isoformat()
+        phantom = sorted({
+            t["ticker"] for t in trades
+            if t["ticker"] in held and str(t.get("exit_date", ""))[:10] == today_iso
+        })
+        if phantom:
+            integrity["violations"].append(f"exit recorded today for still-held: {phantom}")
+
+        from collections import Counter
+        dups = [k for k, c in Counter(
+            (t["ticker"], str(t.get("exit_date", ""))[:10]) for t in trades
+        ).items() if c > 1]
+        if dups:
+            integrity["violations"].append(f"duplicate exit rows: {dups}")
+
+        if checks.get("positions", {}).get("status") == "OK" and broker:
+            score0 = [k for k, v in positions.items()
+                      if not v.get("score") and str(v.get("entry_date", ""))[:10] == today_iso]
+            if score0:
+                integrity["violations"].append(f"score-0 positions created today (sync fabrication?): {score0}")
+
+        if integrity["violations"]:
+            integrity["status"] = "WARNING"
+            if overall == "OK":
+                overall = "WARNING"
+    except Exception as e:
+        integrity = {"status": "WARNING", "error": str(e)}
+        if overall == "OK":
+            overall = "WARNING"
+    checks["integrity"] = integrity
+
+    # Alert the operator on ANY non-OK heartbeat — both July incidents ran for
+    # days with the heartbeat warning silently into a JSON file nobody reads.
+    # Idempotent per day via the user_updates id.
+    if overall != "OK":
+        try:
+            from src.notify.event_summary import summarize_and_notify
+            issues = [f"{n}: {c.get('status')}" for n, c in checks.items()
+                      if c.get("status") not in (None, "OK")]
+            detail = "; ".join(issues) + (
+                " | " + "; ".join(integrity.get("violations", [])) if integrity.get("violations") else ""
+            )
+            summarize_and_notify(
+                {
+                    "id": f"heartbeat_{overall.lower()}_{date.today().isoformat()}",
+                    "type": "system",
+                    "title": f"🩺 Heartbeat {overall}",
+                    "context": {"checks": issues, "violations": integrity.get("violations", [])},
+                },
+                settings=settings,
+                summarizer=lambda _e: (
+                    f"Heartbeat is {overall}: {detail}. See data/heartbeat.json on the mini."
+                ),
+            )
+        except Exception as e:
+            print(f"  (heartbeat alert failed: {e})")
+
     # Write heartbeat file
     result = {
         "timestamp": datetime.now().isoformat(),

@@ -111,9 +111,36 @@ class PositionManager:
         added = []
         removed = []
 
+        # INTEGRITY GUARD (07-08 incident): an empty broker read while we hold
+        # positions is far more likely a transient API failure than a genuine
+        # full liquidation. Treating it as truth would delete every local
+        # position and fabricate a full book of phantom "exits". Refuse to sync
+        # removals from an empty read; a real liquidation will still reconcile
+        # on the next healthy sync.
+        if not broker_tickers and local_tickers:
+            logger.warning(
+                "Broker returned ZERO positions while %d held locally — "
+                "treating as transient read failure, skipping removals",
+                len(local_tickers),
+            )
+            return {"added": [], "removed": [], "synced": 0,
+                    "total": len(self.positions), "suspect_read": True}
+
         # Add positions that exist in broker but not locally
         for ticker in broker_tickers - local_tickers:
             bp = broker_positions[ticker]
+            # INTEGRITY GUARD: never fabricate a local position from a
+            # non-long broker row. A negative qty means the account is SHORT
+            # (07-07: a double-sell race left JBL at -9 and sync "adopted" it
+            # as a -9-share position, spawning phantom trades). Longs only;
+            # shorts are flagged loudly for the operator instead.
+            if bp.qty <= 0:
+                logger.error(
+                    "SHORT/ZERO position at broker: %s qty=%s — NOT adopting locally; "
+                    "manual review required (long-only book)",
+                    ticker, bp.qty,
+                )
+                continue
             self.positions[ticker] = Position(
                 ticker=ticker,
                 entry_date=datetime.now().isoformat(),
