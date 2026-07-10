@@ -18,6 +18,7 @@ from typing import Optional
 logger = logging.getLogger("steex.messaging")
 
 _TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+_TELEGRAM_PHOTO_API = "https://api.telegram.org/bot{token}/sendPhoto"
 
 
 class Channel(ABC):
@@ -26,6 +27,11 @@ class Channel(ABC):
     @abstractmethod
     def send(self, text: str) -> bool:
         ...
+
+    def send_photo(self, png_bytes: bytes, caption: str = "") -> bool:
+        """Send an image. Default: unsupported channel -> log and report False."""
+        logger.info("channel %s does not support photos", type(self).__name__)
+        return False
 
 
 class TelegramChannel(Channel):
@@ -55,12 +61,38 @@ class TelegramChannel(Channel):
             logger.error("Telegram send error: %s", e)
             return False
 
+    def send_photo(self, png_bytes: bytes, caption: str = "") -> bool:
+        """Send a PNG via Telegram sendPhoto (multipart upload)."""
+        if not self.token or not self.chat_id:
+            logger.error("Telegram token/chat_id missing; not sending photo")
+            return False
+        try:
+            import requests
+            r = requests.post(
+                _TELEGRAM_PHOTO_API.format(token=self.token),
+                data={"chat_id": self.chat_id, "caption": caption[:1024]},
+                files={"photo": ("chart.png", png_bytes, "image/png")},
+                timeout=30,
+            )
+            if r.status_code != 200:
+                logger.error("Telegram photo failed (%d): %s", r.status_code, r.text[:300])
+                return False
+            return True
+        except Exception as e:
+            logger.error("Telegram photo error: %s", e)
+            return False
+
 
 class DryRunChannel(Channel):
     """Logs the message instead of sending (messaging_enabled is off)."""
 
     def send(self, text: str) -> bool:
         logger.info("[messaging dry-run] would send: %s", text)
+        return True
+
+    def send_photo(self, png_bytes: bytes, caption: str = "") -> bool:
+        logger.info("[messaging dry-run] would send photo (%d bytes): %s",
+                    len(png_bytes or b""), caption[:120])
         return True
 
 
@@ -92,4 +124,27 @@ def send_user_message(text: str, settings=None, to: Optional[str] = None) -> dic
         return {"sent": False, "dry_run": False, "error": "telegram not configured"}
 
     ok = get_channel(settings, chat_id=chat_id).send(text)
+    return {"sent": ok, "dry_run": not enabled, "to": chat_id if enabled else None}
+
+
+def send_user_photo(png_bytes: bytes, caption: str = "", settings=None,
+                    to: Optional[str] = None) -> dict:
+    """Send a PNG image (e.g. a performance chart) to the user via Telegram.
+
+    Same gating/semantics as send_user_message: messaging_enabled off => dry-run
+    log; never raises into a trading path.
+    """
+    if settings is None:
+        from config.settings import get_settings
+        settings = get_settings()
+
+    enabled = bool(getattr(settings, "messaging_enabled", False))
+    token = (getattr(settings, "telegram_bot_token", "") or "").strip()
+    chat_id = (to or getattr(settings, "telegram_chat_id", "") or "").strip()
+
+    if enabled and (not token or not chat_id):
+        logger.error("messaging_enabled but Telegram bot token / chat id not configured")
+        return {"sent": False, "dry_run": False, "error": "telegram not configured"}
+
+    ok = get_channel(settings, chat_id=chat_id).send_photo(png_bytes, caption)
     return {"sent": ok, "dry_run": not enabled, "to": chat_id if enabled else None}

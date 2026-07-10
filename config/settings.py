@@ -507,6 +507,11 @@ class Settings(BaseSettings):
         description="After the post-market run, send a once-per-day end-of-day recap (today's "
                     "P&L, closed trades, alpha vs SPY, signal health) to Telegram + Today's Events",
     )
+    daily_recap_chart_enabled: bool = Field(
+        default=True,
+        description="Attach a PNG performance chart (1M vs SPY + today's intraday equity) "
+                    "to the end-of-day recap via Telegram sendPhoto",
+    )
 
     # ---- Messaging / notifications (P1) -----------------------------------
     messaging_enabled: bool = Field(

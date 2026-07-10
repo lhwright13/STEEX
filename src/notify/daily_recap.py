@@ -255,7 +255,7 @@ def send_daily_recap(
 
     day = _today(final_state)
     context = _build_context(final_state, settings)
-    return summarize_and_notify(
+    rec = summarize_and_notify(
         {
             "id": f"recap_{day}",
             "type": "system",
@@ -267,3 +267,22 @@ def send_daily_recap(
         send=send,
         max_sentences=None,  # multi-section recap; the lede is already bounded
     )
+
+    # Attach the performance chart PNG (1M vs SPY + today's intraday curve)
+    # right after the text recap. Only on the FIRST send of the day (rec is
+    # None when the recap was already sent — idempotency carries over), and
+    # strictly best-effort: a chart failure never blocks the recap.
+    if rec is not None and send and getattr(settings, "daily_recap_chart_enabled", True):
+        try:
+            from src.notify.messaging import send_user_photo
+            from src.notify.perf_chart import build_eod_chart
+            png = build_eod_chart(settings)
+            if png:
+                send_user_photo(
+                    png, caption=f"📈 Performance — {day} (1M vs SPY · today)",
+                    settings=settings,
+                )
+        except Exception as e:
+            logger.warning("recap chart send failed: %s", e)
+
+    return rec
