@@ -81,7 +81,105 @@ class LearningLoop:
             results["gaps"] = gaps
             results["phases_run"].append("gaps")
 
+        # Determine an explicit outcome so a no-op run is distinguishable from a
+        # broken one, then persist a dashboard run record. Historically this
+        # deterministic loop wrote nothing to data/runs (only the agent
+        # orchestrator did), so the weekly learning slot completed with exit
+        # code 0 yet produced zero visible run records. Emit one either way.
+        results["outcome"] = self._classify_outcome(pm_report, decay_report, results)
+        self._write_run_record(results)
+
         return results
+
+    def _classify_outcome(
+        self,
+        pm_report: Optional[Dict],
+        decay_report: Optional[Dict],
+        results: Dict,
+    ) -> Dict:
+        """Summarize WHY a run did (or did not) produce actionable analysis.
+
+        Distinguishes a legitimate no-op (too few closed trades for a reliable
+        postmortem) from a real failure, so a transparent run record can say so.
+        """
+        min_trades = getattr(
+            self.settings, "learning_min_trades_for_analysis", 15
+        )
+
+        pm_error = (pm_report or {}).get("error") if pm_report else None
+        decay_error = (decay_report or {}).get("error") if decay_report else None
+        if pm_error or decay_error:
+            reasons = [e for e in (pm_error, decay_error) if e]
+            return {
+                "status": "error",
+                "reason": "; ".join(reasons),
+                "detail": "One or more learning phases failed.",
+            }
+
+        trades_analyzed = (pm_report or {}).get("trades_analyzed", 0) if pm_report else 0
+        sufficient = (pm_report or {}).get("sufficient_data", False) if pm_report else False
+
+        if pm_report is not None and not sufficient:
+            return {
+                "status": "no_op",
+                "reason": "insufficient_trades",
+                "detail": (
+                    f"Only {trades_analyzed} closed trade(s) available "
+                    f"(need {min_trades} for reliable postmortem analysis); "
+                    f"ran observe-only phases and flagged the data gap."
+                ),
+                "trades_analyzed": trades_analyzed,
+                "min_trades": min_trades,
+                "gaps_flagged": len(results.get("gaps", [])),
+            }
+
+        return {
+            "status": "analyzed",
+            "reason": "sufficient_data",
+            "detail": (
+                f"Analyzed {trades_analyzed} closed trade(s); "
+                f"gaps flagged: {len(results.get('gaps', []))}."
+            ),
+            "trades_analyzed": trades_analyzed,
+            "min_trades": min_trades,
+            "gaps_flagged": len(results.get("gaps", [])),
+        }
+
+    def _write_run_record(self, results: Dict) -> None:
+        """Persist a dashboard run record (data/runs/*.jsonl) for this run.
+
+        Uses the same run_log helpers the agent orchestrator uses, so the
+        dashboard renders a learning run like any other mode. Transparency
+        only: a failure to write must never break the learning cycle.
+        """
+        try:
+            import uuid
+
+            from src.agents.run_log import start_run_log, finish_run_log
+
+            run_id = str(uuid.uuid4())[:8]
+            data_dir = getattr(self.settings, "data_dir", "data")
+            path = start_run_log(data_dir, run_id, "learning")
+
+            outcome = results.get("outcome", {})
+            final_state = {
+                "mode": "learning",
+                "conclusions": {"learning": results},
+                "manager_decision": {
+                    "decision": "learning",
+                    "outcome": outcome.get("status"),
+                    "reasoning": outcome.get("detail", ""),
+                },
+                "traces": [],
+                "abort": outcome.get("status") == "error",
+                "abort_reason": (
+                    outcome.get("reason") if outcome.get("status") == "error" else None
+                ),
+            }
+            status = "failed" if final_state["abort"] else "complete"
+            finish_run_log(path, data_dir, run_id, "learning", final_state, status)
+        except Exception as e:  # transparency must never break the cycle
+            logger.debug("learning run record write failed: %s", e)
 
     def _run_postmortem(self) -> Optional[Dict]:
         """Phase 1: Run post-mortem analysis on recent trades."""
