@@ -507,7 +507,14 @@ class Orchestrator:
             "abort": False,
         }
         finish_run_log(run_file, self.settings.data_dir, run_id, mode, final_state, status="complete")
-        self._save_report(report)
+        # B7: don't flood data/reports with a full JSON every minute. A quiet
+        # scan (nothing actionable, nothing executed) carries no signal worth
+        # persisting — the run log already records that it ran. Only write a
+        # report when a post was actionable or a trade executed.
+        if scan.get("actionable") or scan.get("executed"):
+            self._save_report(report)
+        else:
+            console.print("[dim]Quiet scan — no report saved.[/dim]")
         if ctx is not None:
             cleanup_mcp(ctx)
         return report
