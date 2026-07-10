@@ -8,12 +8,22 @@ mixin now delegates here; behaviour is unchanged.
 Pulls the broker's daily portfolio history (the authoritative equity curve),
 fetches SPY closes over the same window, rebases both to 0% at the first common
 date, and computes alpha = portfolio% - SPY% at each point.
+
+Window alignment (B5):
+  * 1D ("Today") bases the day change on the broker's prior-close equity
+    (``last_equity``) so it captures the overnight gap instead of starting from
+    the first intraday bar; a same-day SPY quote vs SPY's prior close surfaces
+    a 1-day ``spy_pct``/alpha (previously always null intraday).
+  * Daily ranges (1W/1M/...) drop a dangling newer portfolio bar that has no
+    matching SPY close yet, so the summary's endpoints line up on the same last
+    COMMON complete trading day instead of comparing an intraday-stale daily
+    portfolio bar against a carried-forward SPY close.
 """
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("steex.performance")
 
@@ -40,20 +50,17 @@ def resolve_period(period: str):
     return PERF_PERIODS[period]
 
 
-def portfolio_performance(period: str = "1M") -> Dict[str, Any]:
-    """Portfolio equity curve vs S&P 500, with alpha, rebased to % return.
+def _load_portfolio_history(
+    alpaca_period: str, timeframe: str, intraday: bool
+) -> Tuple[Optional[List[Tuple[str, str, float]]], Optional[float]]:
+    """Fetch the broker equity curve and the prior-close equity.
 
-    Returns {available: False, reason: ...} when the broker or price data can't
-    be reached so callers can show an empty state instead of raising.
+    Returns ``(points, last_equity)`` where ``points`` is an ordered list of
+    ``(label, day_iso, equity)`` (label is the x-axis tick — HH:MM intraday,
+    else the date) and ``last_equity`` is the broker's prior trading-day close
+    equity (Alpaca ``last_equity``), or ``None`` if unavailable. ``points`` is
+    ``None`` when the broker can't be reached.
     """
-    period = period if period in PERF_PERIODS else "1M"
-    alpaca_period, spy_days, timeframe = resolve_period(period)
-    intraday = timeframe != "1D"
-
-    # --- Portfolio equity curve from the broker -------------------------
-    # points: ordered [(label, day_iso, equity)]. label is the x-axis tick
-    # (HH:MM intraday, else the date); day_iso aligns to daily SPY bars.
-    points = []
     try:
         import os
         from alpaca.trading.client import TradingClient
@@ -67,7 +74,16 @@ def portfolio_performance(period: str = "1M") -> Dict[str, Any]:
         hist = tc.get_portfolio_history(
             GetPortfolioHistoryRequest(period=alpaca_period, timeframe=timeframe)
         )
-        seen_day = {}
+        last_equity = None
+        try:
+            acct = tc.get_account()
+            if getattr(acct, "last_equity", None) is not None:
+                last_equity = float(acct.last_equity)
+        except Exception as e:
+            logger.debug("Account last_equity unavailable: %s", e)
+
+        points: List[Tuple[str, str, float]] = []
+        seen_day: Dict[str, float] = {}
         for ts, eq in zip(hist.timestamp or [], hist.equity or []):
             if not eq:
                 continue
@@ -79,25 +95,109 @@ def portfolio_performance(period: str = "1M") -> Dict[str, Any]:
                 seen_day[day_iso] = float(eq)
         if not intraday:
             points = [(d, d, seen_day[d]) for d in sorted(seen_day)]
+        return points, last_equity
     except Exception as e:
         logger.debug("Portfolio history unavailable: %s", e)
-        return {"available": False, "period": period, "reason": "broker unavailable"}
+        return None, None
 
-    if len(points) < 2:
-        return {"available": False, "period": period, "reason": "insufficient history"}
 
-    # --- SPY closes (daily) — skipped for intraday ----------------------
-    spy_by_date = {}
-    if not intraday:
-        try:
-            from src.data.price import PriceProvider
-            df = PriceProvider().get_ohlcv("SPY", days=spy_days)
-            if df is not None and "Close" in df.columns:
-                for idx, row in df.iterrows():
-                    d = idx.date().isoformat() if hasattr(idx, "date") else str(idx)[:10]
-                    spy_by_date[d] = float(row["Close"])
-        except Exception as e:
-            logger.debug("SPY history unavailable: %s", e)
+def _load_spy_by_date(spy_days: int) -> Dict[str, float]:
+    """SPY daily closes keyed by ISO date over the lookback window."""
+    spy_by_date: Dict[str, float] = {}
+    try:
+        from src.data.price import PriceProvider
+        df = PriceProvider().get_ohlcv("SPY", days=spy_days)
+        if df is not None and "Close" in df.columns:
+            for idx, row in df.iterrows():
+                d = idx.date().isoformat() if hasattr(idx, "date") else str(idx)[:10]
+                spy_by_date[d] = float(row["Close"])
+    except Exception as e:
+        logger.debug("SPY history unavailable: %s", e)
+    return spy_by_date
+
+
+def _spy_latest_quote() -> Optional[float]:
+    """Same-day SPY quote (for the 1D benchmark), or None."""
+    try:
+        from src.data.price import PriceProvider
+        return PriceProvider().get_latest_price("SPY")
+    except Exception as e:
+        logger.debug("SPY latest quote unavailable: %s", e)
+        return None
+
+
+def _intraday_performance(period: str, points, last_equity) -> Dict[str, Any]:
+    """1D ("Today"): rebase off the broker's prior-close equity so the overnight
+    gap is included, and surface a 1-day SPY/alpha from a same-day SPY quote vs
+    SPY's prior close when both are available.
+    """
+    # Prior-close equity is the base; fall back to the first intraday bar only
+    # if the broker didn't report last_equity.
+    base_eq = last_equity if (last_equity and last_equity > 0) else points[0][2]
+
+    # SPY prior close (last daily bar strictly before today) and today's quote.
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    spy_by_date = _load_spy_by_date(PERF_PERIODS["1D"][1] + 5)
+    prior_dates = [d for d in sorted(spy_by_date) if d < today_iso]
+    spy_prior_close = spy_by_date[prior_dates[-1]] if prior_dates else None
+    spy_quote = _spy_latest_quote()
+
+    spy_end_pct = None
+    if spy_prior_close and spy_prior_close > 0 and spy_quote is not None:
+        spy_end_pct = round(100 * (spy_quote / spy_prior_close - 1), 2)
+
+    series = []
+    last_port_pct = None
+    for label, _day, eq in points:
+        port_pct = round(100 * (eq / base_eq - 1), 2)
+        last_port_pct = port_pct
+        series.append({
+            "date": label,
+            "equity": round(eq, 2),
+            "portfolio_pct": port_pct,
+            # Intraday SPY isn't plotted point-by-point (single daily close);
+            # only the summary carries a 1-day benchmark.
+            "spy_pct": None,
+            "alpha_pct": None,
+        })
+
+    alpha_end = None
+    if spy_end_pct is not None and last_port_pct is not None:
+        alpha_end = round(last_port_pct - spy_end_pct, 2)
+
+    return {
+        "available": True,
+        "period": period,
+        "intraday": True,
+        "series": series,
+        "summary": {
+            "portfolio_return_pct": last_port_pct,
+            "spy_return_pct": spy_end_pct,
+            "alpha_pct": alpha_end,
+            "start_equity": round(base_eq, 2),
+            "end_equity": round(points[-1][2], 2),
+            "spy_available": spy_end_pct is not None,
+        },
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+def _daily_performance(period: str, points, spy_days: int) -> Dict[str, Any]:
+    """Daily ranges: align portfolio and SPY to the same last COMMON complete
+    trading day, dropping a dangling newer portfolio bar with no SPY close yet.
+    """
+    spy_by_date = _load_spy_by_date(spy_days)
+    last_spy_date = max(spy_by_date) if spy_by_date else None
+
+    # Drop trailing portfolio bars newer than the last available SPY close so
+    # the summary endpoints compare the same trading day (avoids an
+    # intraday-stale daily portfolio bar vs a carried-forward SPY close).
+    if last_spy_date is not None:
+        aligned = [p for p in points if p[1] <= last_spy_date]
+        if len(aligned) >= 2:
+            points = aligned
+        # If alignment would leave <2 points, keep the raw series rather than
+        # returning an empty state — better a slightly-skewed chart than none.
 
     # Align SPY to each point's day, carrying the last known close forward.
     spy_sorted = sorted(spy_by_date.keys())
@@ -132,7 +232,7 @@ def portfolio_performance(period: str = "1M") -> Dict[str, Any]:
     return {
         "available": True,
         "period": period,
-        "intraday": intraday,
+        "intraday": False,
         "series": series,
         "summary": {
             "portfolio_return_pct": last_pt["portfolio_pct"],
@@ -144,3 +244,24 @@ def portfolio_performance(period: str = "1M") -> Dict[str, Any]:
         },
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
+
+
+def portfolio_performance(period: str = "1M") -> Dict[str, Any]:
+    """Portfolio equity curve vs S&P 500, with alpha, rebased to % return.
+
+    Returns {available: False, reason: ...} when the broker or price data can't
+    be reached so callers can show an empty state instead of raising.
+    """
+    period = period if period in PERF_PERIODS else "1M"
+    alpaca_period, spy_days, timeframe = resolve_period(period)
+    intraday = timeframe != "1D"
+
+    points, last_equity = _load_portfolio_history(alpaca_period, timeframe, intraday)
+    if points is None:
+        return {"available": False, "period": period, "reason": "broker unavailable"}
+    if len(points) < 2:
+        return {"available": False, "period": period, "reason": "insufficient history"}
+
+    if intraday:
+        return _intraday_performance(period, points, last_equity)
+    return _daily_performance(period, points, spy_days)
