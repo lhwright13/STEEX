@@ -161,6 +161,11 @@ class Orchestrator:
         """Entry point: route to registry-driven agent pipeline or deterministic fallback."""
         effective_mode = "screen" if mode == "pre_market" else mode
 
+        # Retry any notifications that failed to send while the network was
+        # down — every scheduled run is a flush opportunity.
+        from src.notify.messaging import flush_outbox
+        flush_outbox(self.settings)
+
         if effective_mode in DETERMINISTIC_MODES:
             return self._run_deterministic(effective_mode)
 

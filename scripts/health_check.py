@@ -27,6 +27,13 @@ def run_health_check():
     checks = {}
     overall = "OK"
 
+    # First: retry any alerts that failed to send on earlier runs.
+    try:
+        from src.notify.messaging import flush_outbox
+        flush_outbox(settings)
+    except Exception as e:
+        print(f"  (outbox flush failed: {e})")
+
     # 1. Alpaca API connectivity
     try:
         from src.broker.alpaca import AlpacaBroker
@@ -196,6 +203,25 @@ def run_health_check():
         if overall == "OK":
             overall = "WARNING"
     checks["integrity"] = integrity
+
+    # Disk space — on 07-22 a full disk silently killed locks, logs, and run
+    # records for four hours. Warn well before writes start failing.
+    try:
+        import shutil
+        free_gb = shutil.disk_usage(settings.data_dir).free / 1e9
+        if free_gb < 5:
+            checks["disk"] = {"status": "CRITICAL", "free_gb": round(free_gb, 1)}
+            overall = "CRITICAL"
+        elif free_gb < 15:
+            checks["disk"] = {"status": "WARNING", "free_gb": round(free_gb, 1)}
+            if overall == "OK":
+                overall = "WARNING"
+        else:
+            checks["disk"] = {"status": "OK", "free_gb": round(free_gb, 1)}
+    except Exception as e:
+        checks["disk"] = {"status": "WARNING", "error": str(e)}
+        if overall == "OK":
+            overall = "WARNING"
 
     # Alert the operator on ANY non-OK heartbeat — both July incidents ran for
     # days with the heartbeat warning silently into a JSON file nobody reads.

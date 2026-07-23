@@ -77,3 +77,67 @@ def test_mcp_tool_wraps_the_sender():
         assert out["dry_run"] is True
     finally:
         state.settings = None
+
+
+# ---- notification outbox: failed sends are queued and retried -------------
+
+def _settings_with_dir(tmp_path, enabled=True):
+    return SimpleNamespace(messaging_enabled=enabled, telegram_bot_token="T",
+                           telegram_chat_id="42", data_dir=str(tmp_path))
+
+
+def test_failed_send_is_queued_for_retry(tmp_path):
+    s = _settings_with_dir(tmp_path)
+    with patch("requests.post", side_effect=RuntimeError("no net")):
+        res = messaging.send_user_message("critical alert", settings=s)
+    assert res["sent"] is False
+    import json
+    items = json.loads((tmp_path / "notify_outbox.json").read_text())
+    assert len(items) == 1 and items[0]["text"] == "critical alert"
+
+
+def test_flush_outbox_resends_and_clears(tmp_path):
+    s = _settings_with_dir(tmp_path)
+    with patch("requests.post", side_effect=RuntimeError("no net")):
+        messaging.send_user_message("critical alert", settings=s)
+    with patch("requests.post") as post:
+        post.return_value = MagicMock(status_code=200, text="ok")
+        res = messaging.flush_outbox(s)
+    assert res["sent"] == 1 and res["pending"] == 0
+    assert not (tmp_path / "notify_outbox.json").exists()
+    assert "⏳ (delayed) critical alert" in post.call_args.kwargs["json"]["text"]
+
+
+def test_flush_keeps_items_that_fail_again(tmp_path):
+    s = _settings_with_dir(tmp_path)
+    with patch("requests.post", side_effect=RuntimeError("no net")):
+        messaging.send_user_message("alert", settings=s)
+        res = messaging.flush_outbox(s)
+    assert res["sent"] == 0 and res["pending"] == 1
+    assert (tmp_path / "notify_outbox.json").exists()
+
+
+def test_flush_drops_stale_items(tmp_path):
+    import json
+    from datetime import datetime, timedelta, timezone
+    old = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+    (tmp_path / "notify_outbox.json").write_text(
+        json.dumps([{"ts": old, "text": "ancient", "to": "42"}]))
+    s = _settings_with_dir(tmp_path)
+    with patch("requests.post") as post:
+        res = messaging.flush_outbox(s)
+    post.assert_not_called()
+    assert res["dropped"] == 1 and res["sent"] == 0
+    assert not (tmp_path / "notify_outbox.json").exists()
+
+
+def test_flush_without_outbox_is_noop(tmp_path):
+    res = messaging.flush_outbox(_settings_with_dir(tmp_path))
+    assert res == {"sent": 0, "pending": 0, "dropped": 0}
+
+
+def test_no_data_dir_means_no_queue():
+    with patch("requests.post", side_effect=RuntimeError("no net")):
+        res = messaging.send_user_message(
+            "x", settings=_settings(enabled=True, token="T", chat="c"))
+    assert res["sent"] is False  # reported, and nothing written anywhere

@@ -22,6 +22,14 @@ specific company in a positive, buy-it way should pass.
 - Private companies, government bodies, or anything without a real US-listed
   ticker.
 
+## Hard rules
+- You have NO tools. Never attempt to call a tool, load a tool, or fetch a
+  URL — you get exactly ONE turn, and any tool attempt wastes it and kills
+  the scan (this dropped a post on 2026-07-22).
+- Judge ONLY from the post text given to you. If the post content is empty,
+  media-only, or just a bare link with no readable statement, output
+  mentions_company=false with reasoning "no readable content".
+
 ## Ticker resolution
 - Resolve the company to its primary US stock ticker (uppercase), including
   small / lesser-known companies — there is no watchlist.
